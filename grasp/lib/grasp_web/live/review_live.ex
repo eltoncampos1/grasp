@@ -1,6 +1,7 @@
 defmodule GraspWeb.ReviewLive do
   @moduledoc """
-  The review page: a sidebar of modules and their functions, the card canvas, and the
+  The review page: a sidebar that starts from the project's entry points — routes, jobs,
+  live views, processes — with the module list as its last group, the card canvas, and the
   Cmd+K palette. State is the session's forest plus the loaded index; both arrive by
   PubSub so any change — from this browser, another tab, or an MCP client later — renders
   everywhere.
@@ -14,6 +15,8 @@ defmodule GraspWeb.ReviewLive do
 
   alias Grasp.{Index, IndexStore, Session}
   alias Grasp.Session.Forest
+
+  @groups ~w(routes oban live genservers otp plugs modules)
 
   @impl true
   def mount(params, _session, socket) do
@@ -61,7 +64,7 @@ defmodule GraspWeb.ReviewLive do
   def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
-  def handle_event("toggle_group", %{"group" => group}, socket) when is_binary(group) do
+  def handle_event("toggle_group", %{"group" => group}, socket) when group in @groups do
     groups = socket.assigns.expanded_groups
 
     toggled =

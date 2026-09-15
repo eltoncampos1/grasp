@@ -9,8 +9,9 @@ defmodule GraspWeb.Sidebar do
   makes the same sidebar readable in a library (no routes, no jobs) and in a web app.
 
   Callback entries name the function they are, so repeating the module on every row would
-  bury the part that differs; each group therefore prints a module heading once and lists
-  its callbacks under it. Routes carry their own label and stay flat.
+  bury the part that differs in a sidebar too narrow to hold it; each group therefore
+  prints a module heading once and lists its callbacks under it by name and arity alone,
+  with the full id on the row's `title`. Routes carry their own label and stay flat.
   """
 
   use GraspWeb, :html
@@ -45,9 +46,10 @@ defmodule GraspWeb.Sidebar do
           kind={group.kind}
           title={group.title}
           count={group.count}
+          body_id={"group-#{group.kind}"}
           open?={open?(@expanded, group.kind)}
         />
-        <div :if={open?(@expanded, group.kind)} class="group__body">
+        <div :if={open?(@expanded, group.kind)} id={"group-#{group.kind}"} class="group__body">
           <div :for={{module, entries} <- group.modules} class="group__module">
             <h2 :if={module} class="group__heading">{module}</h2>
             <button
@@ -55,9 +57,9 @@ defmodule GraspWeb.Sidebar do
               class="entry"
               phx-click="open_root"
               phx-value-id={entry["target"]}
-              title={entry["meta"]["router"]}
+              title={row_title(module, entry)}
             >
-              {entry["label"]}
+              {row_label(module, entry)}
             </button>
           </div>
         </div>
@@ -67,6 +69,7 @@ defmodule GraspWeb.Sidebar do
           kind="modules"
           title="Modules"
           count={length(@modules)}
+          body_id="modules"
           open?={open?(@expanded, "modules")}
         />
         <div :if={open?(@expanded, "modules")} id="modules" class="group__body">
@@ -99,6 +102,7 @@ defmodule GraspWeb.Sidebar do
   attr :kind, :string, required: true
   attr :title, :string, required: true
   attr :count, :integer, required: true
+  attr :body_id, :string, required: true
   attr :open?, :boolean, required: true
 
   defp group_title(assigns) do
@@ -109,6 +113,7 @@ defmodule GraspWeb.Sidebar do
       phx-value-group={@kind}
       data-open={to_string(@open?)}
       aria-expanded={to_string(@open?)}
+      aria-controls={@body_id}
     >
       {@title}<span class="group__count">{@count}</span>
     </button>
@@ -141,6 +146,21 @@ defmodule GraspWeb.Sidebar do
     |> Enum.group_by(&module_of(&1["target"]))
     |> Enum.sort_by(fn {module, _entries} -> module end)
   end
+
+  # A row under a module heading has already been told its module, and the id is too long
+  # for the sidebar's width; the name and arity are what the reader is scanning for, and
+  # the id stays on the row as its title.
+  defp row_label(nil, entry), do: entry["label"]
+
+  defp row_label(module, entry) do
+    case entry["label"] do
+      <<^module::binary, ".", rest::binary>> -> rest
+      label -> label
+    end
+  end
+
+  defp row_title(nil, entry), do: entry["meta"]["router"]
+  defp row_title(_module, entry), do: entry["target"]
 
   defp module_of(target) when is_binary(target) do
     case Regex.run(@function_id, target) do

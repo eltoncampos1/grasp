@@ -40,7 +40,7 @@ kbd { font-family: var(--mono); background: var(--bg-sunken); border: 1px solid 
 .sidebar { border-right: 1px solid var(--border); background: var(--bg-sunken); overflow-y: auto; }
 .sidebar__project { margin: 0 var(--space-m) var(--space-s); color: var(--fg-muted); font-family: var(--mono); font-size: 13px; }
 .entries { display: flex; flex-direction: column; padding-bottom: var(--space-l); }
-.group__title { display: flex; align-items: center; gap: var(--space-xs); width: 100%; text-align: start; padding: var(--space-xs) var(--space-m); color: var(--fg-muted); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+.group__title { position: sticky; inset-block-start: 0; z-index: 1; background: var(--bg-sunken); display: flex; align-items: center; gap: var(--space-xs); width: 100%; text-align: start; padding: var(--space-xs) var(--space-m); color: var(--fg-muted); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
 .group__title::before { content: "\25b8"; color: var(--fg-subtle); }
 .group__title[data-open="true"]::before { content: "\25be"; }
 .group__title:hover { color: var(--fg); }

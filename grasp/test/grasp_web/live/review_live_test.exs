@@ -9,6 +9,7 @@ defmodule GraspWeb.ReviewLiveTest do
   @greet_all "SampleApp.Greeter.greet_all/1"
   @show "SampleAppWeb.GreetController.show/2"
   @mount "SampleAppWeb.HelloLive.mount/3"
+  @perform "SampleApp.Workers.Mailer.perform/1"
 
   setup %{conn: conn} do
     name = "t-#{System.unique_integer([:positive])}"
@@ -31,8 +32,8 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(
              view,
-             "#entries .group[data-kind='oban'] button.entry",
-             "SampleApp.Workers.Mailer.perform/1"
+             "#entries .group[data-kind='oban'] button.entry[phx-value-id='#{@perform}']",
+             "perform/1"
            )
 
     view |> element("#entries button.entry[phx-value-id='#{@show}']") |> render_click()
@@ -41,7 +42,7 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#card-1 .badge", "GET /greet/:name")
   end
 
-  test "a kind with no entry points has no group, and callbacks sit under their module", %{
+  test "every group but the routes starts collapsed, and callbacks sit under their module", %{
     view: view
   } do
     refute has_element?(view, "#entries .group[data-kind='genservers'] button.entry")
@@ -61,8 +62,8 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(
              view,
-             "#entries .group[data-kind='live'] button.entry[phx-value-id='#{@mount}']",
-             @mount
+             "#entries .group[data-kind='live'] button.entry[phx-value-id='#{@mount}'][title='#{@mount}']",
+             "mount/3"
            )
   end
 
