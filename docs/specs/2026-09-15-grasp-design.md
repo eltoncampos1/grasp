@@ -86,24 +86,56 @@ mix grasp.index [--base main] [--out .grasp/index.json]
    line and column.
 3. **Join.** Each tracer event finds its definition by caller MFA (falling back to
    file and line containment) and its call node by line and column, producing a call
-   with a target id, kind and range. Events with no matching node are macro-generated
-   (function components inside `~H`, `use`-injected code) and are kept as
-   `hidden_calls`, so the callers/callees graph stays exact even where nothing is
-   clickable.
+   with a target id, kind and range. An event that has a column but no matching node is
+   macro-generated (a function component inside `~H`, `use`-injected code) and is kept
+   as a `hidden_call`, so the callers/callees graph stays exact even where nothing is
+   clickable. Events reported with **no column at all** come from the same machinery but
+   are mostly the expansion's own plumbing — a template engine, a query builder,
+   `Logger`, `and` and `>` compiling to `:erlang` — which describes how the code was
+   built rather than what the function set out to do, and on a real project outnumbers
+   the interesting calls by more than ten to one. A column-less event therefore becomes a
+   hidden call only when its line falls inside the definition's span, its target is a
+   definition the index itself holds, and the target is not `__name__`-shaped reflection
+   (`__schema__/1`, `__struct__/1`). That keeps the calls a `~H` body makes into the
+   project's own contexts — the controller to template to context chain — while leaving
+   the macro's implementation out. `defdelegate` is the one column-less case placed as a
+   visible call, ranged over the delegate's own name.
 4. **Entry points.** After `Mix.Task.run("loadpaths")`, iterate the application's
-   modules (`:application.get_key(app, :modules)`) and read
-   `module_info(:attributes)[:behaviour]`:
-   - `Phoenix.Router`: `Phoenix.Router.routes/1` yields each route with verb, path and
-     pipelines. Controller routes target `{plug, plug_opts, 2}`. LiveView routes
-     (`plug == Phoenix.LiveView.Plug`, `metadata.phoenix_live_view`) target the view's
-     `mount/3`.
-   - `Oban.Worker`: `perform/1`, with queue and max attempts from `__opts__/0`.
-   - `Phoenix.LiveView` and `Phoenix.LiveComponent`: exported callbacks among
-     `mount/3`, `handle_params/3`, `handle_event/3`, `handle_info/2`, `handle_async/3`,
-     `update/2`, `render/1`.
+   modules (`:application.get_key(app, :modules)`). Routers are found by their exported
+   `__routes__/0` — `use Phoenix.Router` declares no behaviour — and everything else by
+   `module_info(:attributes)[:behaviour]`, which is what tells a LiveView from a
+   LiveComponent where their injected `__live__/0` does not. Phoenix, LiveView and Oban
+   are reached through `apply/3`, so this package never depends on them at compile time.
+   A callback becomes an entry point only when the index holds a definition for it:
+   `use GenServer` injects default `handle_call/3` and friends that `function_exported?/3`
+   reports as present, and a macro-injected `call/2` on an endpoint is the same noise.
+   When the application has no module list at all — an unloadable or applicationless
+   project — the step reports it on the shell and yields no entry points rather than
+   failing the index.
+   - `Phoenix.Router`: `Phoenix.Router.routes/1` yields each route. A controller route is
+     kind `route` targeting `{plug, plug_opts, 2}`; a LiveView route
+     (`plug == Phoenix.LiveView.Plug`, `metadata.phoenix_live_view`) is kind `live_route`
+     targeting the first of `mount/3`, `handle_params/3` and `render/1` the index holds,
+     since `mount/3` is optional and a route with no reachable callback would otherwise
+     vanish. Forwards — `verb == :*`, or a `plug_opts` that is not an action atom — are
+     skipped, and so is any route whose target the index does not hold, which is what
+     drops a forwarded dependency's own controllers. Meta carries `verb`, `path`,
+     `router` and `helper`, with nil values dropped.
+   - `Oban.Worker`: `perform/1`, with `queue` and `max_attempts` from `__opts__/0` when
+     they are set.
+   - `Phoenix.LiveView`: exported callbacks among `mount/3`, `handle_params/3`,
+     `handle_event/3`, `handle_info/2`, `handle_async/3`, `render/1`.
+     `Phoenix.LiveComponent` is a kind of its own, `live_component`: `update/2`,
+     `handle_event/3`, `render/1`.
    - `GenServer`: `init/1`, `handle_call/3`, `handle_cast/2`, `handle_info/2`,
      `handle_continue/2`, `terminate/2`. `Supervisor`: `init/1`. `Application`:
      `start/2`. `Plug`: `call/2`, skipped when the module is already a route target.
+
+   A route is labelled `VERB /path`; every callback entry is labelled with the function
+   id it targets, so the viewer can strip the module it already prints as a heading. The
+   list is sorted by kind — route, live route, Oban worker, live view, live component,
+   GenServer, supervisor, application, plug — then label, then target. The same pass
+   writes each module's behaviours into its `modules[]` entry.
 5. **Base ref (PR mode).** With `--base REF`, changed files come from
    `git diff --name-only REF` (working tree included) filtered to `.ex` and `.exs`. Each
    base version is read with `git show REF:path` and run through step 2 only.
@@ -142,19 +174,26 @@ mix grasp.index [--base main] [--out .grasp/index.json]
   "entry_points": [
     { "kind": "route", "label": "GET /players/:id",
       "target": "MyAppWeb.PlayerController.show/2",
-      "meta": { "verb": "GET", "path": "/players/:id", "pipelines": ["browser"] } },
-    { "kind": "oban_worker", "label": "MyApp.Workers.Forex",
-      "target": "MyApp.Workers.Forex.perform/1", "meta": { "queue": "forex" } },
-    { "kind": "live_view", "label": "MyAppWeb.PlayerLive",
-      "target": "MyAppWeb.PlayerLive.mount/3", "meta": {} },
-    { "kind": "genserver", "label": "MyApp.Cache", "target": "MyApp.Cache.init/1", "meta": {} }
+      "meta": { "verb": "GET", "path": "/players/:id", "router": "MyAppWeb.Router",
+                "helper": "player" } },
+    { "kind": "live_route", "label": "GET /players",
+      "target": "MyAppWeb.PlayerLive.mount/3",
+      "meta": { "verb": "GET", "path": "/players", "router": "MyAppWeb.Router" } },
+    { "kind": "oban_worker", "label": "MyApp.Workers.Forex.perform/1",
+      "target": "MyApp.Workers.Forex.perform/1",
+      "meta": { "queue": "forex", "max_attempts": 3 } },
+    { "kind": "live_view", "label": "MyAppWeb.PlayerLive.handle_event/3",
+      "target": "MyAppWeb.PlayerLive.handle_event/3", "meta": {} },
+    { "kind": "genserver", "label": "MyApp.Cache.init/1",
+      "target": "MyApp.Cache.init/1", "meta": {} }
   ]
 }
 ```
 
 `Grasp.Index` (shared reader): `load/1` into a plain struct, `fetch_function/2`,
 `callers/2` (reverse index built at load), `callees/2`, `search/3` (substring and
-subsequence scoring over `Mod.fun/arity`), `entry_points/1`, `changed_functions/1`,
+subsequence scoring over `Mod.fun/arity`), `entry_points/1`, `entry_points_for/2` (the
+entries a given function is the target of, for the card's badge), `changed_functions/1`,
 `modules/1`. The struct is immutable and large — roughly 10 MB of JSON for a 500-file
 project — so the viewer stores the loaded index in `:persistent_term`. That keeps the
 term off-heap, so every LiveView process reads it without copying; re-loading an index
@@ -173,8 +212,11 @@ tracer event whose caller has no definition record is dropped entirely.
   `case` or `quote` in a module body is invisible to the extractor for the same reason.
 - **Macro-generated functions.** A function a macro defines — `embed_templates`, the
   `def`s a `use` injects — has no source of its own to extract, so it has no definition
-  record. `.heex` templates therefore contribute nothing to the graph yet, and the
-  controller → template → component chain is severed at the template.
+  record, and `.heex` templates are therefore not cards of their own. Milestone 3
+  narrowed the consequence rather than removing it: the calls such generated code makes
+  into the project are now kept as hidden calls on the function they were generated
+  inside, so a controller does reach its context through its template, but the template
+  itself is still not a node in the graph.
 
 ## Part 2 — `grasp` viewer
 
@@ -251,18 +293,30 @@ a connector — and its strokes are non-scaling, so they stay visible at the sma
 
 ### Page
 
-`GraspWeb.ReviewLive` serves `/` (session `default`) and `/s/:name`. A left sidebar lists
-entry points grouped by kind, collapsible, and in PR mode a Changes list grouped by
-module with added/modified/removed badges. The canvas fills the rest. When a tour is
-active, a bar shows its title, step position, the step's note, and Back/Next (keys `[`
-and `]`). A tour step opens its function as a child of the `parent_step` card, defaulting
-to the previous step when that function calls it and otherwise to a new root, then
-focuses it with the step's highlight.
+`GraspWeb.ReviewLive` serves `/` (session `default`) and `/s/:name`. A left sidebar
+(`GraspWeb.Sidebar`) starts from the project's entry points, in collapsible groups
+ordered from the outside in — Routes (routes and live routes), Background jobs (Oban
+workers), Live views (views and components), Processes (GenServers), Supervision
+(supervisors and the application) and Plugs — with Modules last and collapsed. Only
+Routes is open by default, and a group with nothing in it is not rendered at all, which
+is what makes the same sidebar readable in a library and in a web app. Routes are listed
+flat under their own `VERB /path` label; every other group buckets its entries by module,
+prints the module once as a heading and lists each callback under it as `fun/arity`
+alone, with the full id on the row's `title`. Group titles stick to the top while the
+list scrolls, and a group's count sits in its title. In PR mode a Changes list grouped by
+module with added/modified/removed badges joins them. The canvas fills the rest.
+
+When a tour is active, a bar shows its title, step position, the step's note, and
+Back/Next (keys `[` and `]`). A tour step opens its function as a child of the
+`parent_step` card, defaulting to the previous step when that function calls it and
+otherwise to a new root, then focuses it with the step's highlight.
 
 ### Card
 
-- Header: `Mod.fun/arity`, `file:line` that opens the `--editor` URL scheme, change
-  badge, Source/Diff toggle, callers menu, collapse, close.
+- Header: entry-point badges (a route's `VERB /path` in full, since neither the title nor
+  the body carries it; the kind name for every other kind, whose label the title already
+  says), `Mod.fun/arity`, `file:line` that opens the `--editor` URL scheme, change badge,
+  Source/Diff toggle, callers menu, collapse, close.
 - Body: Lumis-highlighted source. Every resolved call is wrapped in a clickable span.
   The highlighted call gets a ring and is scrolled into view. Calls with an open child
   are marked. Calls to functions outside the index (deps, stdlib) render muted and open
@@ -313,7 +367,23 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   viewer's own VM and belongs to one of the applications Elixir ships. The target
   project's dependencies are not loaded there, so a call into one opens a stub with no
   link. Resolving a dependency's package and version would mean reading the target
-  project's lockfile, which the index does not yet carry.
+  project's lockfile, which the index does not yet carry. Unchanged by milestone 3.
+
+### Known gaps (milestone 3)
+
+- **Route pipelines are not in the index.** `Phoenix.Router.routes/1` returns the route's
+  verb, path, plug, plug options, helper and metadata, but not the pipelines it was
+  declared through, so the sidebar cannot group or filter routes by `:browser`, `:api` or
+  an auth pipeline. Recovering them means reading the router's own source or a private
+  reflection function, neither of which is worth the coupling yet.
+- **Template calls into dependencies are not shown.** The column-less rule keeps only
+  targets the index holds, so a template's call into the project's contexts appears as a
+  hidden call while its call into a dependency's helper — a component library, the HTML
+  helpers — does not. The alternative is the ten-to-one flood of expansion internals that
+  made the whole class unusable.
+- **`defimpl`, `defprotocol` and definitions nested under a control structure** are still
+  invisible to the extractor, so a callback implemented there is neither a card nor an
+  entry point. Unchanged from milestone 1.
 
 ## Part 3 — MCP
 
@@ -365,13 +435,17 @@ claude mcp add --transport http grasp http://127.0.0.1:4040/mcp
 ## Milestones
 
 1. Repo scaffold and `grasp_index` steps 1 to 3 and 6: definitions, calls, JSON. Run it
-   on a real Phoenix project.
-2. Viewer: load the index, card tree with click-to-open, highlighting, palette.
+   on a real Phoenix project. Done.
+2. Viewer: load the index, card tree with click-to-open, highlighting, palette. Done.
    - Milestone 2.1 went back over the viewer: Lumis highlighting with the `github_light`
      theme, the GitHub Light palette and denser 60rem cards, per-card layout offsets in
      the session, and a canvas that pans, zooms, drags cards and draws its own
      connectors. Routers and entry points are unchanged — they remain milestone 3.
-3. Entry points: index step 4 and the sidebar.
+3. Entry points: index step 4 and the sidebar. Done.
+   - The sidebar now starts from entry points rather than from the module list, cards
+     carry an entry badge, and the join keeps a template's calls into the project as
+     hidden calls, so a controller reaches its context through its template. Route
+     pipelines are the one thing step 4 set out to carry and could not.
 4. PR mode: base ref extraction, change badges, Changes sidebar, diff view.
 5. Sessions: GenServer, persistence, annotations UI.
 6. MCP tools, resources, tours and the tour bar.
