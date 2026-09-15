@@ -32,10 +32,9 @@ defmodule Grasp.MixProject do
       {:phoenix_live_view, "~> 1.2"},
       {:bandit, "~> 1.12"},
       {:jason, "~> 1.4"},
-      {:makeup, "~> 1.2"},
-      {:makeup_elixir, "~> 1.0"},
+      {:lumis, "~> 0.8"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
-      {:lazy_html, ">= 0.1.0", only: :test},
+      {:lazy_html, ">= 0.1.0"},
       {:grasp_index, path: "../grasp_index"}
     ]
   end

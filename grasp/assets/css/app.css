@@ -11,6 +11,7 @@
   --focus: #e0af68;
   --backdrop: color-mix(in oklch, var(--bg-sunken) 70%, transparent);
   --danger: #f7768e;
+  --code-bg: #ffffff;
   --radius: 6px;
   --space-xs: 0.25rem;
   --space-s: 0.5rem;
@@ -67,7 +68,7 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .caller:hover { color: var(--accent); }
 .card__collapse, .card__close { padding: 0 var(--space-xs); color: var(--fg-muted); }
 .card__close:hover { color: var(--danger); }
-.card__body { margin: 0; padding: var(--space-s) 0; overflow-x: auto; line-height: 1.45; background: transparent !important; }
+.card .card__body { margin: 0; padding: var(--space-s) 0; overflow-x: auto; line-height: 1.45; background: var(--code-bg); }
 .line { display: block; padding-inline: var(--space-m); white-space: pre; }
 .ln { display: inline-block; width: 3ch; margin-inline-end: var(--space-m); text-align: end; color: var(--fg-muted); user-select: none; }
 .call { cursor: pointer; border-bottom: 1px dashed var(--accent); }

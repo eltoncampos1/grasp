@@ -49,7 +49,7 @@ defmodule Grasp.HighlightTest do
     assert LazyHTML.attribute(map, "phx-click") == ["open_call"]
     assert LazyHTML.attribute(map, "phx-value-card") == ["7"]
     assert LazyHTML.attribute(map, "data-open") == ["true"]
-    assert LazyHTML.query(map, "span.nc") |> LazyHTML.text() == "Enum"
+    assert LazyHTML.query(map, "span.l-module") |> LazyHTML.text() == "Enum"
 
     [g] = LazyHTML.query(html, "span.call[data-target='Sample.g/1']") |> Enum.to_list()
     assert LazyHTML.text(g) == "g"
@@ -64,6 +64,34 @@ defmodule Grasp.HighlightTest do
 
     assert LazyHTML.query(html, "span.call[data-target='Sample.g/1']")
            |> LazyHTML.attribute("data-external") == ["false"]
+  end
+
+  test "nested Lumis spans keep the innermost class and exact columns" do
+    record = %{
+      "id" => "S.f/1",
+      "span" => %{"start_line" => 1, "end_line" => 1},
+      "source" => ~S|def f(x), do: "a #{inspect(x)} b"|,
+      "calls" => [
+        %{
+          "target" => "Kernel.inspect/1",
+          "kind" => "imported",
+          "range" => %{"start" => [1, 20], "end" => [1, 27]}
+        }
+      ]
+    }
+
+    html =
+      record
+      |> Highlight.render(card_id: 1, open_targets: [], external?: fn _ -> false end)
+      |> Phoenix.HTML.safe_to_string()
+      |> LazyHTML.from_fragment()
+
+    [call] = LazyHTML.query(html, "span.call[data-target='Kernel.inspect/1']") |> Enum.to_list()
+    assert LazyHTML.text(call) == "inspect"
+    assert LazyHTML.query(call, "span.l-function-call") |> LazyHTML.text() == "inspect"
+
+    assert LazyHTML.query(html, "span.line[data-line='1']") |> LazyHTML.text() ==
+             ~S|1def f(x), do: "a #{inspect(x)} b"|
   end
 
   test "a range spanning two lines produces one call span per line" do

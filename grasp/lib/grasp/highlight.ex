@@ -3,17 +3,17 @@ defmodule Grasp.Highlight do
   Renders a function record as syntax-highlighted HTML with a clickable span over every
   resolved call.
 
-  Makeup's Elixir lexer produces tokens without positions, so the tokens are walked while
-  tracking line and column against the record's source. A call range (from the index,
-  `{line, column}` pairs with an exclusive end column, in file coordinates) may start or
-  end inside a token and may span lines; token text is therefore split at range
-  boundaries and at newlines, and consecutive pieces inside the same range on the same
-  line are wrapped together. Output is one `span.line` per source line so the viewer can
-  address lines, with Makeup's short CSS classes on tokens.
-  """
+  Lumis (tree-sitter) emits one `div.l-line` per source line whose children are text runs
+  and `span.l-*` runs that may nest — an interpolation is a `span.l-function-call` inside
+  a `span.l-string`. Each text run becomes a piece carrying the class of its innermost
+  span, positioned by counting characters along the line.
 
-  alias Makeup.Lexers.ElixirLexer
-  alias Makeup.Token.Utils
+  A call range (from the index, `{line, column}` pairs with an exclusive end column, in
+  file coordinates) may start or end inside a run and may span lines; run text is
+  therefore split at range boundaries, and consecutive pieces inside the same range on the
+  same line are wrapped together. Output is one `span.line` per source line so the viewer
+  can address lines, with Lumis' classes on highlighted runs and bare text elsewhere.
+  """
 
   @type opts :: [
           card_id: pos_integer(),
@@ -35,7 +35,7 @@ defmodule Grasp.Highlight do
       end
 
     source = record["source"]
-    by_line = source |> ElixirLexer.lex() |> pieces(first_line) |> Enum.group_by(& &1.line)
+    by_line = source |> pieces(first_line) |> Enum.group_by(& &1.line)
 
     # Lines are driven by the source, not by the tokens: a blank line carries no piece, and
     # numbering it from the token groups alone would drop it and skip a number in the gutter.
@@ -55,34 +55,40 @@ defmodule Grasp.Highlight do
     {:safe, html}
   end
 
-  # One piece per token per line: %{line, col, text, css}; col is the 1-based start column.
-  defp pieces(tokens, first_line) do
-    {pieces, _pos} =
-      Enum.reduce(tokens, {[], {first_line, 1}}, fn {type, _meta, value}, {acc, {line, col}} ->
-        css = Utils.css_class_for_token_type(type)
-        text = IO.chardata_to_string(value)
-        segments = String.split(text, "\n")
-        last = length(segments) - 1
+  # Each Lumis text run becomes a piece %{line, col, text, css}; col is the 1-based start
+  # column, css the class of the run's innermost span (nil for unhighlighted text).
+  defp pieces(source, first_line) do
+    lines =
+      source
+      |> Lumis.highlight!(formatter: {:html_linked, language: "elixir"})
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("div.l-line")
+      |> Enum.map(&LazyHTML.to_tree/1)
 
-        {acc, pos} =
-          segments
-          |> Enum.with_index()
-          |> Enum.reduce({acc, {line, col}}, fn {segment, i}, {acc, {line, col}} ->
-            acc =
-              if segment == "",
-                do: acc,
-                else: [%{line: line, col: col, text: segment, css: css} | acc]
-
-            if i < last,
-              do: {acc, {line + 1, 1}},
-              else: {acc, {line, col + String.length(segment)}}
-          end)
-
-        {acc, pos}
-      end)
-
-    Enum.reverse(pieces)
+    lines
+    |> Enum.with_index(first_line)
+    |> Enum.flat_map(fn {[{"div", _attrs, children}], line} ->
+      {pieces, _col} = Enum.reduce(children, {[], 1}, &runs(&1, nil, line, &2))
+      Enum.reverse(pieces)
+    end)
   end
+
+  defp runs(text, css, line, {acc, col}) when is_binary(text) do
+    text = String.replace_suffix(text, "\n", "")
+
+    if text == "" do
+      {acc, col}
+    else
+      {[%{line: line, col: col, text: text, css: css} | acc], col + String.length(text)}
+    end
+  end
+
+  defp runs({"span", attrs, children}, _outer_css, line, acc) do
+    css = attrs |> List.keyfind("class", 0, {"class", nil}) |> elem(1)
+    Enum.reduce(children, acc, &runs(&1, css, line, &2))
+  end
+
+  defp runs(_other, _css, _line, acc), do: acc
 
   defp split_at_ranges(piece, ranges) do
     piece_end = piece.col + String.length(piece.text)
