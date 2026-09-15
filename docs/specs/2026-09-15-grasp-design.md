@@ -267,6 +267,15 @@ badge and file.
 esbuild bundles the two hooks (palette, scroll-into-view). Styling is one hand-written
 CSS file with custom properties and a dark theme. No Tailwind.
 
+### Known gaps (milestone 2)
+
+- **hexdocs links only reach the standard library.** A call target outside the index
+  opens a stub card, and the stub links to hexdocs only when the module is loaded in the
+  viewer's own VM and belongs to one of the applications Elixir ships. The target
+  project's dependencies are not loaded there, so a call into one opens a stub with no
+  link. Resolving a dependency's package and version would mean reading the target
+  project's lockfile, which the index does not yet carry.
+
 ## Part 3 — MCP
 
 Served by `anubis_mcp` at `/mcp` over Streamable HTTP. A session is created on first
