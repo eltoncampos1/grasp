@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- `grasp_index` requires Elixir `~> 1.18`; deps are exactly `sourceror`, `jason` and `ex_doc` (dev only). Never add Phoenix or the viewer's deps here.
+- `grasp_index` requires Elixir `~> 1.19` (`test_ignore_filters`); deps are exactly `sourceror`, `jason` and `ex_doc` (dev only). Never add Phoenix or the viewer's deps here.
 - Function ids are `"<module>.<name>/<arity>"` where module is `inspect(module)` (`MyApp.Wallets`, `:erlang`). A definition's canonical id uses its maximum arity; every arity a default argument introduces is listed in `arities`.
 - Ranges are `{line, column}` pairs, 1-based, end column exclusive, in file coordinates (source text keeps its indentation). In JSON they serialise as `[line, column]`.
 - Every module has a `@moduledoc`; every public function has `@doc` and `@spec`. Comments only where the why is non-obvious. Never nest two modules in one file. Predicates end in `?`.

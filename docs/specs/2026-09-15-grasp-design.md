@@ -37,7 +37,7 @@ highlighted call) so the human reviews what the agent wants to explain.
   workers, LiveView and LiveComponent callbacks, GenServer, Supervisor, Application and
   Plug callbacks.
 - Toolchain pinned to Elixir 1.20.4 / OTP 29 (`.mise.toml`); `grasp_index` requires
-  Elixir `~> 1.18`.
+  Elixir `~> 1.19` (for `test_ignore_filters`).
 
 ## Repository layout
 
@@ -150,10 +150,29 @@ mix grasp.index [--base main] [--out .grasp/index.json]
 }
 ```
 
-`Grasp.Index` (shared reader): `load/1` into an ETS-backed struct, `fetch_function/2`,
+`Grasp.Index` (shared reader): `load/1` into a plain struct, `fetch_function/2`,
 `callers/2` (reverse index built at load), `callees/2`, `search/3` (substring and
 subsequence scoring over `Mod.fun/arity`), `entry_points/1`, `changed_functions/1`,
-`modules/1`.
+`modules/1`. The struct is immutable and large — roughly 10 MB of JSON for a 500-file
+project — so the viewer stores the loaded index in `:persistent_term`. That keeps the
+term off-heap, so every LiveView process reads it without copying; re-loading an index
+replaces the term.
+
+### Known gaps (milestone 1)
+
+Edges the indexer does not yet produce. All are planned follow-ups, not design
+decisions — the join is only as complete as the definitions the extractor finds, and a
+tracer event whose caller has no definition record is dropped entirely.
+
+- **`defimpl` and `defprotocol` bodies.** The extractor walks `defmodule` only, so the
+  functions inside a protocol or an implementation get no definition record and their
+  tracer events are dropped.
+- **Definitions nested under a control structure.** A `def` written inside `if`, `for`,
+  `case` or `quote` in a module body is invisible to the extractor for the same reason.
+- **Macro-generated functions.** A function a macro defines — `embed_templates`, the
+  `def`s a `use` injects — has no source of its own to extract, so it has no definition
+  record. `.heex` templates therefore contribute nothing to the graph yet, and the
+  controller → template → component chain is severed at the template.
 
 ## Part 2 — `grasp` viewer
 
