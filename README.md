@@ -49,11 +49,14 @@ inside a card to open the callee next to it.
 
 ## Gestures
 
-- Drag a card by its header to move it, or hold Ctrl and drag from anywhere on it.
+- Drag a card by its header to move it, or hold Ctrl and drag from anywhere on it. Ctrl
+  and press over a card is the drag gesture, so the context menu is suppressed there;
+  a plain right-click still opens it.
 - Drag the background to pan; hold Space to pan from anywhere, cards included.
 - ⌘ or Ctrl with the wheel zooms about the cursor; the wheel alone pans, except over
   something that can scroll itself.
-- ⌘0 resets the zoom, as does clicking the zoom percentage in the toolbar.
+- ⌘0 resets the canvas zoom, as does clicking the zoom percentage in the toolbar. Some
+  browsers also take ⌘0 for their own page zoom, and reset both.
 - ⌘M toggles the sidebar. On macOS the browser may take ⌘M for "minimise window", in
   which case use ⌘\\.
 - Arrow keys walk the tree, `x` closes the focused card, `c` collapses it, ⌘K opens the

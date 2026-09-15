@@ -55,6 +55,7 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .toolbar__zoom { min-width: 3.5em; text-align: center; color: var(--fg-muted); cursor: pointer; font-variant-numeric: tabular-nums; }
 /* Space is held down: the whole canvas pans, so everything on it offers the pan cursor. */
 body.grasp-space .canvas, body.grasp-space .card { cursor: grab; }
+body.grasp-space .canvas:active, body.grasp-space .card:active { cursor: grabbing; }
 .stage { position: absolute; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; will-change: transform; }
 .connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 0; }
 .connectors path { fill: none; stroke: var(--border); stroke-width: 1.5; vector-effect: non-scaling-stroke; }

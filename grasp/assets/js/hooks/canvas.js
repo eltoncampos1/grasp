@@ -47,6 +47,7 @@ const Canvas = {
     this.onKeyDown = (e) => this.spaceDown(e)
     this.onKeyUp = (e) => this.spaceUp(e)
     this.onZoomReset = () => this.resetZoom()
+    this.onSpaceRelease = () => this.releaseSpace()
     this.el.addEventListener("wheel", this.onWheel, {passive: false})
     this.el.addEventListener("pointerdown", this.onPointerDown)
     window.addEventListener("pointermove", this.onPointerMove)
@@ -57,6 +58,10 @@ const Canvas = {
     window.addEventListener("keydown", this.onKeyDown)
     window.addEventListener("keyup", this.onKeyUp)
     window.addEventListener("grasp:zoom-reset", this.onZoomReset)
+    // A hold that ends while the page is in the background never delivers its keyup, which
+    // would leave the canvas panning on the next press.
+    window.addEventListener("blur", this.onSpaceRelease)
+    document.addEventListener("visibilitychange", this.onSpaceRelease)
 
     this.resizeObserver = new ResizeObserver(() => this.drawConnectors())
     this.resizeObserver.observe(this.stage)
@@ -83,6 +88,8 @@ const Canvas = {
     window.removeEventListener("keydown", this.onKeyDown)
     window.removeEventListener("keyup", this.onKeyUp)
     window.removeEventListener("grasp:zoom-reset", this.onZoomReset)
+    window.removeEventListener("blur", this.onSpaceRelease)
+    document.removeEventListener("visibilitychange", this.onSpaceRelease)
     document.body.classList.remove("grasp-space")
     this.resizeObserver.disconnect()
     this.style.remove()
@@ -115,6 +122,12 @@ const Canvas = {
 
   spaceUp(e) {
     if (e.key !== " ") return
+    this.releaseSpace()
+  },
+
+  // Also the teardown for a hold the page never sees the end of, so it is unconditional: a
+  // page coming back to the foreground has no key down, and a held Space re-arms on repeat.
+  releaseSpace() {
     this.spaceHeld = false
     document.body.classList.remove("grasp-space")
   },
@@ -138,9 +151,11 @@ const Canvas = {
     }
     const zoom = e.target.closest("#zoom-in, #zoom-out, #zoom-fit, #zoom-level")
     if (!zoom) return
-    // The toolbar zoom buttons are client-only, so nothing should reach the server.
+    // The toolbar zoom buttons are client-only, so nothing should reach the server. They also
+    // give focus back: left holding it, they would swallow the Space that pans the canvas.
     e.stopPropagation()
     e.preventDefault()
+    zoom.blur()
     if (zoom.id === "zoom-in") this.zoomBy(1.2)
     else if (zoom.id === "zoom-out") this.zoomBy(1 / 1.2)
     else if (zoom.id === "zoom-level") this.resetZoom()
@@ -358,7 +373,9 @@ const Canvas = {
     const drag = this.drag
     this.drag = null
     if (drag?.moved) this.suppressClick = true
-    if (drag?.ctrl) this.ctrlDragEndedAt = Date.now()
+    // A ctrl-press that never moved was a right-click, not a drag; blocking the menu it is
+    // about to open would take the context menu away from the card entirely.
+    if (drag?.ctrl && drag.moved) this.ctrlDragEndedAt = Date.now()
     return drag
   },
 
