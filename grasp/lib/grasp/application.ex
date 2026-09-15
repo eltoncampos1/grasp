@@ -6,8 +6,15 @@ defmodule Grasp.Application do
 
   use Application
 
+  # Highlighting loads a grammar on demand, so without this the first card of a session pays
+  # for the download. Elixir is what cards are written in; the rest are what Lumis injects
+  # into an Elixir document — a ~H sigil, an embedded stylesheet or script.
+  @languages ["elixir", "heex", "html", "css", "javascript"]
+
   @impl true
   def start(_type, _args) do
+    Lumis.Languages.async_load(@languages)
+
     children = [
       {Phoenix.PubSub, name: Grasp.PubSub},
       {Grasp.IndexStore, []},

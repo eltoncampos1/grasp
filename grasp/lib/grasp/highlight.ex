@@ -24,6 +24,8 @@ defmodule Grasp.Highlight do
   computed for. Without the table (a unit test with no store running) every render parses.
   """
 
+  require Logger
+
   @cache :grasp_highlight_cache
 
   @type opts :: [
@@ -93,23 +95,23 @@ defmodule Grasp.Highlight do
   # column, css the class of the run's innermost span (nil for unhighlighted text).
   defp pieces(source, first_line, id) do
     if :ets.whereis(@cache) == :undefined do
-      parse(source, first_line)
+      parse(source, first_line, id)
     else
       case :ets.lookup(@cache, id) do
         [{^id, pieces}] ->
           pieces
 
         [] ->
-          pieces = parse(source, first_line)
+          pieces = parse(source, first_line, id)
           :ets.insert(@cache, {id, pieces})
           pieces
       end
     end
   end
 
-  defp parse(source, first_line) do
+  defp parse(source, first_line, id) do
     source
-    |> line_trees()
+    |> line_trees(id)
     |> Enum.with_index(first_line)
     |> Enum.flat_map(fn {children, line} ->
       {pieces, _col} = Enum.reduce(children, {[], 1}, &runs(&1, nil, line, &2))
@@ -120,17 +122,30 @@ defmodule Grasp.Highlight do
   # The children of each `div.l-line`, taken from one whole-document parse rather than one
   # per line. A source Lumis will not highlight still has to render — unparseable bytes
   # raise inside the NIF rather than returning an error — so anything unexpected falls back
-  # to one unhighlighted run per line.
-  defp line_trees(source) do
-    with {:ok, html} <- Lumis.highlight(source, formatter: {:html_linked, language: "elixir"}),
-         [{"pre", _, [{"code", _, lines}]}] <-
-           html |> LazyHTML.from_fragment() |> LazyHTML.to_tree() do
-      for {"div", _attrs, children} <- lines, do: children
-    else
-      _ -> bare_lines(source)
+  # to one unhighlighted run per line, and the card is served as plain text rather than not
+  # at all. The parse is memoised per function id, so the warning is one per function.
+  defp line_trees(source, id) do
+    result =
+      try do
+        with {:ok, html} <- Lumis.highlight(source, formatter: {:html_linked, language: "elixir"}),
+             [{"pre", _, [{"code", _, lines}]}] <-
+               html |> LazyHTML.from_fragment() |> LazyHTML.to_tree() do
+          {:ok, for({"div", _attrs, children} <- lines, do: children)}
+        else
+          other -> {:error, other}
+        end
+      rescue
+        e -> {:error, e}
+      end
+
+    case result do
+      {:ok, lines} ->
+        lines
+
+      {:error, reason} ->
+        Logger.warning("grasp: highlighting unavailable for #{id}: #{inspect(reason)}")
+        bare_lines(source)
     end
-  rescue
-    ArgumentError -> bare_lines(source)
   end
 
   defp bare_lines(source), do: source |> String.split("\n") |> Enum.map(&[&1])

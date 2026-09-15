@@ -1,6 +1,8 @@
 defmodule Grasp.HighlightTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   alias Grasp.Highlight
 
   @record %{
@@ -147,7 +149,7 @@ defmodule Grasp.HighlightTest do
              "String.upcase"
   end
 
-  test "a source Lumis cannot parse renders as unhighlighted text" do
+  test "a source Lumis cannot parse renders as unhighlighted text and says so once" do
     record = %{
       "id" => "S.unparseable/0",
       "span" => %{"start_line" => 1, "end_line" => 1},
@@ -155,10 +157,11 @@ defmodule Grasp.HighlightTest do
       "calls" => []
     }
 
-    html = render(record, [])
+    {html, log} = with_log(fn -> render(record, []) end)
 
     assert LazyHTML.query(html, "span.line") |> Enum.count() == 1
     assert LazyHTML.query(html, "span[class^='l-']") |> Enum.count() == 0
+    assert log =~ "highlighting unavailable for S.unparseable/0"
   end
 
   test "escapes a target carrying markup in both attributes that hold it" do
