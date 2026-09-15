@@ -76,6 +76,18 @@ defmodule Grasp.IndexStoreTest do
     assert IndexStore.get().project["app"] == "touched"
   end
 
+  test "load/1 clears the highlight parse cache" do
+    :ok = Grasp.Highlight.ensure_cache()
+
+    {:ok, index} = Grasp.Index.load(@fixture)
+    {:ok, record} = Grasp.Index.fetch_function(index, "SampleApp.Formatter.shout/1")
+    Grasp.Highlight.render(record, card_id: 1, open_targets: [], external?: fn _ -> false end)
+    assert :ets.info(:grasp_highlight_cache, :size) > 0
+
+    assert :ok = IndexStore.load(@fixture)
+    assert :ets.info(:grasp_highlight_cache, :size) == 0
+  end
+
   defp tmp_copy(transform) do
     path = Path.join(System.tmp_dir!(), "grasp-store-#{System.unique_integer([:positive])}.json")
     doc = @fixture |> File.read!() |> Jason.decode!() |> transform.()

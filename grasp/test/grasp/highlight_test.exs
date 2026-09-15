@@ -96,7 +96,7 @@ defmodule Grasp.HighlightTest do
 
   test "a range spanning two lines produces one call span per line" do
     record = %{
-      "id" => "S.f/0",
+      "id" => "S.spanning/0",
       "span" => %{"start_line" => 1, "end_line" => 3},
       "source" => "def f do\n  Enum\n  .map([], & &1)\nend",
       "calls" => [
@@ -120,7 +120,7 @@ defmodule Grasp.HighlightTest do
 
   test "a blank line inside the body keeps its number in the gutter" do
     record = %{
-      "id" => "S.f/0",
+      "id" => "S.blank/0",
       "span" => %{"start_line" => 10, "end_line" => 14},
       "source" => "def f do\n  a = 1\n\n  a\nend",
       "calls" => []
@@ -147,11 +147,25 @@ defmodule Grasp.HighlightTest do
              "String.upcase"
   end
 
+  test "a source Lumis cannot parse renders as unhighlighted text" do
+    record = %{
+      "id" => "S.unparseable/0",
+      "span" => %{"start_line" => 1, "end_line" => 1},
+      "source" => <<"def f, do: ", 0xFF, "()">>,
+      "calls" => []
+    }
+
+    html = render(record, [])
+
+    assert LazyHTML.query(html, "span.line") |> Enum.count() == 1
+    assert LazyHTML.query(html, "span[class^='l-']") |> Enum.count() == 0
+  end
+
   test "escapes a target carrying markup in both attributes that hold it" do
     target = ~s(A."<b>"/1)
 
     record = %{
-      "id" => "S.f/0",
+      "id" => "S.escaping/0",
       "span" => %{"start_line" => 1, "end_line" => 1},
       "source" => "def f, do: g()",
       "calls" => [
