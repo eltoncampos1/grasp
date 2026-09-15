@@ -116,6 +116,18 @@ defmodule Grasp.Index.BuilderTest do
              "SampleAppWeb.HelloLive.render/1"
            ]
 
+    component_targets = by_kind["live_component"] |> Enum.map(& &1["target"]) |> Enum.sort()
+
+    assert component_targets == [
+             "SampleAppWeb.GreetingComponent.handle_event/3",
+             "SampleAppWeb.GreetingComponent.render/1"
+           ]
+
+    refute Enum.any?(
+             by_kind["live_view"],
+             &String.starts_with?(&1["target"], "SampleAppWeb.GreetingComponent.")
+           )
+
     genserver_targets = by_kind["genserver"] |> Enum.map(& &1["target"]) |> Enum.sort()
     assert genserver_targets == ["SampleApp.Counter.handle_call/3", "SampleApp.Counter.init/1"]
 
@@ -134,6 +146,7 @@ defmodule Grasp.Index.BuilderTest do
   test "records module behaviours", %{index: index} do
     mods = Map.new(Grasp.Index.modules(index), &{&1["name"], &1["behaviours"]})
 
+    assert "Phoenix.LiveComponent" in mods["SampleAppWeb.GreetingComponent"]
     assert "Oban.Worker" in mods["SampleApp.Workers.Mailer"]
     assert "GenServer" in mods["SampleApp.Counter"]
     assert mods["SampleApp.Formatter"] == []
