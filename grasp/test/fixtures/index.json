@@ -13,6 +13,17 @@
     },
     {
       "kind": "route",
+      "label": "POST /api/echo",
+      "meta": {
+        "helper": "greet",
+        "path": "/api/echo",
+        "router": "SampleAppWeb.ApiRouter",
+        "verb": "POST"
+      },
+      "target": "SampleAppWeb.GreetController.create/2"
+    },
+    {
+      "kind": "route",
       "label": "POST /greet",
       "meta": {
         "helper": "greet",
@@ -83,6 +94,12 @@
       "label": "SampleApp.Counter.init/1",
       "meta": {},
       "target": "SampleApp.Counter.init/1"
+    },
+    {
+      "kind": "supervisor",
+      "label": "SampleApp.Supervisor.init/1",
+      "meta": {},
+      "target": "SampleApp.Supervisor.init/1"
     },
     {
       "kind": "application",
@@ -423,6 +440,78 @@
           "kind": "remote",
           "range": {
             "end": [
+              7,
+              50
+            ],
+            "start": [
+              7,
+              29
+            ]
+          },
+          "target": "Supervisor.start_link/3"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app/supervisor.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Supervisor.start_link/1",
+      "kind": "def",
+      "module": "SampleApp.Supervisor",
+      "name": "start_link",
+      "removed": false,
+      "source": "  @doc \"Starts the supervisor.\"\n  @spec start_link(keyword()) :: Supervisor.on_start()\n  def start_link(opts), do: Supervisor.start_link(__MODULE__, :ok, opts)",
+      "span": {
+        "end_line": 7,
+        "start_line": 5
+      }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              10,
+              37
+            ],
+            "start": [
+              10,
+              22
+            ]
+          },
+          "target": "Supervisor.init/2"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app/supervisor.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Supervisor.init/1",
+      "kind": "def",
+      "module": "SampleApp.Supervisor",
+      "name": "init",
+      "removed": false,
+      "source": "  @impl true\n  def init(:ok), do: Supervisor.init([], strategy: :one_for_one)",
+      "span": {
+        "end_line": 10,
+        "start_line": 9
+      }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
               6,
               85
             ],
@@ -608,7 +697,13 @@
       ],
       "change": "unchanged",
       "file": "lib/sample_app_web/greeting_component.ex",
-      "hidden_calls": [],
+      "hidden_calls": [
+        {
+          "kind": "remote",
+          "line": 9,
+          "target": "SampleApp.Greeter.greet/1"
+        }
+      ],
       "id": "SampleAppWeb.GreetingComponent.render/1",
       "kind": "def",
       "module": "SampleAppWeb.GreetingComponent",
@@ -716,7 +811,13 @@
       ],
       "change": "unchanged",
       "file": "lib/sample_app_web/hello_live.ex",
-      "hidden_calls": [],
+      "hidden_calls": [
+        {
+          "kind": "remote",
+          "line": 12,
+          "target": "SampleApp.Greeter.greet/1"
+        }
+      ],
       "id": "SampleAppWeb.HelloLive.render/1",
       "kind": "def",
       "module": "SampleAppWeb.HelloLive",
@@ -825,11 +926,28 @@
     },
     {
       "behaviours": [
+        "Supervisor"
+      ],
+      "file": "lib/sample_app/supervisor.ex",
+      "line": 1,
+      "name": "SampleApp.Supervisor"
+    },
+    {
+      "behaviours": [
         "Oban.Worker"
       ],
       "file": "lib/sample_app/workers/mailer.ex",
       "line": 1,
       "name": "SampleApp.Workers.Mailer"
+    },
+    {
+      "behaviours": [
+        "Phoenix.VerifiedRoutes",
+        "Plug"
+      ],
+      "file": "lib/sample_app_web/api_router.ex",
+      "line": 1,
+      "name": "SampleAppWeb.ApiRouter"
     },
     {
       "behaviours": [

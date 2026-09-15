@@ -12,5 +12,6 @@ defmodule SampleAppWeb.Router do
     get("/greet/:name", GreetController, :show)
     post("/greet", GreetController, :create)
     live("/hello", HelloLive)
+    forward("/api", ApiRouter)
   end
 end

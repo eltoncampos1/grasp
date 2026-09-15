@@ -10,7 +10,7 @@ defmodule Grasp.Index.BuilderTest do
     out = Path.join(System.tmp_dir!(), "grasp-sample-#{System.unique_integer([:positive])}.json")
     env = [{"MIX_ENV", "dev"}]
 
-    unless File.dir?(Path.join(@fixture, "deps/sourceror")) do
+    unless File.dir?(Path.join(@fixture, "deps/phoenix")) do
       {_, 0} = System.cmd("mix", ["deps.get"], cd: @fixture, env: env, stderr_to_stdout: true)
     end
 
@@ -111,7 +111,15 @@ defmodule Grasp.Index.BuilderTest do
              }
            } = find(entries, "SampleAppWeb.GreetController.show/2")
 
-    assert find(entries, "SampleAppWeb.GreetController.create/2")["label"] == "POST /greet"
+    assert labelled(entries, "POST /greet")["target"] == "SampleAppWeb.GreetController.create/2"
+
+    assert %{
+             "kind" => "route",
+             "target" => "SampleAppWeb.GreetController.create/2",
+             "meta" => %{"path" => "/api/echo", "router" => "SampleAppWeb.ApiRouter"}
+           } = labelled(entries, "POST /api/echo")
+
+    refute Enum.any?(entries, &(&1["meta"]["path"] == "/echo"))
 
     assert %{
              "kind" => "live_route",
@@ -146,6 +154,7 @@ defmodule Grasp.Index.BuilderTest do
     genserver_targets = by_kind["genserver"] |> Enum.map(& &1["target"]) |> Enum.sort()
     assert genserver_targets == ["SampleApp.Counter.handle_call/3", "SampleApp.Counter.init/1"]
 
+    assert [%{"target" => "SampleApp.Supervisor.init/1"}] = by_kind["supervisor"]
     assert [%{"target" => "SampleApp.Application.start/2"}] = by_kind["application"]
     assert [%{"target" => "SampleAppWeb.RequestId.call/2"}] = by_kind["plug"]
 
@@ -170,6 +179,8 @@ defmodule Grasp.Index.BuilderTest do
   defp call(record, target), do: Enum.find(record["calls"], &(&1["target"] == target))
 
   defp find(entries, target), do: Enum.find(entries, &(&1["target"] == target))
+
+  defp labelled(entries, label), do: Enum.find(entries, &(&1["label"] == label))
 
   defp kind_rank(kind) do
     Enum.find_index(

@@ -287,6 +287,12 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#card-1 .card__also", @shout)
   end
 
+  test "a call made inside a template is listed under the view's card", %{view: view, name: name} do
+    Session.open_root(name, "SampleAppWeb.HelloLive.render/1")
+
+    assert has_element?(view, "#card-1 .card__also button.also", "SampleApp.Greeter.greet/1")
+  end
+
   test "changes made through the session API render live", %{view: view, name: name} do
     Session.open_root(name, @greet)
     assert has_element?(view, "#card-1")
