@@ -1,6 +1,217 @@
 {
-  "entry_points": [],
+  "entry_points": [
+    {
+      "kind": "route",
+      "label": "GET /greet/:name",
+      "meta": {
+        "helper": "greet",
+        "path": "/greet/:name",
+        "router": "SampleAppWeb.Router",
+        "verb": "GET"
+      },
+      "target": "SampleAppWeb.GreetController.show/2"
+    },
+    {
+      "kind": "route",
+      "label": "POST /greet",
+      "meta": {
+        "helper": "greet",
+        "path": "/greet",
+        "router": "SampleAppWeb.Router",
+        "verb": "POST"
+      },
+      "target": "SampleAppWeb.GreetController.create/2"
+    },
+    {
+      "kind": "live_route",
+      "label": "GET /hello",
+      "meta": {
+        "helper": "live",
+        "path": "/hello",
+        "router": "SampleAppWeb.Router",
+        "verb": "GET"
+      },
+      "target": "SampleAppWeb.HelloLive.mount/3"
+    },
+    {
+      "kind": "oban_worker",
+      "label": "SampleApp.Workers.Mailer.perform/1",
+      "meta": {
+        "max_attempts": 5,
+        "queue": "mail"
+      },
+      "target": "SampleApp.Workers.Mailer.perform/1"
+    },
+    {
+      "kind": "live_view",
+      "label": "SampleAppWeb.HelloLive.handle_event/3",
+      "meta": {},
+      "target": "SampleAppWeb.HelloLive.handle_event/3"
+    },
+    {
+      "kind": "live_view",
+      "label": "SampleAppWeb.HelloLive.mount/3",
+      "meta": {},
+      "target": "SampleAppWeb.HelloLive.mount/3"
+    },
+    {
+      "kind": "live_view",
+      "label": "SampleAppWeb.HelloLive.render/1",
+      "meta": {},
+      "target": "SampleAppWeb.HelloLive.render/1"
+    },
+    {
+      "kind": "live_component",
+      "label": "SampleAppWeb.GreetingComponent.handle_event/3",
+      "meta": {},
+      "target": "SampleAppWeb.GreetingComponent.handle_event/3"
+    },
+    {
+      "kind": "live_component",
+      "label": "SampleAppWeb.GreetingComponent.render/1",
+      "meta": {},
+      "target": "SampleAppWeb.GreetingComponent.render/1"
+    },
+    {
+      "kind": "genserver",
+      "label": "SampleApp.Counter.handle_call/3",
+      "meta": {},
+      "target": "SampleApp.Counter.handle_call/3"
+    },
+    {
+      "kind": "genserver",
+      "label": "SampleApp.Counter.init/1",
+      "meta": {},
+      "target": "SampleApp.Counter.init/1"
+    },
+    {
+      "kind": "application",
+      "label": "SampleApp.Application.start/2",
+      "meta": {},
+      "target": "SampleApp.Application.start/2"
+    },
+    {
+      "kind": "plug",
+      "label": "SampleAppWeb.RequestId.call/2",
+      "meta": {},
+      "target": "SampleAppWeb.RequestId.call/2"
+    }
+  ],
   "functions": [
+    {
+      "arities": [
+        2
+      ],
+      "arity": 2,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              6,
+              53
+            ],
+            "start": [
+              6,
+              32
+            ]
+          },
+          "target": "Supervisor.start_link/2"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app/application.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Application.start/2",
+      "kind": "def",
+      "module": "SampleApp.Application",
+      "name": "start",
+      "removed": false,
+      "source": "  @impl true\n  def start(_type, _args), do: Supervisor.start_link([SampleApp.Counter], strategy: :one_for_one)",
+      "span": {
+        "end_line": 6,
+        "start_line": 5
+      }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              5,
+              49
+            ],
+            "start": [
+              5,
+              29
+            ]
+          },
+          "target": "GenServer.start_link/3"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app/counter.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Counter.start_link/1",
+      "kind": "def",
+      "module": "SampleApp.Counter",
+      "name": "start_link",
+      "removed": false,
+      "source": "  def start_link(opts), do: GenServer.start_link(__MODULE__, 0, opts)",
+      "span": {
+        "end_line": 5,
+        "start_line": 5
+      }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [],
+      "change": "unchanged",
+      "file": "lib/sample_app/counter.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Counter.init/1",
+      "kind": "def",
+      "module": "SampleApp.Counter",
+      "name": "init",
+      "removed": false,
+      "source": "  @impl true\n  def init(count), do: {:ok, count}",
+      "span": {
+        "end_line": 8,
+        "start_line": 7
+      }
+    },
+    {
+      "arities": [
+        3
+      ],
+      "arity": 3,
+      "base_source": null,
+      "calls": [],
+      "change": "unchanged",
+      "file": "lib/sample_app/counter.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Counter.handle_call/3",
+      "kind": "def",
+      "module": "SampleApp.Counter",
+      "name": "handle_call",
+      "removed": false,
+      "source": "  @impl true\n  def handle_call(:next, _from, count), do: {:reply, count + 1, count + 1}",
+      "span": {
+        "end_line": 11,
+        "start_line": 10
+      }
+    },
     {
       "arities": [
         1
@@ -200,11 +411,400 @@
         "end_line": 22,
         "start_line": 20
       }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              6,
+              85
+            ],
+            "start": [
+              6,
+              62
+            ]
+          },
+          "target": "SampleApp.Greeter.greet/1"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app/workers/mailer.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Workers.Mailer.perform/1",
+      "kind": "def",
+      "module": "SampleApp.Workers.Mailer",
+      "name": "perform",
+      "removed": false,
+      "source": "  @impl Oban.Worker\n  def perform(%Oban.Job{args: %{\"name\" => name}}), do: {:ok, SampleApp.Greeter.greet(name)}",
+      "span": {
+        "end_line": 6,
+        "start_line": 5
+      }
+    },
+    {
+      "arities": [
+        2
+      ],
+      "arity": 2,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "imported",
+          "range": {
+            "end": [
+              6,
+              46
+            ],
+            "start": [
+              6,
+              42
+            ]
+          },
+          "target": "Phoenix.Controller.text/2"
+        },
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              6,
+              76
+            ],
+            "start": [
+              6,
+              53
+            ]
+          },
+          "target": "SampleApp.Greeter.greet/1"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/greet_controller.ex",
+      "hidden_calls": [],
+      "id": "SampleAppWeb.GreetController.show/2",
+      "kind": "def",
+      "module": "SampleAppWeb.GreetController",
+      "name": "show",
+      "removed": false,
+      "source": "  @doc \"Greets the named person.\"\n  def show(conn, %{\"name\" => name}), do: text(conn, SampleApp.Greeter.greet(name))",
+      "span": {
+        "end_line": 6,
+        "start_line": 5
+      }
+    },
+    {
+      "arities": [
+        2
+      ],
+      "arity": 2,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "imported",
+          "range": {
+            "end": [
+              9,
+              48
+            ],
+            "start": [
+              9,
+              44
+            ]
+          },
+          "target": "Phoenix.Controller.text/2"
+        },
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              9,
+              78
+            ],
+            "start": [
+              9,
+              55
+            ]
+          },
+          "target": "SampleApp.Greeter.greet/2"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/greet_controller.ex",
+      "hidden_calls": [],
+      "id": "SampleAppWeb.GreetController.create/2",
+      "kind": "def",
+      "module": "SampleAppWeb.GreetController",
+      "name": "create",
+      "removed": false,
+      "source": "  @doc \"Greets loudly.\"\n  def create(conn, %{\"name\" => name}), do: text(conn, SampleApp.Greeter.greet(name, true))",
+      "span": {
+        "end_line": 9,
+        "start_line": 8
+      }
+    },
+    {
+      "arities": [
+        3
+      ],
+      "arity": 3,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "imported",
+          "range": {
+            "end": [
+              5,
+              68
+            ],
+            "start": [
+              5,
+              62
+            ]
+          },
+          "target": "Phoenix.Component.assign/2"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/greeting_component.ex",
+      "hidden_calls": [],
+      "id": "SampleAppWeb.GreetingComponent.handle_event/3",
+      "kind": "def",
+      "module": "SampleAppWeb.GreetingComponent",
+      "name": "handle_event",
+      "removed": false,
+      "source": "  def handle_event(\"shout\", _params, socket), do: {:noreply, assign(socket, loud: true)}",
+      "span": {
+        "end_line": 5,
+        "start_line": 5
+      }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "imported_macro",
+          "range": {
+            "end": [
+              8,
+              12
+            ],
+            "start": [
+              8,
+              5
+            ]
+          },
+          "target": "Phoenix.Component.sigil_H/2"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/greeting_component.ex",
+      "hidden_calls": [],
+      "id": "SampleAppWeb.GreetingComponent.render/1",
+      "kind": "def",
+      "module": "SampleAppWeb.GreetingComponent",
+      "name": "render",
+      "removed": false,
+      "source": "  def render(assigns) do\n    ~H\"\"\"\n    <span>{SampleApp.Greeter.greet(@name)}</span>\n    \"\"\"\n  end",
+      "span": {
+        "end_line": 11,
+        "start_line": 7
+      }
+    },
+    {
+      "arities": [
+        3
+      ],
+      "arity": 3,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "imported",
+          "range": {
+            "end": [
+              5,
+              57
+            ],
+            "start": [
+              5,
+              51
+            ]
+          },
+          "target": "Phoenix.Component.assign/2"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/hello_live.ex",
+      "hidden_calls": [],
+      "id": "SampleAppWeb.HelloLive.mount/3",
+      "kind": "def",
+      "module": "SampleAppWeb.HelloLive",
+      "name": "mount",
+      "removed": false,
+      "source": "  def mount(_params, _session, socket), do: {:ok, assign(socket, name: \"world\")}",
+      "span": {
+        "end_line": 5,
+        "start_line": 5
+      }
+    },
+    {
+      "arities": [
+        3
+      ],
+      "arity": 3,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "imported",
+          "range": {
+            "end": [
+              8,
+              26
+            ],
+            "start": [
+              8,
+              20
+            ]
+          },
+          "target": "Phoenix.Component.assign/2"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/hello_live.ex",
+      "hidden_calls": [],
+      "id": "SampleAppWeb.HelloLive.handle_event/3",
+      "kind": "def",
+      "module": "SampleAppWeb.HelloLive",
+      "name": "handle_event",
+      "removed": false,
+      "source": "  def handle_event(\"rename\", %{\"name\" => name}, socket),\n    do: {:noreply, assign(socket, name: name)}",
+      "span": {
+        "end_line": 8,
+        "start_line": 7
+      }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "imported_macro",
+          "range": {
+            "end": [
+              11,
+              12
+            ],
+            "start": [
+              11,
+              5
+            ]
+          },
+          "target": "Phoenix.Component.sigil_H/2"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/hello_live.ex",
+      "hidden_calls": [],
+      "id": "SampleAppWeb.HelloLive.render/1",
+      "kind": "def",
+      "module": "SampleAppWeb.HelloLive",
+      "name": "render",
+      "removed": false,
+      "source": "  def render(assigns) do\n    ~H\"\"\"\n    <p>{SampleApp.Greeter.greet(@name)}</p>\n    \"\"\"\n  end",
+      "span": {
+        "end_line": 14,
+        "start_line": 10
+      }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/request_id.ex",
+      "hidden_calls": [],
+      "id": "SampleAppWeb.RequestId.init/1",
+      "kind": "def",
+      "module": "SampleAppWeb.RequestId",
+      "name": "init",
+      "removed": false,
+      "source": "  def init(opts), do: opts",
+      "span": {
+        "end_line": 5,
+        "start_line": 5
+      }
+    },
+    {
+      "arities": [
+        2
+      ],
+      "arity": 2,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              7,
+              55
+            ],
+            "start": [
+              7,
+              30
+            ]
+          },
+          "target": "Plug.Conn.put_resp_header/3"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/request_id.ex",
+      "hidden_calls": [],
+      "id": "SampleAppWeb.RequestId.call/2",
+      "kind": "def",
+      "module": "SampleAppWeb.RequestId",
+      "name": "call",
+      "removed": false,
+      "source": "  def call(conn, _opts), do: Plug.Conn.put_resp_header(conn, \"x-request-id\", \"1\")",
+      "span": {
+        "end_line": 7,
+        "start_line": 7
+      }
     }
   ],
   "generated_at": "2026-09-15T00:00:00Z",
   "git": null,
   "modules": [
+    {
+      "behaviours": [
+        "Application"
+      ],
+      "file": "lib/sample_app/application.ex",
+      "line": 1,
+      "name": "SampleApp.Application"
+    },
+    {
+      "behaviours": [
+        "GenServer"
+      ],
+      "file": "lib/sample_app/counter.ex",
+      "line": 1,
+      "name": "SampleApp.Counter"
+    },
     {
       "behaviours": [],
       "file": "lib/sample_app/formatter.ex",
@@ -222,6 +822,64 @@
       "file": "lib/sample_app/greeter.ex",
       "line": 17,
       "name": "SampleApp.Greeter.Nested"
+    },
+    {
+      "behaviours": [
+        "Oban.Worker"
+      ],
+      "file": "lib/sample_app/workers/mailer.ex",
+      "line": 1,
+      "name": "SampleApp.Workers.Mailer"
+    },
+    {
+      "behaviours": [
+        "Phoenix.Endpoint",
+        "Plug"
+      ],
+      "file": "lib/sample_app_web/endpoint.ex",
+      "line": 1,
+      "name": "SampleAppWeb.Endpoint"
+    },
+    {
+      "behaviours": [
+        "Plug"
+      ],
+      "file": "lib/sample_app_web/greet_controller.ex",
+      "line": 1,
+      "name": "SampleAppWeb.GreetController"
+    },
+    {
+      "behaviours": [
+        "Phoenix.LiveComponent"
+      ],
+      "file": "lib/sample_app_web/greeting_component.ex",
+      "line": 1,
+      "name": "SampleAppWeb.GreetingComponent"
+    },
+    {
+      "behaviours": [
+        "Phoenix.LiveView"
+      ],
+      "file": "lib/sample_app_web/hello_live.ex",
+      "line": 1,
+      "name": "SampleAppWeb.HelloLive"
+    },
+    {
+      "behaviours": [
+        "Plug"
+      ],
+      "file": "lib/sample_app_web/request_id.ex",
+      "line": 1,
+      "name": "SampleAppWeb.RequestId"
+    },
+    {
+      "behaviours": [
+        "Phoenix.VerifiedRoutes",
+        "Plug"
+      ],
+      "file": "lib/sample_app_web/router.ex",
+      "line": 1,
+      "name": "SampleAppWeb.Router"
     }
   ],
   "project": {

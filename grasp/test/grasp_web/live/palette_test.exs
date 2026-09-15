@@ -7,7 +7,7 @@ defmodule GraspWeb.PaletteTest do
   @greet_all "SampleApp.Greeter.greet_all/1"
   @wrap "SampleApp.Formatter.wrap/1"
   @shout "SampleApp.Formatter.shout/1"
-  @nested "SampleApp.Greeter.Nested.hello/0"
+  @last_greet "SampleAppWeb.GreetingComponent.handle_event/3"
 
   setup %{conn: conn} do
     name = "t-#{System.unique_integer([:positive])}"
@@ -66,8 +66,7 @@ defmodule GraspWeb.PaletteTest do
     render_hook(view, "palette_show", %{})
     search(view, "e")
 
-    render_hook(view, "palette_move", %{"delta" => 1})
-    render_hook(view, "palette_move", %{"delta" => 1})
+    for _ <- 1..3, do: render_hook(view, "palette_move", %{"delta" => 1})
     assert has_element?(view, "#palette-results li[data-id='#{@shout}'][aria-selected='true']")
 
     render_hook(view, "palette_choose", %{"child" => false})
@@ -83,8 +82,13 @@ defmodule GraspWeb.PaletteTest do
     render_hook(view, "palette_move", %{"delta" => -1})
     assert has_element?(view, "#palette-results li[data-id='#{@greet}'][aria-selected='true']")
 
-    for _ <- 1..4, do: render_hook(view, "palette_move", %{"delta" => 1})
-    assert has_element?(view, "#palette-results li[data-id='#{@nested}'][aria-selected='true']")
+    for _ <- 1..10, do: render_hook(view, "palette_move", %{"delta" => 1})
+
+    assert has_element?(
+             view,
+             "#palette-results li[data-id='#{@last_greet}'][aria-selected='true']"
+           )
+
     assert has_element?(view, "#palette-results li:last-child[aria-selected='true']")
   end
 
