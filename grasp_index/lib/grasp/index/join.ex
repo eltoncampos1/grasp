@@ -8,7 +8,7 @@ defmodule Grasp.Index.Join do
   introduce, so calls made through any of them land on it. The event's line and column
   then locate the call node inside that definition, giving a call with a clickable range.
 
-  Five rules decide what survives:
+  Six rules decide what survives:
 
     * **Head positions.** The compiler reports its own bookkeeping at every clause head —
       `Module.compile_definition_attributes/6` and any `@on_definition` hook a library
@@ -19,6 +19,12 @@ defmodule Grasp.Index.Join do
       `:elixir_def`, ...), describe how the code was expanded rather than what it calls.
       `unquote(x)` inside a macro body, reported as `:elixir_quote.unquote/1`, is the
       common case.
+    * **Reflection.** A `__name__`-shaped target — `__schema__/1`, `__struct__/1`,
+      `Phoenix.VerifiedRoutes.__encode_segment__/1` — is machinery a macro expanded into,
+      never a call anyone wrote, so it is dropped wherever it was reported. Position is no
+      defence: a `~p` sigil reports its segment encoder at the interpolation's own line and
+      column, which matches a real call node, and the rules below would otherwise hand the
+      reader a clickable call that says nothing about what the function does.
     * **`defdelegate`.** The delegated call is reported with no column, so it can only be
       placed by kind: for a `defdelegate`, a column-less event becomes a visible call
       ranged over the delegate's own name.
@@ -31,9 +37,7 @@ defmodule Grasp.Index.Join do
       implementation, not what the function set out to do, and on a real project those
       outnumber the project calls worth seeing by more than ten to one; OTP's `:erlang`
       operators that `and` and `>` expand to are not definitions the index holds, so they
-      fall out the same way. Reflection the same expansion reaches for (`__schema__/1`,
-      `__struct__/1`) is dropped ahead of every other column-less rule, by the `__name__`
-      shape, so a `defdelegate` cannot turn one into a visible call either.
+      fall out the same way.
     * **Hidden calls.** An event with a column but no matching node came from
       macro-generated code — a function component in a `~H` template, code injected by
       `use` — and is kept as a hidden call so the graph stays complete even though
@@ -105,7 +109,9 @@ defmodule Grasp.Index.Join do
   end
 
   defp keep?(%{target: {module, _, _}}) when module in @ignored_targets, do: false
-  defp keep?(%{target: {module, _, _}}), do: not compiler_internal?(module)
+
+  defp keep?(%{target: {module, name, _}}),
+    do: not compiler_internal?(module) and not reflection?(name)
 
   defp compiler_internal?(module),
     do: module |> Atom.to_string() |> String.starts_with?("elixir_")
@@ -137,7 +143,6 @@ defmodule Grasp.Index.Join do
 
           event.column == nil ->
             cond do
-              reflection?(name) -> {calls, hidden}
               delegate_range -> {[call.(delegate_range) | calls], hidden}
               not MapSet.member?(indexed, target) -> {calls, hidden}
               event.line in span -> {calls, [hidden_call | hidden]}

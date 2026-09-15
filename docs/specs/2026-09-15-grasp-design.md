@@ -94,17 +94,18 @@ mix grasp.index [--base main] [--out .grasp/index.json]
    `Logger`, `and` and `>` compiling to `:erlang` — which describes how the code was
    built rather than what the function set out to do, and on a real project outnumbers
    the interesting calls by more than ten to one. A column-less event therefore becomes a
-   hidden call only when its line falls inside the definition's span, its target is a
-   definition the index itself holds, and the target is not `__name__`-shaped reflection
-   (`__schema__/1`, `__struct__/1`). That keeps the calls a `~H` body makes into the
+   hidden call only when its line falls inside the definition's span and its target is a
+   definition the index itself holds. That keeps the calls a `~H` body makes into the
    project's own contexts — the controller to template to context chain — while leaving
    the macro's implementation out. So a call written inside an inline `~H` body reaches
    the graph as a hidden call; a call inside a `.heex` template file compiled by
    `embed_templates` still does not, because the function that template compiles into has
    no definition record for the event to attach to. `defdelegate` is the one column-less
-   case placed as a visible call, ranged over the delegate's own name; reflection is
-   tested first, so a library's `__on_definition__` hook cannot be mistaken for the
-   delegated call.
+   case placed as a visible call, ranged over the delegate's own name. A `__name__`-shaped
+   target (`__schema__/1`, `__struct__/1`, `Phoenix.VerifiedRoutes.__encode_segment__/1`)
+   is dropped before any of this, whatever position it carries: it is machinery a macro
+   expanded into, and a `~p` sigil reports its encoder at the interpolation's own line and
+   column, where the position rules would otherwise make it a clickable call.
 4. **Entry points.** After the traced compile, `Application.load/1` then
    `:application.get_key(app, :modules)` gives the application's modules to iterate. Routers are found by their exported
    `__routes__/0` — `use Phoenix.Router` declares no behaviour — and everything else by

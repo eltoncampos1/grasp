@@ -92,6 +92,15 @@ defmodule Grasp.Index.JoinTest do
     assert run.hidden_calls == []
   end
 
+  test "drops a reflection target reported at a real call site", %{defs: defs} do
+    events = [event(:run, 2, 6, 5, {Phoenix.VerifiedRoutes, :__encode_segment__, 1}, :remote)]
+
+    [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
+
+    assert run.calls == []
+    assert run.hidden_calls == []
+  end
+
   @reflection ~S"""
   defmodule Grasp.JoinTest.Schema do
     def __schema__(_kind), do: []
