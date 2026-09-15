@@ -21,9 +21,17 @@ defmodule Grasp.HighlightTest do
     ]
   }
 
-  defp render(opts \\ []) do
+  @fixture Path.expand("../fixtures/index.json", __DIR__)
+
+  defp render(opts \\ []), do: render(@record, opts)
+
+  defp render(record, opts) do
+    record |> render_string(opts) |> LazyHTML.from_fragment()
+  end
+
+  defp render_string(record, opts) do
     opts = Keyword.merge([card_id: 7, open_targets: [], external?: fn _ -> false end], opts)
-    @record |> Highlight.render(opts) |> Phoenix.HTML.safe_to_string() |> LazyHTML.from_fragment()
+    record |> Highlight.render(opts) |> Phoenix.HTML.safe_to_string()
   end
 
   test "numbers lines from the span start and escapes source text" do
@@ -80,5 +88,60 @@ defmodule Grasp.HighlightTest do
 
     spans = LazyHTML.query(html, "span.call[data-target='Enum.map/2']") |> Enum.to_list()
     assert Enum.map(spans, &LazyHTML.text/1) == ["Enum", ".map"]
+  end
+
+  test "a blank line inside the body keeps its number in the gutter" do
+    record = %{
+      "id" => "S.f/0",
+      "span" => %{"start_line" => 10, "end_line" => 14},
+      "source" => "def f do\n  a = 1\n\n  a\nend",
+      "calls" => []
+    }
+
+    html = render(record, [])
+
+    assert LazyHTML.query(html, "span.line") |> Enum.count() == 5
+
+    assert LazyHTML.query(html, "span.line") |> LazyHTML.attribute("data-line") ==
+             ~w(10 11 12 13 14)
+
+    assert LazyHTML.query(html, "span.line[data-line='12'] .ln") |> LazyHTML.text() == "12"
+    assert LazyHTML.query(html, "span.line[data-line='12']") |> LazyHTML.text() == "12"
+  end
+
+  test "renders a real indexed record with the indexer's own columns" do
+    {:ok, index} = Grasp.Index.load(@fixture)
+    {:ok, record} = Grasp.Index.fetch_function(index, "SampleApp.Formatter.shout/1")
+
+    html = render(record, [])
+
+    assert LazyHTML.query(html, "span.call[data-target='String.upcase/1']") |> LazyHTML.text() ==
+             "String.upcase"
+  end
+
+  test "escapes a target carrying markup in both attributes that hold it" do
+    target = ~s(A."<b>"/1)
+
+    record = %{
+      "id" => "S.f/0",
+      "span" => %{"start_line" => 1, "end_line" => 1},
+      "source" => "def f, do: g()",
+      "calls" => [
+        %{
+          "target" => target,
+          "kind" => "local",
+          "range" => %{"start" => [1, 12], "end" => [1, 13]}
+        }
+      ]
+    }
+
+    string = render_string(record, [])
+    refute string =~ ~s(<b>)
+    assert string =~ "&lt;b&gt;"
+    assert string =~ "&quot;"
+
+    call = string |> LazyHTML.from_fragment() |> LazyHTML.query("span.call")
+    assert LazyHTML.attribute(call, "data-target") == [target]
+    assert LazyHTML.attribute(call, "phx-value-target") == [target]
   end
 end

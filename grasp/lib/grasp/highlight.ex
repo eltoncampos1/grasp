@@ -34,15 +34,18 @@ defmodule Grasp.Highlight do
         %{target: call["target"], start: {sl, sc}, end: {el, ec}}
       end
 
-    pieces = record["source"] |> ElixirLexer.lex() |> pieces(first_line)
+    source = record["source"]
+    by_line = source |> ElixirLexer.lex() |> pieces(first_line) |> Enum.group_by(& &1.line)
+
+    # Lines are driven by the source, not by the tokens: a blank line carries no piece, and
+    # numbering it from the token groups alone would drop it and skip a number in the gutter.
+    last_line = first_line + length(String.split(source, "\n")) - 1
 
     html =
-      pieces
-      |> Enum.group_by(& &1.line)
-      |> Enum.sort()
-      |> Enum.map_join("\n", fn {line, line_pieces} ->
+      Enum.map_join(first_line..last_line, "\n", fn line ->
         body =
-          line_pieces
+          by_line
+          |> Map.get(line, [])
           |> Enum.flat_map(&split_at_ranges(&1, ranges))
           |> wrap_calls(ranges, card_id, open, external?)
 
@@ -115,7 +118,7 @@ defmodule Grasp.Highlight do
         %{target: target} ->
           attrs =
             ~s( data-target="#{escape(target)}" data-open="#{MapSet.member?(open, target)}") <>
-              ~s( data-external="#{external?.(target)}" phx-click="open_call" phx-value-card="#{card_id}" phx-value-target="#{escape(target)}")
+              ~s( data-external="#{escape(to_string(external?.(target)))}" phx-click="open_call" phx-value-card="#{escape(to_string(card_id))}" phx-value-target="#{escape(target)}")
 
           ~s(<span class="call"#{attrs}>#{inner}</span>)
       end
