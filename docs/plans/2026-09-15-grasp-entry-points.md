@@ -4,7 +4,7 @@
 
 **Goal:** The index records a project's entry points — Phoenix routes to controller actions and LiveViews, Oban workers, LiveView/LiveComponent callbacks, GenServer/Supervisor/Application/Plug callbacks — and the viewer's sidebar starts from them; cards show which entry points they are.
 
-**Architecture:** `Grasp.Index.EntryPoints` runs inside the target's Mix session after the traced compile, introspecting compiled modules: routers by an exported `__routes__/0` (`Phoenix.Router.routes/1`), the rest by `@behaviour` attributes or `__live__/0`. Every candidate callback is emitted only if the index has a definition for it, which is what separates a user-written `handle_info/2` from the default `use GenServer` injects. Module behaviours fill `modules[].behaviours`. `Grasp.Index` gains `entry_points_for/2`. The viewer's sidebar becomes collapsible groups (Routes, Oban workers, LiveViews, GenServers, OTP, Plugs, Modules); cards show entry badges. (The per-function highlight cache shipped in milestone 2.1.)
+**Architecture:** `Grasp.Index.EntryPoints` runs inside the target's Mix session after the traced compile, introspecting compiled modules: routers by an exported `__routes__/0` (`Phoenix.Router.routes/1`), the rest by `@behaviour` attributes or `__live__/0`. Every candidate callback is emitted only if the index has a definition for it, which is what separates a user-written `handle_info/2` from the default `use GenServer` injects. Module behaviours fill `modules[].behaviours`. `Grasp.Index` gains `entry_points_for/2`. The viewer's sidebar becomes collapsible groups (Routes, Background jobs, Live views, Processes, Supervision, Plugs, Other, Modules); cards show entry badges. (The per-function highlight cache shipped in milestone 2.1.)
 
 **Tech Stack:** as before. The indexer fixture `sample_app` gains phoenix, phoenix_live_view, plug and oban as deps (no database, nothing started).
 
@@ -423,6 +423,8 @@ Groups (`data-kind`): `routes` (route + live_route, expanded by default), `oban`
 **Problem:** the compiler reports calls made inside `~H` bodies (a context call in `{...}`) without a column, and `Join.keep?/1` drops every column-less event as compiler bookkeeping. So `SampleAppWeb.HelloLive.render/1` shows no call to `SampleApp.Greeter.greet/1`, and on a real Phoenix app the controller → template → context chain is severed. (Function components such as `<.button>` do carry a column today and already land in `hidden_calls`.)
 
 **Rule (controller ruling):** a column-less event whose caller definition exists and whose line falls inside that definition's span becomes a **hidden call**, unless its target module is `:erlang`, an `:elixir_*` compiler internal, or `Kernel`/`Kernel.SpecialForms`/`Kernel.Utils` (those are the `if`/`and`/`def` bookkeeping the old rule was protecting against). Column-less events outside every span are still dropped. `Module.compile_definition_attributes/6` stays dropped by the existing bookkeeping rule.
+
+> **Superseded by the rule as shipped.** Naming `:erlang` kept 15k expansion internals per web project. A column-less event now survives only when its target is a definition the index itself holds, and reflection (`__name__`-shaped, tested before the `defdelegate` branch) is dropped whatever its target. There is no `runtime_internal?/1`: `:erlang` falls out because the index holds no definition for it. The spec's step 3 has the shipped rule.
 
 - [ ] **Step 1: Tests (RED)**
 

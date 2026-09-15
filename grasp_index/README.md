@@ -22,11 +22,13 @@ The document also lists the project's **entry points** — the places its code s
 executing. After compiling, the task loads the application's modules and reads what they
 export and what behaviours they declare: Phoenix routers (by their `__routes__/0`) give a
 `route` per controller action and a `live_route` per LiveView route, with the verb, path,
-router and helper as meta; `Oban.Worker` gives `perform/1` with its queue and max
-attempts; `Phoenix.LiveView`, `Phoenix.LiveComponent`, `GenServer`, `Supervisor`,
-`Application` and `Plug` give their callbacks. A callback is listed only when the index
-holds a definition for it, so the defaults `use GenServer` injects and a dependency's
-forwarded controllers stay out. Each module record also carries the `behaviours` it
+router and helper as meta, and a router mounted with `forward` has the mount's prefix on
+its paths; `Oban.Worker` gives `perform/1` with its queue and max attempts;
+`Phoenix.LiveView`, `Phoenix.LiveComponent`, `GenServer`, `Supervisor`, `Application` and
+`Plug` give the callbacks their behaviour declares, minus the few that configure a module
+rather than run its work. A callback is listed only when the index holds a definition for
+it, so the defaults `use GenServer` injects and a dependency's forwarded controllers stay
+out. Each module record also carries the `behaviours` it
 declares.
 
 The document shape is described in `docs/specs/2026-09-15-grasp-design.md` at the repo

@@ -1,6 +1,8 @@
 defmodule Grasp.IndexStoreTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   alias Grasp.IndexStore
 
   @fixture Path.expand("../fixtures/index.json", __DIR__)
@@ -27,7 +29,10 @@ defmodule Grasp.IndexStoreTest do
 
   test "load/1 keeps the previous index when the file is unreadable" do
     before = IndexStore.get()
-    assert {:error, _} = IndexStore.load(@fixture <> ".missing")
+
+    log = capture_log(fn -> assert {:error, _} = IndexStore.load(@fixture <> ".missing") end)
+
+    assert log =~ "could not load index"
     assert IndexStore.get() == before
   end
 
@@ -48,7 +53,10 @@ defmodule Grasp.IndexStoreTest do
     path = tmp_copy(&Map.put(&1, "version", 2))
     IndexStore.subscribe()
 
-    assert {:error, {:unsupported_document, 2}} = IndexStore.load(path)
+    log =
+      capture_log(fn -> assert {:error, {:unsupported_document, 2}} = IndexStore.load(path) end)
+
+    assert log =~ "could not load index"
     assert IndexStore.last_error() == {:unsupported_document, 2}
     refute_receive :index_reloaded
 
