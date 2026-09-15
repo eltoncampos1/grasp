@@ -24,9 +24,13 @@ defmodule Grasp.Index.Join do
       ranged over the delegate's own name.
     * **Column-less events.** Macro- and template-generated code is reported without a
       column — a context call inside a `~H` body is the common case. Such an event becomes
-      a hidden call when its line falls inside the definition's span; outside every span it
-      is dropped. Targets in `:erlang` are dropped too: with the compiler internals and
-      `Kernel` above, they are the operators `if`, `and` and `case` expand to.
+      a hidden call only when its line falls inside the definition's span *and* its target
+      is a definition the index holds. A macro that expands into a dependency — a template
+      engine, a query builder, `Logger`, the operators `and` and `>` in `:erlang` —
+      reports the macro's own implementation, not what the function set out to do, and on
+      a real project those outnumber the project calls worth seeing by more than ten to
+      one. Reflection the same expansion reaches for (`__schema__/1`, `__struct__/1`) is
+      dropped on the same grounds, by the `__name__` shape.
     * **Hidden calls.** An event with a column but no matching node came from
       macro-generated code — a function component in a `~H` template, code injected by
       `use` — and is kept as a hidden call so the graph stays complete even though
@@ -82,9 +86,15 @@ defmodule Grasp.Index.Join do
         Map.get(canonical, {inspect(event.module), name, arity})
       end)
 
+    indexed =
+      for definition <- definitions,
+          arity <- definition.arities,
+          into: MapSet.new(),
+          do: function_id(definition.module, definition.name, arity)
+
     Enum.map(definitions, fn definition ->
       key = {definition.module, definition.name, definition.arity}
-      build(definition, Map.get(events_by_definition, key, []))
+      build(definition, Map.get(events_by_definition, key, []), indexed)
     end)
   end
 
@@ -94,12 +104,12 @@ defmodule Grasp.Index.Join do
   defp compiler_internal?(module),
     do: module |> Atom.to_string() |> String.starts_with?("elixir_")
 
-  # The operators `if`, `and` and `>` expand into `:erlang` calls reported with no column,
-  # where nothing else tells them apart from a template call; a hand-written
-  # `:erlang.system_time/0` carries a column and is kept.
-  defp runtime_internal?(module), do: module == :erlang
+  defp reflection?(name) do
+    name = Atom.to_string(name)
+    String.starts_with?(name, "__") and String.ends_with?(name, "__")
+  end
 
-  defp build(definition, events) do
+  defp build(definition, events, indexed) do
     sites = Map.new(definition.call_sites, &{{&1.line, &1.column}, &1.range})
     heads = MapSet.new(definition.head_positions)
     delegate_range = if definition.kind == :defdelegate, do: List.first(definition.head_ranges)
@@ -122,7 +132,8 @@ defmodule Grasp.Index.Join do
           event.column == nil ->
             cond do
               delegate_range -> {[call.(delegate_range) | calls], hidden}
-              runtime_internal?(module) -> {calls, hidden}
+              reflection?(name) -> {calls, hidden}
+              not MapSet.member?(indexed, target) -> {calls, hidden}
               event.line in span -> {calls, [hidden_call | hidden]}
               true -> {calls, hidden}
             end

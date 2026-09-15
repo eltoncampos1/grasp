@@ -49,7 +49,7 @@ defmodule Grasp.Index.JoinTest do
     assert run.hidden_calls == []
   end
 
-  test "drops Kernel calls, def-registration events and operators expanded into :erlang",
+  test "drops Kernel calls, def-registration events and column-less calls into dependencies",
        %{defs: defs} do
     events = [
       event(:run, 2, 6, 7, {Kernel, :if, 2}, :imported_macro),
@@ -62,19 +62,59 @@ defmodule Grasp.Index.JoinTest do
     assert run.hidden_calls == []
   end
 
-  test "keeps a column-less call inside a definition as a hidden call", %{defs: defs} do
-    events = [event(:run, 2, 6, nil, {SampleApp.Greeter, :greet, 1}, :remote)]
+  test "keeps a column-less call to an indexed definition as a hidden call", %{defs: defs} do
+    events = [event(:run, 2, 6, nil, {Grasp.JoinTest.Sample, :helper, 1}, :remote)]
 
     [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
 
     assert run.calls == []
-    assert run.hidden_calls == [%{target: "SampleApp.Greeter.greet/1", kind: :remote, line: 6}]
+
+    assert run.hidden_calls == [
+             %{target: "Grasp.JoinTest.Sample.helper/1", kind: :remote, line: 6}
+           ]
   end
 
   test "drops a column-less call whose line is outside the definition span", %{defs: defs} do
-    events = [event(:run, 2, 99, nil, {SampleApp.Greeter, :greet, 1}, :remote)]
+    events = [event(:run, 2, 99, nil, {Grasp.JoinTest.Sample, :helper, 1}, :remote)]
 
     [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
+
+    assert run.calls == []
+    assert run.hidden_calls == []
+  end
+
+  test "drops a column-less call whose target the index does not hold", %{defs: defs} do
+    events = [event(:run, 2, 6, nil, {Phoenix.LiveView.Engine, :fetch_assign!, 2}, :remote)]
+
+    [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
+
+    assert run.calls == []
+    assert run.hidden_calls == []
+  end
+
+  @reflection ~S"""
+  defmodule Grasp.JoinTest.Schema do
+    def __schema__(_kind), do: []
+    def run, do: :ok
+  end
+  """
+
+  test "drops a column-less reflection call even when the index holds it" do
+    {:ok, %{definitions: defs}} = Extract.extract(@reflection, "lib/schema.ex")
+
+    events = [
+      %{
+        file: "lib/schema.ex",
+        module: Grasp.JoinTest.Schema,
+        function: {:run, 0},
+        line: 3,
+        column: nil,
+        target: {Grasp.JoinTest.Schema, :__schema__, 1},
+        kind: :remote
+      }
+    ]
+
+    run = defs |> Join.join(events) |> record("Grasp.JoinTest.Schema", :run)
 
     assert run.calls == []
     assert run.hidden_calls == []

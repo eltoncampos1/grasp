@@ -79,8 +79,9 @@ defmodule Grasp.Index.BuilderTest do
   test "keeps a context call made inside a template as a hidden call", %{index: index} do
     {:ok, render} = Grasp.Index.fetch_function(index, "SampleAppWeb.HelloLive.render/1")
 
-    assert %{"kind" => "remote", "line" => 12} =
-             hidden_call(render, "SampleApp.Greeter.greet/1")
+    assert render["hidden_calls"] == [
+             %{"target" => "SampleApp.Greeter.greet/1", "kind" => "remote", "line" => 12}
+           ]
 
     assert "SampleApp.Greeter.greet/2" in Grasp.Index.callees(
              index,
@@ -167,9 +168,6 @@ defmodule Grasp.Index.BuilderTest do
   end
 
   defp call(record, target), do: Enum.find(record["calls"], &(&1["target"] == target))
-
-  defp hidden_call(record, target),
-    do: Enum.find(record["hidden_calls"], &(&1["target"] == target))
 
   defp find(entries, target), do: Enum.find(entries, &(&1["target"] == target))
 
