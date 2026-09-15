@@ -8,9 +8,10 @@ defmodule GraspIndex.MixProject do
     [
       app: :grasp_index,
       version: @version,
-      elixir: "~> 1.18",
+      elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       test_ignore_filters: [&String.starts_with?(&1, "test/fixtures/")],
+      aliases: aliases(),
       start_permanent: false,
       deps: deps(),
       description:
@@ -21,8 +22,16 @@ defmodule GraspIndex.MixProject do
     ]
   end
 
+  def cli do
+    [preferred_envs: ["test.all": :test]]
+  end
+
   def application do
     [extra_applications: [:logger]]
+  end
+
+  defp aliases do
+    ["test.all": ["test --include integration"]]
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
@@ -40,7 +49,7 @@ defmodule GraspIndex.MixProject do
     [
       licenses: ["Apache-2.0"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib mix.exs README.md)
+      files: ~w(lib mix.exs README.md LICENSE)
     ]
   end
 end

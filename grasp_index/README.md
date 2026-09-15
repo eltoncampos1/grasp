@@ -20,3 +20,14 @@ the reader they use.
 
 The document shape is described in `docs/specs/2026-09-15-grasp-design.md` at the repo
 root under "Index JSON".
+
+## Tests
+
+```
+mix test       # unit tests
+mix test.all   # unit tests plus the integration test, which runs mix grasp.index
+               # against test/fixtures/sample_app in a subprocess
+```
+
+`mix test` excludes the `:integration` tag, so it needs no fixture deps and no
+subprocess compile. `mix test.all` is `mix test --include integration`.
