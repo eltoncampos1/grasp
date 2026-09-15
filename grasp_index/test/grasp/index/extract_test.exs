@@ -98,6 +98,58 @@ defmodule Grasp.Index.ExtractTest do
     assert {:error, _} = Extract.extract("defmodule Broken do\n  def (\nend\n", "lib/broken.ex")
   end
 
+  test "records the head position and range of every clause" do
+    {:ok, %{definitions: defs}} = Extract.extract(@source, "lib/sample.ex")
+
+    greet = find(defs, "Sample", :greet)
+    assert greet.head_positions == [{5, 7}]
+    assert greet.head_ranges == [%{start: {5, 7}, end: {5, 12}}]
+
+    count = find(defs, "Sample", :count)
+    assert count.head_positions == [{10, 7}, {11, 7}]
+  end
+
+  test "keeps the guard site and adds no site for the head or its operators" do
+    {:ok, %{definitions: defs}} = Extract.extract(@source, "lib/sample.ex")
+    count = find(defs, "Sample", :count)
+
+    assert %{range: %{start: {10, 24}, end: {10, 31}}} = site(count, 10, 24)
+    refute site(count, 10, 7)
+  end
+
+  @defaults ~S"""
+  defmodule Defaults do
+    def greet(name, prefix \\ String.trim(" p ")) do
+      prefix <> name
+    end
+  end
+  """
+
+  test "collects call sites inside default-argument expressions" do
+    {:ok, %{definitions: defs}} = Extract.extract(@defaults, "lib/defaults.ex")
+    greet = find(defs, "Defaults", :greet)
+
+    assert %{range: %{start: {2, 29}, end: {2, 40}}} = site(greet, 2, 36)
+    refute site(greet, 2, 7)
+  end
+
+  test "produces no site for special forms the compiler never reports" do
+    source = ~S"""
+    defmodule Forms do
+      def build(map, bin, list) do
+        %{a: a} = map
+        <<b::binary>> = bin
+        [h | t] = list
+        ^a = h
+        {%Range{first: a}, b, t}
+      end
+    end
+    """
+
+    {:ok, %{definitions: defs}} = Extract.extract(source, "lib/forms.ex")
+    assert find(defs, "Forms", :build).call_sites == []
+  end
+
   defp find(defs, module, name), do: Enum.find(defs, &(&1.module == module and &1.name == name))
 
   defp site(def, line, column),

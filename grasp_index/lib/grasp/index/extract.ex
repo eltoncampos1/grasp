@@ -12,10 +12,18 @@ defmodule Grasp.Index.Extract do
   the position the compiler reports for that call — the line and column of the function
   name — so `Grasp.Index.Join` can pair them with tracer events. A site's range covers
   the callee only (`Formatter.wrap`, `shout`, `double`), never its arguments, so ranges
-  don't nest when rendered.
+  don't nest when rendered. A range can span lines: a receiver written on its own line
+  (`Enum\n.map(list, f)`) starts the range one line above the name the compiler reports.
+
+  Each definition also records where its clause heads are: `head_positions` is the
+  `{line, column}` of the function name in every clause and `head_ranges` the matching
+  ranges over that name. `Grasp.Index.Join` uses the positions to drop the events the
+  compiler reports while registering a definition, and the range to place the call a
+  `defdelegate` makes, which the compiler reports with no column at all.
   """
 
   @type range :: %{start: {pos_integer(), pos_integer()}, end: {pos_integer(), pos_integer()}}
+  @type position :: {pos_integer(), pos_integer()}
   @type call_site :: %{line: pos_integer(), column: pos_integer(), range: range()}
   @type kind :: :def | :defp | :defmacro | :defmacrop | :defguard | :defguardp | :defdelegate
 
@@ -29,14 +37,38 @@ defmodule Grasp.Index.Extract do
           start_line: pos_integer(),
           end_line: pos_integer(),
           source: String.t(),
-          call_sites: [call_site()]
+          call_sites: [call_site()],
+          head_positions: [position()],
+          head_ranges: [range()]
         }
 
   @type module_info :: %{name: String.t(), file: String.t(), line: pos_integer()}
 
   @def_kinds [:def, :defp, :defmacro, :defmacrop, :defguard, :defguardp, :defdelegate]
   @attached_attributes [:doc, :spec, :impl, :deprecated, :since]
-  @not_calls [:__block__, :__aliases__, :., :fn, :->, :__MODULE__]
+  # Special forms and operators the compiler never reports as calls; leaving them in
+  # would produce sites no tracer event can ever land on.
+  @not_calls [
+    :__block__,
+    :__aliases__,
+    :.,
+    :fn,
+    :->,
+    :__MODULE__,
+    :unquote,
+    :unquote_splicing,
+    :/,
+    :=,
+    :when,
+    :%{},
+    :{},
+    :<<>>,
+    :^,
+    :|,
+    :%,
+    :"::",
+    :\\
+  ]
 
   @doc "Parses `source`, read from the project-relative `file`, into definitions and modules."
   @spec extract(String.t(), String.t()) ::
@@ -116,6 +148,7 @@ defmodule Grasp.Index.Extract do
 
         %{end: [line: end_line, column: _]} = Sourceror.get_range(node)
         sites = call_sites(node)
+        {head_positions, head_ranges} = head_location(head, name)
 
         clause = %{
           module: module,
@@ -127,7 +160,9 @@ defmodule Grasp.Index.Extract do
           start_line: start_line,
           end_line: end_line,
           source: nil,
-          call_sites: sites
+          call_sites: sites,
+          head_positions: head_positions,
+          head_ranges: head_ranges
         }
 
         %{acc | definitions: merge_clause(acc.definitions, clause, acc.lines)}
@@ -144,7 +179,9 @@ defmodule Grasp.Index.Extract do
           | start_line: min(existing.start_line, clause.start_line),
             end_line: max(existing.end_line, clause.end_line),
             arities: Enum.uniq(Enum.sort(existing.arities ++ clause.arities)),
-            call_sites: existing.call_sites ++ clause.call_sites
+            call_sites: existing.call_sites ++ clause.call_sites,
+            head_positions: Enum.uniq(existing.head_positions ++ clause.head_positions),
+            head_ranges: Enum.uniq(existing.head_ranges ++ clause.head_ranges)
         }
 
         [with_source(merged, lines) | rest]
@@ -174,15 +211,32 @@ defmodule Grasp.Index.Extract do
 
   defp head_signature(_dynamic), do: nil
 
-  # The head is never a call site: the compiler reports a `Module.compile_definition_attributes/6`
-  # event at the head's position, and without this exclusion it would land on the function name.
-  # Guards are searched because custom guards (`when is_pos(x)`) are real calls.
+  defp head_location({:when, _, [head, _guard]}, name), do: head_location(head, name)
+
+  defp head_location({name, meta, _args}, name) do
+    with line when is_integer(line) <- meta[:line],
+         column when is_integer(column) <- meta[:column] do
+      width = String.length(Atom.to_string(name))
+      {[{line, column}], [%{start: {line, column}, end: {line, column + width}}]}
+    else
+      _ -> {[], []}
+    end
+  end
+
+  defp head_location(_head, _name), do: {[], []}
+
+  # The head itself is never a call site: the compiler reports its bookkeeping there, and
+  # a site would put those events on the function name. Guards are searched because custom
+  # guards (`when is_pos(x)`) are real calls, and so are default arguments, whose
+  # expressions the compiler reports at their own position inside the head.
   defp call_sites({_kind, _meta, [head | rest]}) do
-    searched =
+    {signature, guard} =
       case head do
-        {:when, _, [_head, guard]} -> [guard | rest]
-        _ -> rest
+        {:when, _, [signature, guard]} -> {signature, [guard]}
+        _ -> {head, []}
       end
+
+    searched = defaults(signature) ++ guard ++ rest
 
     {_, sites} =
       Macro.prewalk(searched, [], fn
@@ -202,6 +256,11 @@ defmodule Grasp.Index.Extract do
 
     sites |> Enum.reverse() |> Enum.uniq_by(&{&1.line, &1.column})
   end
+
+  defp defaults({_name, _meta, args}) when is_list(args),
+    do: for({:\\, _, [_arg, default]} <- args, do: default)
+
+  defp defaults(_head), do: []
 
   defp add_site(sites, node) do
     case call_range(node) do

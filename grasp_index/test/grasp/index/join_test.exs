@@ -83,6 +83,91 @@ defmodule Grasp.Index.JoinTest do
     assert Enum.all?(Join.join(defs, events), &(&1.calls == [] and &1.hidden_calls == []))
   end
 
+  @hooked ~S"""
+  defmodule Grasp.JoinTest.Hooks do
+    def hook(_env, _kind, _name, _args, _guards, _body), do: :ok
+  end
+
+  defmodule Grasp.JoinTest.Hooked do
+    @on_definition {Grasp.JoinTest.Hooks, :hook}
+
+    def greet(name) do
+      String.upcase(name)
+    end
+  end
+  """
+
+  test "drops the @on_definition hook reported at the def head and keeps the real call" do
+    records = join_source(@hooked, "lib/hooked.ex")
+    greet = record(records, "Grasp.JoinTest.Hooked", :greet)
+
+    assert greet.calls == [
+             %{target: "String.upcase/1", kind: :remote, range: %{start: {9, 5}, end: {9, 18}}}
+           ]
+
+    assert greet.hidden_calls == []
+    assert record(records, "Grasp.JoinTest.Hooks", :hook).calls == []
+  end
+
+  @macros ~S"""
+  defmodule Grasp.JoinTest.Macros do
+    defmacro twice(x), do: quote(do: unquote(x) * 2)
+  end
+  """
+
+  test "drops compiler internals reported inside a macro body" do
+    twice = @macros |> join_source("lib/macros.ex") |> record("Grasp.JoinTest.Macros", :twice)
+    targets = Enum.map(twice.calls ++ twice.hidden_calls, & &1.target)
+
+    refute Enum.any?(targets, &String.starts_with?(&1, ":elixir_"))
+    refute Enum.any?(targets, &String.contains?(&1, "unquote"))
+  end
+
+  @delegate ~S"""
+  defmodule Grasp.JoinTest.Delegates do
+    defdelegate size(x), to: Enum, as: :count
+  end
+  """
+
+  test "recovers the delegated call of a defdelegate, ranged over the delegate name" do
+    size =
+      @delegate |> join_source("lib/delegates.ex") |> record("Grasp.JoinTest.Delegates", :size)
+
+    assert size.calls == [
+             %{target: "Enum.count/1", kind: :remote, range: %{start: {2, 15}, end: {2, 19}}}
+           ]
+
+    assert size.hidden_calls == []
+  end
+
+  @defaults ~S"""
+  defmodule Grasp.JoinTest.Defaults do
+    def greet(name, prefix \\ String.trim(" p ")) do
+      prefix <> name
+    end
+  end
+  """
+
+  test "resolves a call inside a default argument to its expression, not a hidden call" do
+    greet =
+      @defaults |> join_source("lib/defaults.ex") |> record("Grasp.JoinTest.Defaults", :greet)
+
+    assert greet.calls == [
+             %{target: "String.trim/1", kind: :remote, range: %{start: {2, 29}, end: {2, 40}}}
+           ]
+
+    assert greet.hidden_calls == []
+  end
+
+  defp join_source(source, file) do
+    events = Compile.trace(source, file)
+    {:ok, %{definitions: defs}} = Extract.extract(source, file)
+    Join.join(defs, events)
+  end
+
+  defp record(records, module, name),
+    do: Enum.find(records, &(&1.module == module and &1.name == name))
+
   defp call(record, target), do: Enum.find(record.calls, &(&1.target == target))
 
   defp event(name, arity, line, column, target, kind) do

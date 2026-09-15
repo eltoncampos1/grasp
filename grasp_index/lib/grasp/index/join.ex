@@ -6,19 +6,36 @@ defmodule Grasp.Index.Join do
   An event is attributed to the definition whose module, name and arity match the caller
   the compiler reported; a definition registers every arity its default arguments
   introduce, so calls made through any of them land on it. The event's line and column
-  then locate the call node inside that definition. Events with no column are compiler
-  bookkeeping (`def` registration, boolean operators expanded from `if`) rather than
-  user code and are dropped, as are calls into `Kernel` and `Kernel.SpecialForms`. An
-  event with a column but no matching node came from macro-generated code — a function
-  component in a `~H` template, code injected by `use` — and is kept as a hidden call so
-  the graph stays complete even though nothing in the source can be clicked.
+  then locate the call node inside that definition, giving a call with a clickable range.
+
+  Four rules decide what survives:
+
+    * **Head positions.** The compiler reports its own bookkeeping at every clause head —
+      `Module.compile_definition_attributes/6` and any `@on_definition` hook a library
+      installs — at the head's line and the function name's column. Every event at a
+      position the definition lists as a head is dropped.
+    * **Compiler internals.** Targets in `Kernel`, `Kernel.SpecialForms` and
+      `Kernel.Utils`, and in the compiler's own Erlang modules (`:elixir_quote`,
+      `:elixir_def`, ...), describe how the code was expanded rather than what it calls.
+      `unquote(x)` inside a macro body, reported as `:elixir_quote.unquote/1`, is the
+      common case.
+    * **`defdelegate`.** The delegated call is reported with no column, so it can only be
+      placed by kind: for a `defdelegate`, a column-less event becomes a visible call
+      ranged over the delegate's own name. Column-less events elsewhere (boolean
+      operators expanded from `if`, bookkeeping on a delegate head) are dropped.
+    * **Hidden calls.** An event with a column but no matching node came from
+      macro-generated code — a function component in a `~H` template, code injected by
+      `use` — and is kept as a hidden call so the graph stays complete even though
+      nothing in the source can be clicked.
   """
 
   alias Grasp.Index.{Extract, Tracer}
 
   @ignored_targets [Kernel, Kernel.SpecialForms, Kernel.Utils]
-  # Emitted by the compiler at every def head while it registers the definition.
-  @ignored_calls [{Module, :compile_definition_attributes, 6}]
+  # Reported at every definition. Most kinds carry the head's position, where the
+  # positional rule catches it; a `defdelegate` reports it with no column, and there only
+  # the target tells it apart from the delegated call.
+  @definition_bookkeeping {Module, :compile_definition_attributes, 6}
 
   @type call :: %{target: String.t(), kind: Tracer.kind(), range: Extract.range()}
   @type hidden_call :: %{target: String.t(), kind: Tracer.kind(), line: pos_integer()}
@@ -67,22 +84,37 @@ defmodule Grasp.Index.Join do
     end)
   end
 
-  defp keep?(%{column: nil}), do: false
   defp keep?(%{target: {module, _, _}}) when module in @ignored_targets, do: false
-  defp keep?(%{target: target}) when target in @ignored_calls, do: false
-  defp keep?(_event), do: true
+  defp keep?(%{target: {module, _, _}}), do: not compiler_internal?(module)
+
+  defp compiler_internal?(module),
+    do: module |> Atom.to_string() |> String.starts_with?("elixir_")
 
   defp build(definition, events) do
     sites = Map.new(definition.call_sites, &{{&1.line, &1.column}, &1.range})
+    heads = MapSet.new(definition.head_positions)
+    delegate_range = if definition.kind == :defdelegate, do: List.first(definition.head_ranges)
 
     {calls, hidden} =
       Enum.reduce(events, {[], []}, fn event, {calls, hidden} ->
         {module, name, arity} = event.target
         target = function_id(module, name, arity)
+        call = fn range -> %{target: target, kind: event.kind, range: range} end
 
-        case Map.fetch(sites, {event.line, event.column}) do
-          {:ok, range} -> {[%{target: target, kind: event.kind, range: range} | calls], hidden}
-          :error -> {calls, [%{target: target, kind: event.kind, line: event.line} | hidden]}
+        cond do
+          MapSet.member?(heads, {event.line, event.column}) ->
+            {calls, hidden}
+
+          event.column == nil ->
+            if delegate_range && event.target != @definition_bookkeeping,
+              do: {[call.(delegate_range) | calls], hidden},
+              else: {calls, hidden}
+
+          true ->
+            case Map.fetch(sites, {event.line, event.column}) do
+              {:ok, range} -> {[call.(range) | calls], hidden}
+              :error -> {calls, [%{target: target, kind: event.kind, line: event.line} | hidden]}
+            end
         end
       end)
 
@@ -96,8 +128,8 @@ defmodule Grasp.Index.Join do
       file: definition.file,
       span: %{start_line: definition.start_line, end_line: definition.end_line},
       source: definition.source,
-      calls: calls |> Enum.uniq() |> Enum.sort_by(& &1.range.start),
-      hidden_calls: hidden |> Enum.uniq() |> Enum.sort_by(& &1.line)
+      calls: calls |> Enum.uniq() |> Enum.sort_by(&{&1.range.start, &1.target, &1.kind}),
+      hidden_calls: hidden |> Enum.uniq() |> Enum.sort_by(&{&1.line, &1.target, &1.kind})
     }
   end
 end
