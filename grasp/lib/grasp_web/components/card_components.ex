@@ -93,6 +93,7 @@ defmodule GraspWeb.CardComponents do
         dx: dx,
         dy: dy,
         callers: Index.callers(index, record["id"]),
+        entries: Index.entry_points_for(index, record["id"]),
         subtree: Forest.subtree_size(forest, card.id),
         body:
           Grasp.Highlight.render(record,
@@ -120,6 +121,13 @@ defmodule GraspWeb.CardComponents do
       data-dy={@dy}
     >
       <header class="card__header" phx-click="focus_card" phx-value-card={@card.id}>
+        <span
+          :for={entry <- @entries}
+          class={["badge", "badge--#{entry["kind"]}"]}
+          title={entry["target"]}
+        >
+          {badge_label(entry)}
+        </span>
         <h2 class="card__title">
           <span class="card__module">{@record["module"]}.</span><span class="card__fn">{@record[
             "name"
@@ -190,6 +198,14 @@ defmodule GraspWeb.CardComponents do
     </article>
     """
   end
+
+  # A callback entry is labelled with the function it is, which the card title already
+  # says; the kind is the part the badge adds. A route's label is the one thing neither
+  # the title nor the body carries, so it is shown in full.
+  defp badge_label(%{"kind" => kind, "label" => label}) when kind in ~w(route live_route),
+    do: label
+
+  defp badge_label(%{"kind" => kind}), do: kind
 
   defp stub_card(assigns) do
     {dx, dy} = assigns.card.offset

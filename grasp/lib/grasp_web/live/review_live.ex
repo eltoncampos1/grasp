@@ -10,6 +10,7 @@ defmodule GraspWeb.ReviewLive do
 
   import GraspWeb.CardComponents
   import GraspWeb.Palette
+  import GraspWeb.Sidebar
 
   alias Grasp.{Index, IndexStore, Session}
   alias Grasp.Session.Forest
@@ -32,6 +33,7 @@ defmodule GraspWeb.ReviewLive do
        index_path: IndexStore.path(),
        forest: Session.get(name),
        expanded_module: nil,
+       expanded_groups: MapSet.new(["routes"]),
        callers_open: nil,
        palette_open?: false,
        palette_query: "",
@@ -59,6 +61,17 @@ defmodule GraspWeb.ReviewLive do
   def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_event("toggle_group", %{"group" => group}, socket) when is_binary(group) do
+    groups = socket.assigns.expanded_groups
+
+    toggled =
+      if MapSet.member?(groups, group),
+        do: MapSet.delete(groups, group),
+        else: MapSet.put(groups, group)
+
+    {:noreply, assign(socket, expanded_groups: toggled)}
+  end
+
   def handle_event("expand_module", %{"module" => module}, socket) do
     expanded = if socket.assigns.expanded_module == module, do: nil, else: module
     {:noreply, assign(socket, expanded_module: expanded)}
@@ -249,28 +262,11 @@ defmodule GraspWeb.ReviewLive do
       <aside :if={@sidebar_open?} class="sidebar">
         <h1 class="brand">Grasp</h1>
         <p class="sidebar__project">{@index.project["app"]}</p>
-        <nav id="modules" class="modules">
-          <div :for={module <- Index.modules(@index)} class="module-group">
-            <button
-              class={["module", @expanded_module == module["name"] && "module--open"]}
-              phx-click="expand_module"
-              phx-value-module={module["name"]}
-            >
-              {module["name"]}
-            </button>
-            <ul :if={@expanded_module == module["name"]} class="fns">
-              <li :for={fun <- Index.functions_in_module(@index, module["name"])}>
-                <button
-                  class={["fn", "fn--#{fun["kind"]}"]}
-                  phx-click="open_root"
-                  phx-value-id={fun["id"]}
-                >
-                  {fun["name"]}/{fun["arity"]}
-                </button>
-              </li>
-            </ul>
-          </div>
-        </nav>
+        <.entry_groups
+          index={@index}
+          expanded={@expanded_groups}
+          expanded_module={@expanded_module}
+        />
       </aside>
       <section class="canvas" id="canvas" phx-hook="Canvas">
         <div class="toolbar">

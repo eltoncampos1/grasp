@@ -7,6 +7,8 @@ defmodule GraspWeb.ReviewLiveTest do
   @wrap "SampleApp.Formatter.wrap/1"
   @shout "SampleApp.Formatter.shout/1"
   @greet_all "SampleApp.Greeter.greet_all/1"
+  @show "SampleAppWeb.GreetController.show/2"
+  @mount "SampleAppWeb.HelloLive.mount/3"
 
   setup %{conn: conn} do
     name = "t-#{System.unique_integer([:positive])}"
@@ -14,7 +16,71 @@ defmodule GraspWeb.ReviewLiveTest do
     %{view: view, name: name}
   end
 
+  test "the sidebar lists entry points by kind and opens their target", %{view: view} do
+    assert has_element?(view, "#entries .group[data-kind='routes'] .group__title", "Routes")
+
+    assert has_element?(
+             view,
+             "#entries .group[data-kind='routes'] button.entry[phx-value-id='#{@show}']",
+             "GET /greet/:name"
+           )
+
+    refute has_element?(view, "#entries .group[data-kind='oban'] button.entry")
+
+    view |> element("#entries .group[data-kind='oban'] .group__title") |> render_click()
+
+    assert has_element?(
+             view,
+             "#entries .group[data-kind='oban'] button.entry",
+             "SampleApp.Workers.Mailer.perform/1"
+           )
+
+    view |> element("#entries button.entry[phx-value-id='#{@show}']") |> render_click()
+
+    assert has_element?(view, "#card-1[data-function-id='#{@show}']")
+    assert has_element?(view, "#card-1 .badge", "GET /greet/:name")
+  end
+
+  test "a kind with no entry points has no group, and callbacks sit under their module", %{
+    view: view
+  } do
+    refute has_element?(view, "#entries .group[data-kind='genservers'] button.entry")
+    view |> element("#entries .group[data-kind='live'] .group__title") |> render_click()
+
+    assert has_element?(
+             view,
+             "#entries .group[data-kind='live'] .group__heading",
+             "SampleAppWeb.HelloLive"
+           )
+
+    assert has_element?(
+             view,
+             "#entries .group[data-kind='live'] .group__heading",
+             "SampleAppWeb.GreetingComponent"
+           )
+
+    assert has_element?(
+             view,
+             "#entries .group[data-kind='live'] button.entry[phx-value-id='#{@mount}']",
+             @mount
+           )
+  end
+
+  test "a card badges every entry point that reaches it", %{view: view, name: name} do
+    Session.open_root(name, @mount)
+
+    assert has_element?(view, "#card-1 .badge.badge--live_route", "GET /hello")
+    assert has_element?(view, "#card-1 .badge.badge--live_view", "live_view")
+
+    Session.open_root(name, @greet)
+    refute has_element?(view, "#card-2 .badge")
+  end
+
   test "renders the module list and expands a module into its functions", %{view: view} do
+    refute has_element?(view, "#modules button.module")
+
+    view |> element("#entries .group[data-kind='modules'] .group__title") |> render_click()
+
     assert has_element?(view, "#modules button.module", "SampleApp.Greeter")
     refute has_element?(view, "#modules button.fn", "greet/2")
 
@@ -28,6 +94,8 @@ defmodule GraspWeb.ReviewLiveTest do
   test "opening a function from the sidebar adds a focused root card with highlighted source", %{
     view: view
   } do
+    view |> element("#entries .group[data-kind='modules'] .group__title") |> render_click()
+
     view
     |> element("#modules button.module[phx-value-module='SampleApp.Greeter']")
     |> render_click()
