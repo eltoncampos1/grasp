@@ -1,23 +1,36 @@
 defmodule GraspWeb.Palette do
   @moduledoc """
-  The Cmd+K function palette: a `<dialog>` with a search input and ranked results. The
-  `Palette` JS hook opens it, moves the selection with the arrow keys and reports the
-  choice with `palette_open`; the server searches on every change and closes the dialog
-  after opening a card.
+  The Cmd+K function palette: a `<dialog>` with a search input and ranked results.
+
+  Every piece of the palette's state — whether it is open, the query, the results and the
+  selected row — lives on the server and is rendered from assigns. The dialog is a plain
+  (non-modal) one for that reason: `showModal()` would set an `open` attribute the server
+  never renders, and the next patch would strip it, closing the palette as the user types.
+  The hook therefore only reports intent (`palette_show`, `palette_hide`, `palette_move`,
+  `palette_choose`) and the backdrop is an ordinary sibling element rather than `::backdrop`.
   """
 
   use GraspWeb, :html
 
+  attr :open?, :boolean, required: true
   attr :query, :string, required: true
   attr :results, :list, required: true
+  attr :selected, :integer, required: true
 
   def palette(assigns) do
     ~H"""
-    <dialog id="palette" class="palette" phx-hook="Palette">
+    <div :if={@open?} class="palette-backdrop" phx-click="palette_hide"></div>
+    <dialog
+      id="palette"
+      class="palette"
+      phx-hook="Palette"
+      open={@open?}
+      data-open={to_string(@open?)}
+    >
       <form
         id="palette-form"
         phx-change="palette_search"
-        phx-submit="palette_submit"
+        phx-submit="palette_choose"
         autocomplete="off"
       >
         <input
@@ -26,14 +39,13 @@ defmodule GraspWeb.Palette do
           value={@query}
           placeholder="Type a function name… (Enter opens, Shift+Enter opens under the focused card)"
           phx-debounce="80"
-          autofocus
         />
       </form>
       <ul id="palette-results" class="palette__results">
         <li
           :for={{fun, i} <- Enum.with_index(@results)}
           data-id={fun["id"]}
-          aria-selected={to_string(i == 0)}
+          aria-selected={to_string(i == @selected)}
         >
           <button
             type="button"

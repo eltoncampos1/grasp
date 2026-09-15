@@ -4,7 +4,8 @@ const Keys = {
   mounted() {
     this.onKeydown = (e) => {
       const inField =
-        ["INPUT", "TEXTAREA"].includes(e.target.tagName) || document.getElementById("palette")?.open
+        ["INPUT", "TEXTAREA"].includes(e.target.tagName) ||
+        document.getElementById("palette")?.dataset.open === "true"
       if (inField || e.metaKey || e.ctrlKey || e.altKey) return
 
       if (DIRECTIONS[e.key]) {

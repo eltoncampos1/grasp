@@ -30,8 +30,10 @@ defmodule GraspWeb.ReviewLive do
        index: IndexStore.get(),
        forest: Session.get(name),
        expanded_module: nil,
+       palette_open?: false,
        palette_query: "",
        palette_results: [],
+       palette_selected: 0,
        editor: Application.get_env(:grasp, :editor)
      )}
   end
@@ -87,26 +89,45 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
+  def handle_event("palette_show", _params, socket),
+    do: {:noreply, assign(socket, palette_open?: true, palette_selected: 0)}
+
+  def handle_event("palette_hide", _params, socket), do: {:noreply, reset_palette(socket)}
+
   def handle_event("palette_search", %{"q" => query}, socket) do
-    results = Index.search(socket.assigns.index, query, 20)
-    {:noreply, assign(socket, palette_query: query, palette_results: results)}
+    results =
+      case socket.assigns.index do
+        nil -> []
+        index -> Index.search(index, query, 20)
+      end
+
+    {:noreply,
+     assign(socket, palette_query: query, palette_results: results, palette_selected: 0)}
   end
 
-  def handle_event("palette_submit", _params, socket) do
-    case socket.assigns.palette_results do
-      [first | _] -> open_from_palette(socket, first["id"], false)
-      [] -> {:noreply, socket}
+  def handle_event("palette_move", %{"delta" => delta}, socket) when delta in [1, -1] do
+    last = length(socket.assigns.palette_results) - 1
+    selected = (socket.assigns.palette_selected + delta) |> min(last) |> max(0)
+    {:noreply, assign(socket, palette_selected: selected)}
+  end
+
+  def handle_event("palette_choose", params, socket) do
+    case Enum.at(socket.assigns.palette_results, socket.assigns.palette_selected) do
+      nil -> {:noreply, socket}
+      fun -> open_from_palette(socket, fun["id"], child?(params))
     end
   end
 
-  def handle_event("palette_open", %{"id" => id} = params, socket) do
-    child? = params["child"] in [true, "true"]
-    open_from_palette(socket, id, child?)
-  end
+  def handle_event("palette_open", %{"id" => id} = params, socket),
+    do: open_from_palette(socket, id, child?(params))
 
   # Events are addressed by name and card id from the DOM, so a stale tab or a hand-made
   # message must be dropped rather than take the whole page down with it.
   def handle_event(_event, _params, socket), do: {:noreply, socket}
+
+  # The form submit carries the query rather than a child flag, so a missing key is a plain
+  # root open; the hook sends the boolean and the result buttons the string.
+  defp child?(params), do: params["child"] in [true, "true"]
 
   defp open_from_palette(socket, id, child?) do
     name = socket.assigns.name
@@ -117,10 +138,16 @@ defmodule GraspWeb.ReviewLive do
         _ -> Session.open_root(name, id)
       end
 
-    {:noreply,
-     socket
-     |> assign(forest: forest, palette_query: "", palette_results: [])
-     |> push_event("palette:close", %{})}
+    {:noreply, socket |> assign(forest: forest) |> reset_palette()}
+  end
+
+  defp reset_palette(socket) do
+    assign(socket,
+      palette_open?: false,
+      palette_query: "",
+      palette_results: [],
+      palette_selected: 0
+    )
   end
 
   # The session broadcasts the new forest to every subscriber including this process, so
@@ -196,7 +223,12 @@ defmodule GraspWeb.ReviewLive do
           />
         </div>
       </section>
-      <.palette query={@palette_query} results={@palette_results} />
+      <.palette
+        open?={@palette_open?}
+        query={@palette_query}
+        results={@palette_results}
+        selected={@palette_selected}
+      />
     </main>
     """
   end

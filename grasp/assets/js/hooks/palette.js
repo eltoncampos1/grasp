@@ -1,52 +1,52 @@
 const Palette = {
   mounted() {
-    this.dialog = this.el
     this.input = this.el.querySelector("input[name=q]")
-    this.results = this.el.querySelector("#palette-results")
+    this.wasOpen = false
 
     this.onKeydownWindow = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.key?.toLowerCase() === "k") {
         e.preventDefault()
-        this.open()
+        this.pushEvent("palette_show", {})
       }
     }
     window.addEventListener("keydown", this.onKeydownWindow)
 
     this.el.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (e.key === "Escape") {
         e.preventDefault()
-        this.move(e.key === "ArrowDown" ? 1 : -1)
+        this.pushEvent("palette_hide", {})
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault()
+        this.pushEvent("palette_move", {delta: e.key === "ArrowDown" ? 1 : -1})
       } else if (e.key === "Enter") {
         e.preventDefault()
-        const selected = this.results.querySelector("li[aria-selected='true']")
-        if (selected) this.pushEvent("palette_open", {id: selected.dataset.id, child: e.shiftKey})
+        this.pushEvent("palette_choose", {child: e.shiftKey})
       }
     })
 
-    this.el.addEventListener("click", (e) => {
-      if (e.target === this.dialog) this.dialog.close()
-    })
+    this.focusWhenOpened()
+  },
 
-    this.handleEvent("palette:close", () => this.dialog.close())
+  updated() {
+    this.focusWhenOpened()
+    this.el.querySelector("li[aria-selected='true']")?.scrollIntoView({block: "nearest"})
   },
 
   destroyed() {
     window.removeEventListener("keydown", this.onKeydownWindow)
   },
 
-  open() {
-    if (!this.dialog.open) this.dialog.showModal()
-    this.input.value = ""
-    this.input.focus()
-  },
+  // Focus is taken once per opening: on later patches the caret belongs to whatever the
+  // user is typing in, so stealing it back would undo their edits.
+  focusWhenOpened() {
+    const open = this.el.dataset.open === "true"
 
-  move(delta) {
-    const items = Array.from(this.results.querySelectorAll("li"))
-    if (items.length === 0) return
-    const current = items.findIndex((li) => li.getAttribute("aria-selected") === "true")
-    const next = Math.min(items.length - 1, Math.max(0, current + delta))
-    items.forEach((li, i) => li.setAttribute("aria-selected", String(i === next)))
-    items[next].scrollIntoView({block: "nearest"})
+    if (open && !this.wasOpen && document.activeElement !== this.input) {
+      this.input.focus()
+      this.input.select()
+    }
+
+    this.wasOpen = open
   },
 }
 
