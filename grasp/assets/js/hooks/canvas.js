@@ -30,6 +30,7 @@ const Canvas = {
     this.svg = this.el.querySelector("#connectors")
     this.zoomLevel = this.el.querySelector("#zoom-level")
     this.view = {x: MARGIN, y: MARGIN, scale: 1}
+    this.lastFocus = null
     this.style =
       document.getElementById("grasp-canvas-style") ||
       document.head.appendChild(
@@ -65,7 +66,13 @@ const Canvas = {
 
     this.resizeObserver = new ResizeObserver(() => this.drawConnectors())
     this.resizeObserver.observe(this.stage)
-    this.handleEvent("focus", ({id}) => this.revealCard(id))
+    // Every session mutation pushes the focus, a move_card included, so revealing on each
+    // one would pan away from the card just dropped; only a change of focus is a reveal.
+    this.handleEvent("focus", ({id}) => {
+      if (id === this.lastFocus) return
+      this.lastFocus = id
+      this.revealCard(id)
+    })
     this.drawConnectors()
   },
 
@@ -91,6 +98,7 @@ const Canvas = {
     window.removeEventListener("blur", this.onSpaceRelease)
     document.removeEventListener("visibilitychange", this.onSpaceRelease)
     document.body.classList.remove("grasp-space")
+    document.body.classList.remove("grasp-dragging")
     this.resizeObserver.disconnect()
     this.style.remove()
   },
@@ -165,6 +173,9 @@ const Canvas = {
   },
 
   wheel(e) {
+    // The toolbar floats over the canvas; a wheel there is aimed at the toolbar, and panning
+    // the ground out from under it would make the buttons hard to hit.
+    if (e.target.closest?.(".toolbar")) return
     // A zoom modifier means the canvas, whatever is under the cursor.
     if (!e.ctrlKey && !e.metaKey && this.scrollableUnder(e)) return
     e.preventDefault()
@@ -318,6 +329,7 @@ const Canvas = {
   // smears across every card the pointer crosses.
   beginCardDrag(e, card, ctrl) {
     e.preventDefault()
+    document.body.classList.add("grasp-dragging")
     this.drag = {
       kind: "card",
       ctrl,
@@ -334,6 +346,7 @@ const Canvas = {
 
   beginPan(e) {
     e.preventDefault()
+    document.body.classList.add("grasp-dragging")
     this.drag = {
       kind: "pan",
       pointerId: e.pointerId,
@@ -365,8 +378,9 @@ const Canvas = {
       this.view.y = this.drag.y + my
       this.applyView()
     } else {
-      // Snapped so the offset lands on whole screen pixels at the current zoom, for the same
-      // reason applyView() rounds the pan; the stage units it is written in are 1/s of those.
+      // The displacement is rounded to whole screen pixels, for the same reason applyView()
+      // rounds the pan: the card then travels in whole pixels and does not shimmer. At a scale
+      // other than 1 it keeps whatever subpixel phase its layout gave it — it is not on a grid.
       const s = this.view.scale
       const tx = Math.round((this.drag.dx + mx / s) * s) / s
       const ty = Math.round((this.drag.dy + my / s) * s) / s
@@ -378,6 +392,7 @@ const Canvas = {
   endDrag() {
     const drag = this.drag
     this.drag = null
+    document.body.classList.remove("grasp-dragging")
     if (drag?.moved) this.suppressClick = true
     // A ctrl-press that never moved was a right-click, not a drag; blocking the menu it is
     // about to open would take the context menu away from the card entirely.
