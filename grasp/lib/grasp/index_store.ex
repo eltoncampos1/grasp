@@ -8,6 +8,10 @@ defmodule Grasp.IndexStore do
   every two seconds — `mix grasp.index` rewrites the whole file, so an mtime change is
   the signal — and broadcasts `:index_reloaded` on the `"index"` topic after a successful
   reload. A failed load (missing or invalid file) keeps the previous index and logs.
+
+  The mtime is read *before* the file, so a rewrite landing between the two leaves the
+  stored mtime older than the file's and the next poll picks the new content up; reading
+  it after would pair the old index with the new mtime and never reload.
   """
 
   use GenServer
@@ -68,15 +72,10 @@ defmodule Grasp.IndexStore do
   @impl true
   def handle_call(:path, _from, state), do: {:reply, state.path, state}
 
-  def handle_call({:load, path}, _from, state) do
-    case do_load(path, state) do
-      {:ok, state} -> {:reply, :ok, state}
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
-  end
+  def handle_call({:load, path}, _from, state), do: load_path(path, state)
 
   def handle_call(:reload, _from, %{path: nil} = state), do: {:reply, {:error, :no_path}, state}
-  def handle_call(:reload, _from, state), do: handle_call({:load, state.path}, nil, state)
+  def handle_call(:reload, _from, state), do: load_path(state.path, state)
 
   @impl true
   def handle_info(:poll, %{path: nil} = state) do
@@ -105,13 +104,20 @@ defmodule Grasp.IndexStore do
     {:noreply, state}
   end
 
+  defp load_path(path, state) do
+    case do_load(path, state) do
+      {:ok, state} -> {:reply, :ok, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
   defp do_load(path, state) do
     # Configuration gives a path relative to the project root; storing it expanded keeps
     # mtime polling and `path/0` independent of the current working directory.
     path = Path.expand(path)
 
-    with {:ok, index} <- Grasp.Index.load(path),
-         {:ok, %{mtime: mtime}} <- File.stat(path, time: :posix) do
+    with {:ok, %{mtime: mtime}} <- File.stat(path, time: :posix),
+         {:ok, index} <- Grasp.Index.load(path) do
       :persistent_term.put(@key, index)
       Phoenix.PubSub.broadcast(Grasp.PubSub, @topic, :index_reloaded)
       {:ok, %{state | path: path, mtime: mtime}}

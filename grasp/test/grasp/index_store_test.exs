@@ -31,6 +31,19 @@ defmodule Grasp.IndexStoreTest do
     assert IndexStore.get() == before
   end
 
+  test "reload/0 re-reads the watched path" do
+    path = tmp_copy(& &1)
+    :ok = IndexStore.load(path)
+    IndexStore.subscribe()
+
+    doc = path |> File.read!() |> Jason.decode!() |> put_in(["project", "app"], "reloaded")
+    File.write!(path, Jason.encode!(doc))
+
+    assert :ok = IndexStore.reload()
+    assert_receive :index_reloaded
+    assert IndexStore.get().project["app"] == "reloaded"
+  end
+
   test "a changed mtime triggers a reload" do
     path = tmp_copy(& &1)
     :ok = IndexStore.load(path)
