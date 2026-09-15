@@ -68,6 +68,14 @@ defmodule Grasp.Session do
   @spec toggle_collapse(name(), Forest.id()) :: Forest.t()
   def toggle_collapse(name, card_id), do: mutate(name, &Forest.toggle_collapse(&1, card_id))
 
+  @doc "Sets `card_id`'s layout offset in stage pixels."
+  @spec move(name(), Forest.id(), {integer(), integer()}) :: Forest.t()
+  def move(name, card_id, {dx, dy}), do: mutate(name, &Forest.move(&1, card_id, {dx, dy}))
+
+  @doc "Clears every card's offset, returning the tree to its automatic layout."
+  @spec reset_offsets(name()) :: Forest.t()
+  def reset_offsets(name), do: mutate(name, &Forest.reset_offsets/1)
+
   @doc "Moves focus in `direction`."
   @spec move_focus(name(), Forest.direction()) :: Forest.t()
   def move_focus(name, direction), do: mutate(name, &Forest.move_focus(&1, direction))

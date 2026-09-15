@@ -7,7 +7,9 @@ defmodule Grasp.Session.Forest do
   which call target opened a card, so the parent can mark that call while the child is
   open. Focus is a single card id. Closing a card removes its subtree; collapsing hides
   it. Opening a caller from a root re-parents the root under the caller; from a non-root
-  card it starts a new root tree so the original branch is left intact.
+  card it starts a new root tree so the original branch is left intact. `offset` is a
+  card's displacement in stage pixels from where the automatic layout puts it, so a card
+  dragged by hand keeps its place as the tree around it grows.
   """
 
   defstruct roots: [], cards: %{}, focus: nil, next_id: 1
@@ -19,7 +21,8 @@ defmodule Grasp.Session.Forest do
           parent_id: id() | nil,
           children: [id()],
           opened_by: String.t() | nil,
-          collapsed: boolean()
+          collapsed: boolean(),
+          offset: {integer(), integer()}
         }
   @type t :: %__MODULE__{
           roots: [id()],
@@ -167,6 +170,21 @@ defmodule Grasp.Session.Forest do
     end
   end
 
+  @doc "Sets a card's layout offset in stage pixels; no-op on an unknown id."
+  @spec move(t(), id(), {integer(), integer()}) :: t()
+  def move(%__MODULE__{} = forest, id, {dx, dy}) when is_integer(dx) and is_integer(dy) do
+    case card(forest, id) do
+      nil -> forest
+      card -> %{forest | cards: Map.put(forest.cards, id, %{card | offset: {dx, dy}})}
+    end
+  end
+
+  @doc "Clears every card's offset so the tree returns to its automatic layout."
+  @spec reset_offsets(t()) :: t()
+  def reset_offsets(%__MODULE__{} = forest) do
+    %{forest | cards: Map.new(forest.cards, fn {id, card} -> {id, %{card | offset: {0, 0}}} end)}
+  end
+
   @doc "Moves focus to the parent, first visible child, next or previous sibling."
   @spec move_focus(t(), direction()) :: t()
   def move_focus(%__MODULE__{focus: nil, roots: [first | _]} = forest, _dir),
@@ -210,7 +228,8 @@ defmodule Grasp.Session.Forest do
       parent_id: parent_id,
       children: [],
       opened_by: opened_by,
-      collapsed: false
+      collapsed: false,
+      offset: {0, 0}
     }
 
     {%{forest | cards: Map.put(forest.cards, id, card), next_id: id + 1}, id}

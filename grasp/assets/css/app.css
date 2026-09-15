@@ -54,7 +54,7 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .node__children::before { content: ""; position: absolute; inset-inline-start: calc(-1 * var(--space-l) / 2); inset-block: var(--space-m); border-inline-start: 1px solid var(--border); }
 .node__children > .node > .card::before { content: ""; position: absolute; inset-inline-start: calc(-1 * var(--space-l) / 2); top: var(--space-m); width: calc(var(--space-l) / 2); border-top: 1px solid var(--border); }
 
-.card { position: relative; width: var(--card-width); flex: none; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-family: var(--mono); font-size: var(--code-size); }
+.card { translate: var(--dx, 0px) var(--dy, 0px); position: relative; width: var(--card-width); flex: none; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-family: var(--mono); font-size: var(--code-size); }
 .card--focused { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
 .card__header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-s); padding: var(--space-s) var(--space-m); border-bottom: 1px solid var(--border); }
 .card__title { margin: 0; font-size: 0.9rem; font-weight: 600; }

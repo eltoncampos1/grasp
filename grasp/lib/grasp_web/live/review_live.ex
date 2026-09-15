@@ -98,6 +98,19 @@ defmodule GraspWeb.ReviewLive do
   def handle_event("toggle_collapse", %{"card" => card}, socket),
     do: mutate(socket, &Session.toggle_collapse(&1, int(card)))
 
+  def handle_event("move_card", %{"card" => card, "dx" => dx, "dy" => dy}, socket) do
+    case {int(card), int(dx), int(dy)} do
+      {id, dx, dy} when is_integer(id) and is_integer(dx) and is_integer(dy) ->
+        mutate(socket, &Session.move(&1, id, {dx, dy}))
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("reset_layout", _params, socket),
+    do: mutate(socket, &Session.reset_offsets/1)
+
   def handle_event("move_focus", %{"dir" => dir}, socket) when dir in ~w(parent child next prev),
     do: mutate(socket, &Session.move_focus(&1, String.to_existing_atom(dir)))
 
@@ -198,7 +211,7 @@ defmodule GraspWeb.ReviewLive do
   # on an unknown id, so nil carries the garbage through to the same outcome.
   defp int(value) when is_binary(value) do
     case Integer.parse(value) do
-      {id, ""} -> id
+      {number, ""} -> number
       _ -> nil
     end
   end

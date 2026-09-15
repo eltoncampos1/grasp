@@ -75,9 +75,13 @@ defmodule GraspWeb.CardComponents do
 
     external? = fn target -> match?(:error, Index.fetch_function(index, target)) end
 
+    {dx, dy} = card.offset
+
     assigns =
       assign(assigns,
         focused?: forest.focus == card.id,
+        dx: dx,
+        dy: dy,
         callers: Index.callers(index, record["id"]),
         subtree: Forest.subtree_size(forest, card.id),
         body:
@@ -99,9 +103,12 @@ defmodule GraspWeb.CardComponents do
     <article
       id={"card-#{@card.id}"}
       class={["card", @focused? && "card--focused"]}
+      style={"--dx: #{@dx}px; --dy: #{@dy}px"}
       data-function-id={@record["id"]}
       data-focused={to_string(@focused?)}
       data-depth={@depth}
+      data-dx={@dx}
+      data-dy={@dy}
     >
       <header class="card__header" phx-click="focus_card" phx-value-card={@card.id}>
         <h2 class="card__title">
@@ -176,9 +183,13 @@ defmodule GraspWeb.CardComponents do
   end
 
   defp stub_card(assigns) do
+    {dx, dy} = assigns.card.offset
+
     assigns =
       assign(assigns,
         focused?: assigns.forest.focus == assigns.card.id,
+        dx: dx,
+        dy: dy,
         docs: hexdocs_url(assigns.card.function_id),
         stale?: indexed_module?(assigns.index, assigns.card.function_id)
       )
@@ -187,9 +198,12 @@ defmodule GraspWeb.CardComponents do
     <article
       id={"card-#{@card.id}"}
       class={["card", "stub", @focused? && "card--focused"]}
+      style={"--dx: #{@dx}px; --dy: #{@dy}px"}
       data-function-id={@card.function_id}
       data-focused={to_string(@focused?)}
       data-depth={@depth}
+      data-dx={@dx}
+      data-dy={@dy}
     >
       <header class="card__header" phx-click="focus_card" phx-value-card={@card.id}>
         <h2 class="card__title">{@card.function_id}</h2>

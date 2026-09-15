@@ -113,6 +113,19 @@ defmodule Grasp.Session.ForestTest do
     assert Forest.move_focus(%{forest | focus: nil}, :next).focus == a
   end
 
+  test "move/3 sets a card's offset and reset_offsets/1 clears every offset" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+
+    assert Forest.card(forest, a).offset == {0, 0}
+    forest = Forest.move(forest, b, {40, -12})
+    assert Forest.card(forest, b).offset == {40, -12}
+    assert Forest.move(forest, 999, {1, 1}) == forest
+
+    forest = Forest.reset_offsets(forest)
+    assert Forest.card(forest, b).offset == {0, 0}
+  end
+
   test "open_child/3 and open_caller/3 are no-ops on an unknown card id" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
 

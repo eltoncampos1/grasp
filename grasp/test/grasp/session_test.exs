@@ -38,6 +38,22 @@ defmodule Grasp.SessionTest do
     assert Session.get(name) == forest
   end
 
+  test "move/3 stores a card's offset and reset_offsets/1 clears it", %{name: name} do
+    :ok = Session.subscribe(name)
+
+    forest = Session.open_root(name, "A.f/0")
+    [root] = forest.roots
+    assert_receive {:session, ^name, ^forest}
+
+    forest = Session.move(name, root, {10, 20})
+    assert Forest.card(forest, root).offset == {10, 20}
+    assert_receive {:session, ^name, ^forest}
+
+    forest = Session.reset_offsets(name)
+    assert Forest.card(forest, root).offset == {0, 0}
+    assert_receive {:session, ^name, ^forest}
+  end
+
   test "sessions are isolated by name", %{name: name} do
     other = name <> "-other"
     :ok = Session.ensure(other)

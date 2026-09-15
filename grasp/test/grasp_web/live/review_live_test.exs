@@ -252,6 +252,23 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#canvas")
   end
 
+  test "dragging a card stores its offset and reset_layout clears it", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+
+    render_hook(view, "move_card", %{"card" => 1, "dx" => 40, "dy" => -12})
+    assert has_element?(view, "#card-1[data-dx='40'][data-dy='-12']")
+    assert has_element?(view, "#card-1[style*='--dx: 40px']")
+
+    render_hook(view, "move_card", %{"card" => "1", "dx" => "7", "dy" => "8"})
+    assert has_element?(view, "#card-1[data-dx='7'][data-dy='8']")
+
+    render_hook(view, "move_card", %{"card" => 1, "dx" => "nope", "dy" => 0})
+    assert has_element?(view, "#card-1[data-dx='7']")
+
+    render_click(view, "reset_layout", %{})
+    assert has_element?(view, "#card-1[data-dx='0'][data-dy='0']")
+  end
+
   test "an unhandled direction or an unparsable card id leaves the view alive", %{
     view: view,
     name: name
