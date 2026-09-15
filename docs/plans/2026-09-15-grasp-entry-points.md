@@ -412,8 +412,34 @@ Groups (`data-kind`): `routes` (route + live_route, expanded by default), `oban`
 - Real run: re-index the controller-named project (`mix grasp.index` there), start the viewer on a spare port, `curl` the page and count `.group` elements; record route/worker counts in the private report; kill the server. Never name the project in tracked files.
 - Commit: `Document entry-point detection`.
 
+---
+
+### Task 6: Calls inside templates reach the call graph
+
+**Files:**
+- Modify: `grasp_index/lib/grasp/index/join.ex`
+- Test: `grasp_index/test/grasp/index/join_test.exs`, `grasp_index/test/grasp/index/builder_test.exs`
+
+**Problem:** the compiler reports calls made inside `~H` bodies (a context call in `{...}`) without a column, and `Join.keep?/1` drops every column-less event as compiler bookkeeping. So `SampleAppWeb.HelloLive.render/1` shows no call to `SampleApp.Greeter.greet/1`, and on a real Phoenix app the controller → template → context chain is severed. (Function components such as `<.button>` do carry a column today and already land in `hidden_calls`.)
+
+**Rule (controller ruling):** a column-less event whose caller definition exists and whose line falls inside that definition's span becomes a **hidden call**, unless its target module is `:erlang`, an `:elixir_*` compiler internal, or `Kernel`/`Kernel.SpecialForms`/`Kernel.Utils` (those are the `if`/`and`/`def` bookkeeping the old rule was protecting against). Column-less events outside every span are still dropped. `Module.compile_definition_attributes/6` stays dropped by the existing bookkeeping rule.
+
+- [ ] **Step 1: Tests (RED)**
+
+`join_test.exs`: an event `%{function: {:run, 2}, line: 6, column: nil, target: {SampleApp.Greeter, :greet, 1}, kind: :remote}` (line 6 is inside `run`'s span in the test source) yields `hidden_calls == [%{target: "SampleApp.Greeter.greet/1", kind: :remote, line: 6}]`; the same event with target `{:erlang, :orelse, 2}` yields nothing; with line 99 (outside the span) yields nothing.
+
+`builder_test.exs`: `SampleAppWeb.HelloLive.render/1` has a hidden call to `SampleApp.Greeter.greet/1` (target resolved by the reader to `greet/2`); `Grasp.Index.callers(index, "SampleApp.Greeter.greet/2")` now includes `SampleAppWeb.HelloLive.render/1` and `SampleAppWeb.GreetingComponent.render/1` (update the pinned list).
+
+- [ ] **Step 2: Implement**
+
+In `Grasp.Index.Join`: replace the blanket `keep?(%{column: nil}) -> false` with a two-stage filter. Keep the module/bookkeeping drops in `keep?/1` for all events. In `build/2`, for an event with `column: nil`: if `event.line` is within `definition.start_line..definition.end_line` and the target module is not `:erlang` (`inspect(module) == ":erlang"`) → hidden call; otherwise drop. Extract the module test into `compiler_internal?/1` (already exists for `:elixir_*`) plus a `runtime_internal?/1` for `:erlang`. Update the moduledoc's rule list: "Events with no column are macro- or template-generated; inside a definition they become hidden calls, except calls into `:erlang`, compiler internals and `Kernel`, which are the operators `if`/`and`/`case` expand to."
+
+- [ ] **Step 3: Run, format, commit**
+
+`cd grasp_index && mix test --include integration` green; `mix format`; commit `Keep template-generated calls as hidden calls` with the trailer. Then re-index the real project the controller names and report how many hidden calls changed (private report only).
+
 ## Self-review
 
 - Detection is behaviour/export based and callback presence is checked against the index, so `use GenServer` defaults, macro-generated `call/2` on endpoints/controllers, and dependency controllers (forwarded routers) are excluded without special cases.
 - `Join.function_id/3` is the single id formatter; `indexed` includes alias arities so a controller action with a default argument still matches.
-- The viewer fixture is regenerated once (Task 3) after the indexer changes, so Task 4 tests against real entry data.
+- The viewer fixture is regenerated once (Task 3) after the indexer changes, so Task 4 tests against real entry data. Task 6 (template calls as hidden calls) was added after Task 2's review found column-less template calls were dropped; run it before Task 5 so the docs and the real-index numbers reflect it.
