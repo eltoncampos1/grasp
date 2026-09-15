@@ -16,6 +16,10 @@ defmodule GraspWeb.Endpoint do
 
   plug Plug.Static, at: "/", from: :grasp, gzip: false, only: GraspWeb.static_paths()
 
+  if code_reloading? do
+    plug Phoenix.CodeReloader
+  end
+
   plug Plug.RequestId
   plug Plug.Parsers, parsers: [:urlencoded, :multipart, :json], pass: ["*/*"], json_decoder: Jason
   plug Plug.MethodOverride
