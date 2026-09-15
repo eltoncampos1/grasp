@@ -6,7 +6,7 @@ defmodule Grasp.Index do
   same shape they would read from disk. Functions are keyed by id (`"Mod.fun/arity"`);
   a definition with default arguments is also reachable through each extra arity it
   defines. Callers are derived at load time by inverting every function's calls and
-  hidden calls. Search ranks an exact id first, then ids containing the query, then ids
+  hidden calls, and entry points are indexed by the function they reach. Search ranks an exact id first, then ids containing the query, then ids
   whose characters contain the query as a subsequence, so `"walcre"` still finds
   `MyApp.Wallets.credit/3`.
 
@@ -22,7 +22,8 @@ defmodule Grasp.Index do
             entry_points: [],
             functions: %{},
             aliases: %{},
-            callers: %{}
+            callers: %{},
+            entry_points_by_target: %{}
 
   @type function_record :: %{required(String.t()) => term()}
   @type t :: %__MODULE__{
@@ -34,7 +35,8 @@ defmodule Grasp.Index do
           entry_points: [map()],
           functions: %{String.t() => function_record()},
           aliases: %{String.t() => String.t()},
-          callers: %{String.t() => [String.t()]}
+          callers: %{String.t() => [String.t()]},
+          entry_points_by_target: %{String.t() => [map()]}
         }
 
   @doc "Reads and decodes an index document from `path`."
@@ -87,16 +89,24 @@ defmodule Grasp.Index do
       |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
       |> Map.new(fn {target, callers} -> {target, Enum.sort(callers)} end)
 
+    entry_points = List.wrap(document["entry_points"])
+
+    entry_points_by_target =
+      entry_points
+      |> Enum.filter(&(is_map(&1) and is_binary(&1["target"])))
+      |> Enum.group_by(&Map.get(aliases, &1["target"], &1["target"]))
+
     %__MODULE__{
       version: 1,
       generated_at: document["generated_at"],
       project: document["project"] || %{},
       git: document["git"],
       modules: document["modules"] || [],
-      entry_points: document["entry_points"] || [],
+      entry_points: entry_points,
       functions: functions,
       aliases: aliases,
-      callers: callers
+      callers: callers,
+      entry_points_by_target: entry_points_by_target
     }
   end
 
@@ -164,6 +174,17 @@ defmodule Grasp.Index do
   @doc "Entry-point records as stored in the document."
   @spec entry_points(t()) :: [map()]
   def entry_points(%__MODULE__{} = index), do: index.entry_points
+
+  @doc """
+  Entry points reaching `function_id`, in document order.
+
+  An entry point names its target the way the source does, so a route pointing at a
+  default-argument arity is grouped under the definition it resolves to and found by
+  either id. A function no entry point names returns `[]`.
+  """
+  @spec entry_points_for(t(), String.t()) :: [map()]
+  def entry_points_for(%__MODULE__{} = index, function_id),
+    do: Map.get(index.entry_points_by_target, resolve(index, function_id), [])
 
   @doc "Functions whose `change` is anything but `\"unchanged\"`, sorted by id."
   @spec changed_functions(t()) :: [function_record()]

@@ -17,7 +17,26 @@ defmodule Grasp.IndexTest do
           "behaviours" => []
         }
       ],
-      "entry_points" => [],
+      "entry_points" => [
+        %{
+          "kind" => "route",
+          "label" => "POST /wallets",
+          "target" => "MyAppWeb.WalletController.create/2",
+          "meta" => %{"verb" => "POST", "path" => "/wallets"}
+        },
+        %{
+          "kind" => "route",
+          "label" => "PUT /wallets",
+          "target" => "MyAppWeb.WalletController.create/2",
+          "meta" => %{"verb" => "PUT", "path" => "/wallets"}
+        },
+        %{
+          "kind" => "oban_worker",
+          "label" => "MyApp.CreditWorker",
+          "target" => "MyApp.Wallets.credit/2",
+          "meta" => %{"queue" => "wallets"}
+        }
+      ],
       "functions" => [
         function("MyApp.Wallets.credit/3", "MyApp.Wallets", "credit", 3, [2, 3], [
           %{
@@ -136,6 +155,19 @@ defmodule Grasp.IndexTest do
            ]
 
     assert Index.functions_in_module(index, "Nope") == []
+  end
+
+  test "entry_points_for/2 groups entries by target, resolving alias arities", %{index: index} do
+    assert [%{"label" => "POST /wallets"}, %{"label" => "PUT /wallets"}] =
+             Index.entry_points_for(index, "MyAppWeb.WalletController.create/2")
+
+    assert [%{"kind" => "oban_worker", "label" => "MyApp.CreditWorker"}] =
+             Index.entry_points_for(index, "MyApp.Wallets.credit/3")
+
+    assert Index.entry_points_for(index, "MyApp.Wallets.credit/2") ==
+             Index.entry_points_for(index, "MyApp.Wallets.credit/3")
+
+    assert Index.entry_points_for(index, "MyApp.Wallets.debit/3") == []
   end
 
   test "changed_functions/1 returns everything not unchanged", %{index: index} do
