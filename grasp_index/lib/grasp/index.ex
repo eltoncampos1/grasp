@@ -39,13 +39,19 @@ defmodule Grasp.Index do
   def load(path) do
     with {:ok, binary} <- File.read(path),
          {:ok, document} <- Jason.decode(binary) do
-      {:ok, from_document(document)}
+      from_document(document)
     end
   end
 
-  @doc "Builds the index from a decoded document (string keys)."
-  @spec from_document(map()) :: t()
-  def from_document(%{"version" => 1, "functions" => records} = document) do
+  @doc """
+  Builds the index from a decoded document (string keys).
+
+  Anything but a version-1 document carrying a list of functions is rejected with
+  `{:error, {:unsupported_document, version}}`, so `load/1` can report a document it
+  cannot read instead of raising on its shape.
+  """
+  @spec from_document(map()) :: {:ok, t()} | {:error, {:unsupported_document, term()}}
+  def from_document(%{"version" => 1, "functions" => records} = document) when is_list(records) do
     functions = Map.new(records, &{&1["id"], &1})
 
     aliases =
@@ -64,18 +70,22 @@ defmodule Grasp.Index do
       |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
       |> Map.new(fn {target, callers} -> {target, Enum.sort(callers)} end)
 
-    %__MODULE__{
-      version: 1,
-      generated_at: document["generated_at"],
-      project: document["project"] || %{},
-      git: document["git"],
-      modules: document["modules"] || [],
-      entry_points: document["entry_points"] || [],
-      functions: functions,
-      aliases: aliases,
-      callers: callers
-    }
+    {:ok,
+     %__MODULE__{
+       version: 1,
+       generated_at: document["generated_at"],
+       project: document["project"] || %{},
+       git: document["git"],
+       modules: document["modules"] || [],
+       entry_points: document["entry_points"] || [],
+       functions: functions,
+       aliases: aliases,
+       callers: callers
+     }}
   end
+
+  def from_document(%{} = document),
+    do: {:error, {:unsupported_document, document["version"]}}
 
   @doc "Fetches a function by id, following default-argument arities to the definition."
   @spec fetch_function(t(), String.t()) :: {:ok, function_record()} | :error

@@ -64,7 +64,8 @@ defmodule Grasp.IndexTest do
   end
 
   setup do
-    %{index: Index.from_document(document())}
+    {:ok, index} = Index.from_document(document())
+    %{index: index}
   end
 
   test "fetch_function/2 finds by canonical id and by default-argument arity", %{index: index} do
@@ -122,7 +123,7 @@ defmodule Grasp.IndexTest do
   end
 
   test "load/1 reads a document from disk", %{index: index} do
-    path = Path.join(System.tmp_dir!(), "grasp-index-#{System.unique_integer([:positive])}.json")
+    path = tmp_path()
     File.write!(path, Jason.encode!(document()))
 
     assert {:ok, loaded} = Index.load(path)
@@ -133,6 +134,23 @@ defmodule Grasp.IndexTest do
            ]
 
     assert {:error, _} = Index.load(path <> ".missing")
+  end
+
+  test "load/1 reports a document version it cannot read" do
+    path = tmp_path()
+    File.write!(path, Jason.encode!(%{"version" => 2, "functions" => []}))
+
+    assert Index.load(path) == {:error, {:unsupported_document, 2}}
+  end
+
+  test "from_document/1 rejects a document that is not an index" do
+    assert Index.from_document(%{}) == {:error, {:unsupported_document, nil}}
+  end
+
+  defp tmp_path do
+    path = Path.join(System.tmp_dir!(), "grasp-index-#{System.unique_integer([:positive])}.json")
+    on_exit(fn -> File.rm(path) end)
+    path
   end
 
   defp ids(records), do: Enum.map(records, & &1["id"])
