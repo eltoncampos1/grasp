@@ -10,6 +10,10 @@ defmodule Mix.Tasks.Grasp.Index do
   resolves is recorded with its position, then writes the JSON document the Grasp viewer
   and MCP server read.
 
+  The index is built from what the compiler resolves, so a project that fails to compile
+  aborts the task with the compiler's own error. A single file that cannot be read or
+  parsed is reported and skipped; only its definitions are missing from the index.
+
   ## Options
 
     * `--out` - where to write the index. Defaults to `.grasp/index.json`.

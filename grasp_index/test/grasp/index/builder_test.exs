@@ -69,11 +69,14 @@ defmodule Grasp.Index.BuilderTest do
              ["SampleApp.Greeter.Nested.hello/0", "SampleApp.Greeter.greet_all/1"]
   end
 
-  test "lists modules including nested ones", %{index: index} do
-    names = index |> Grasp.Index.modules() |> Enum.map(& &1["name"])
+  test "lists modules including nested ones, with an empty behaviours list", %{index: index} do
+    modules = Grasp.Index.modules(index)
+    names = Enum.map(modules, & &1["name"])
+
     assert "SampleApp.Greeter" in names
     assert "SampleApp.Greeter.Nested" in names
     assert "SampleApp.Formatter" in names
+    assert Enum.all?(modules, &(&1["behaviours"] == []))
   end
 
   test "carries empty entry points until milestone 3", %{index: index} do

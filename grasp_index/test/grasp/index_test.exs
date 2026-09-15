@@ -9,7 +9,14 @@ defmodule Grasp.IndexTest do
       "generated_at" => "2026-09-15T10:00:00Z",
       "project" => %{"app" => "my_app", "root" => "/tmp/my_app", "elixirc_paths" => ["lib"]},
       "git" => nil,
-      "modules" => [%{"name" => "MyApp.Wallets", "file" => "lib/my_app/wallets.ex", "line" => 1}],
+      "modules" => [
+        %{
+          "name" => "MyApp.Wallets",
+          "file" => "lib/my_app/wallets.ex",
+          "line" => 1,
+          "behaviours" => []
+        }
+      ],
       "entry_points" => [],
       "functions" => [
         function("MyApp.Wallets.credit/3", "MyApp.Wallets", "credit", 3, [2, 3], [
@@ -130,7 +137,12 @@ defmodule Grasp.IndexTest do
     assert Index.functions(loaded) == Index.functions(index)
 
     assert Index.modules(loaded) == [
-             %{"name" => "MyApp.Wallets", "file" => "lib/my_app/wallets.ex", "line" => 1}
+             %{
+               "name" => "MyApp.Wallets",
+               "file" => "lib/my_app/wallets.ex",
+               "line" => 1,
+               "behaviours" => []
+             }
            ]
 
     assert {:error, _} = Index.load(path <> ".missing")
@@ -145,6 +157,31 @@ defmodule Grasp.IndexTest do
 
   test "from_document/1 rejects a document that is not an index" do
     assert Index.from_document(%{}) == {:error, {:unsupported_document, nil}}
+  end
+
+  test "load/1 reports a top-level document that is not an object" do
+    path = tmp_path()
+    File.write!(path, Jason.encode!([]))
+
+    assert Index.load(path) == {:error, {:unsupported_document, nil}}
+  end
+
+  test "from_document/1 reports a function record that is not an object" do
+    document = Map.update!(document(), "functions", &["not a record" | &1])
+
+    assert {:error, {:invalid_record, _}} = Index.from_document(document)
+  end
+
+  test "from_document/1 falls back to arity for a record with no arities" do
+    record = document() |> Map.fetch!("functions") |> hd() |> Map.delete("arities")
+    document = Map.put(document(), "functions", [record])
+
+    assert {:ok, index} = Index.from_document(document)
+
+    assert {:ok, %{"id" => "MyApp.Wallets.credit/3"}} =
+             Index.fetch_function(index, "MyApp.Wallets.credit/3")
+
+    assert :error = Index.fetch_function(index, "MyApp.Wallets.credit/2")
   end
 
   defp tmp_path do

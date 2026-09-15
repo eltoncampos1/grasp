@@ -9,6 +9,9 @@ defmodule Grasp.Index do
   hidden calls. Search ranks an exact id first, then ids containing the query, then ids
   whose characters contain the query as a subsequence, so `"walcre"` still finds
   `MyApp.Wallets.credit/3`.
+
+  The struct can be large — about 10 MB of JSON for a 500-file project — so hold it once,
+  for instance in `:persistent_term`, rather than copying it into per-process state.
   """
 
   defstruct version: 1,
@@ -47,22 +50,36 @@ defmodule Grasp.Index do
   Builds the index from a decoded document (string keys).
 
   Anything but a version-1 document carrying a list of functions is rejected with
-  `{:error, {:unsupported_document, version}}`, so `load/1` can report a document it
-  cannot read instead of raising on its shape.
+  `{:error, {:unsupported_document, version}}`, and a functions list holding something
+  that is not a record with `{:error, {:invalid_record, index}}`, so `load/1` reports a
+  document it cannot read as data instead of raising on its shape.
   """
-  @spec from_document(map()) :: {:ok, t()} | {:error, {:unsupported_document, term()}}
+  @spec from_document(term()) ::
+          {:ok, t()} | {:error, {:unsupported_document, term()} | {:invalid_record, term()}}
   def from_document(%{"version" => 1, "functions" => records} = document) when is_list(records) do
+    case Enum.find_index(records, &(not is_map(&1))) do
+      nil -> {:ok, build(document, records)}
+      index -> {:error, {:invalid_record, index}}
+    end
+  end
+
+  def from_document(%{} = document),
+    do: {:error, {:unsupported_document, document["version"]}}
+
+  def from_document(_other), do: {:error, {:unsupported_document, nil}}
+
+  defp build(document, records) do
     functions = Map.new(records, &{&1["id"], &1})
 
     aliases =
-      for record <- records, arity <- record["arities"], into: %{} do
+      for record <- records, arity <- arities(record), into: %{} do
         {"#{record["module"]}.#{record["name"]}/#{arity}", record["id"]}
       end
 
     callers =
       records
       |> Enum.flat_map(fn record ->
-        for call <- record["calls"] ++ record["hidden_calls"] do
+        for call <- targets(record), is_map(call) do
           {Map.get(aliases, call["target"], call["target"]), record["id"]}
         end
       end)
@@ -70,22 +87,30 @@ defmodule Grasp.Index do
       |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
       |> Map.new(fn {target, callers} -> {target, Enum.sort(callers)} end)
 
-    {:ok,
-     %__MODULE__{
-       version: 1,
-       generated_at: document["generated_at"],
-       project: document["project"] || %{},
-       git: document["git"],
-       modules: document["modules"] || [],
-       entry_points: document["entry_points"] || [],
-       functions: functions,
-       aliases: aliases,
-       callers: callers
-     }}
+    %__MODULE__{
+      version: 1,
+      generated_at: document["generated_at"],
+      project: document["project"] || %{},
+      git: document["git"],
+      modules: document["modules"] || [],
+      entry_points: document["entry_points"] || [],
+      functions: functions,
+      aliases: aliases,
+      callers: callers
+    }
   end
 
-  def from_document(%{} = document),
-    do: {:error, {:unsupported_document, document["version"]}}
+  defp arities(record) do
+    case record["arities"] do
+      arities when is_list(arities) -> arities
+      _ -> List.wrap(record["arity"])
+    end
+  end
+
+  defp targets(record) do
+    Enum.filter(record["calls"] || [], &is_map/1) ++
+      Enum.filter(record["hidden_calls"] || [], &is_map/1)
+  end
 
   @doc "Fetches a function by id, following default-argument arities to the definition."
   @spec fetch_function(t(), String.t()) :: {:ok, function_record()} | :error
@@ -96,12 +121,19 @@ defmodule Grasp.Index do
   @spec callers(t(), String.t()) :: [String.t()]
   def callers(%__MODULE__{} = index, id), do: Map.get(index.callers, resolve(index, id), [])
 
-  @doc "Ids the function calls (visible and hidden), resolved and sorted."
+  @doc """
+  Ids the function calls (visible and hidden), resolved and sorted.
+
+  A returned id may be outside the index — anything in the standard library or a
+  dependency is a call target but never a definition — so `fetch_function/2` returns
+  `:error` for it.
+  """
   @spec callees(t(), String.t()) :: [String.t()]
   def callees(%__MODULE__{} = index, id) do
     case fetch_function(index, id) do
       {:ok, record} ->
-        (record["calls"] ++ record["hidden_calls"])
+        record
+        |> targets()
         |> Enum.map(&resolve(index, &1["target"]))
         |> Enum.uniq()
         |> Enum.sort()

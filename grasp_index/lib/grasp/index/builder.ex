@@ -8,7 +8,9 @@ defmodule Grasp.Index.Builder do
   (dependencies are compiled only if stale and filtered out by path), extracts
   definitions from every `.ex` file under `:elixirc_paths`, joins the two and writes the
   document `Grasp.Index.load/1` reads. Git metadata is best-effort: `nil` when the
-  project is not in a repository or `git` is not installed.
+  project is not in a repository or `git` is not installed, and a file that cannot be
+  read or parsed is reported and skipped rather than aborting the run. Module records
+  carry an empty `"behaviours"` list until milestone 3 fills it.
   """
 
   alias Grasp.Index.{Extract, Join, Tracer}
@@ -37,13 +39,12 @@ defmodule Grasp.Index.Builder do
       "generated_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
       "project" => %{"app" => to_string(config[:app]), "root" => root, "elixirc_paths" => paths},
       "git" => git_info(root),
-      "modules" => Enum.map(modules, &%{"name" => &1.name, "file" => &1.file, "line" => &1.line}),
+      "modules" => Enum.map(modules, &module_json/1),
       "functions" => Enum.map(functions, &function_json/1),
       "entry_points" => []
     }
 
-    File.mkdir_p!(Path.dirname(out))
-    File.write!(out, Jason.encode!(document, pretty: true))
+    write!(out, Jason.encode!(document, pretty: true))
 
     {:ok,
      %{
@@ -83,7 +84,7 @@ defmodule Grasp.Index.Builder do
     |> Enum.reduce({[], []}, fn file, {definitions, modules} ->
       relative = Path.relative_to(file, root)
 
-      case Extract.extract(File.read!(file), relative) do
+      case extract_file(file, relative) do
         {:ok, extracted} ->
           {definitions ++ extracted.definitions, modules ++ extracted.modules}
 
@@ -92,6 +93,27 @@ defmodule Grasp.Index.Builder do
           {definitions, modules}
       end
     end)
+  end
+
+  defp extract_file(file, relative) do
+    case File.read(file) do
+      {:ok, source} -> Extract.extract(source, relative)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp write!(out, json) do
+    with :ok <- File.mkdir_p(Path.dirname(out)),
+         :ok <- File.write(out, json) do
+      :ok
+    else
+      {:error, reason} ->
+        Mix.raise("grasp.index: cannot write #{out}: #{:file.format_error(reason)}")
+    end
+  end
+
+  defp module_json(module) do
+    %{"name" => module.name, "file" => module.file, "line" => module.line, "behaviours" => []}
   end
 
   defp function_json(record) do
