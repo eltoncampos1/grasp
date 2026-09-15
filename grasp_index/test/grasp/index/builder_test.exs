@@ -65,8 +65,13 @@ defmodule Grasp.Index.BuilderTest do
     assert %{"kind" => "local", "range" => %{"start" => [15, 46], "end" => [15, 51]}} =
              call(greet_all, "SampleApp.Greeter.greet/1")
 
-    assert Grasp.Index.callers(index, "SampleApp.Greeter.greet/2") ==
-             ["SampleApp.Greeter.Nested.hello/0", "SampleApp.Greeter.greet_all/1"]
+    assert Grasp.Index.callers(index, "SampleApp.Greeter.greet/2") == [
+             "SampleApp.Greeter.Nested.hello/0",
+             "SampleApp.Greeter.greet_all/1",
+             "SampleApp.Workers.Mailer.perform/1",
+             "SampleAppWeb.GreetController.create/2",
+             "SampleAppWeb.GreetController.show/2"
+           ]
   end
 
   test "lists modules including nested ones, with an empty behaviours list", %{index: index} do

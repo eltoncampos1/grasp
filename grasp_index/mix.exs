@@ -10,6 +10,7 @@ defmodule GraspIndex.MixProject do
       version: @version,
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
+      test_load_filters: [&(String.ends_with?(&1, "_test.exs") and not fixture?(&1))],
       test_ignore_filters: [&String.starts_with?(&1, "test/fixtures/")],
       aliases: aliases(),
       start_permanent: false,
@@ -33,6 +34,8 @@ defmodule GraspIndex.MixProject do
   defp aliases do
     ["test.all": ["test --include integration"]]
   end
+
+  defp fixture?(path), do: String.starts_with?(path, "test/fixtures/")
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
