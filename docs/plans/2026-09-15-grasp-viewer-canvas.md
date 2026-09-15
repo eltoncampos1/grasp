@@ -593,6 +593,52 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
+### Task 6: Sidebar toggle (Cmd+M)
+
+**Files:**
+- Modify: `grasp/lib/grasp_web/live/review_live.ex`, `grasp/assets/js/hooks/keys.js`, `grasp/assets/css/app.css`
+- Test: `grasp/test/grasp_web/live/review_live_test.exs`
+
+**Interfaces:**
+- Assign `sidebar_open?: true`; event `toggle_sidebar` (no params). `<main class={["app", !@sidebar_open? && "app--no-sidebar"]} data-sidebar={to_string(@sidebar_open?)}>`; the `<aside class="sidebar">` is rendered only when open (`:if={@sidebar_open?}`). A toolbar button `#toggle-sidebar[phx-click=toggle_sidebar]` (label `sidebar`, title "Show or hide the sidebar (⌘M)") sits first in the canvas toolbar.
+- Keys hook: `Cmd+M` / `Ctrl+M` and `Cmd+\` / `Ctrl+\` push `toggle_sidebar` (with `preventDefault`). Note: on macOS, Cmd+M is the OS "minimise window" shortcut and browsers may act on it before the page sees the key; `Cmd+\` is the fallback that browsers pass through.
+
+- [ ] **Step 1: Test**
+
+```elixir
+  test "the sidebar can be hidden and shown", %{view: view} do
+    assert has_element?(view, "main.app[data-sidebar='true'] aside.sidebar")
+    render_hook(view, "toggle_sidebar", %{})
+    refute has_element?(view, "aside.sidebar")
+    assert has_element?(view, "main.app.app--no-sidebar[data-sidebar='false']")
+    view |> element("#toggle-sidebar") |> render_click()
+    assert has_element?(view, "aside.sidebar")
+  end
+```
+
+- [ ] **Step 2: Implement**
+
+`review_live.ex`: add the assign in `mount/3`, the event
+
+```elixir
+  def handle_event("toggle_sidebar", _params, socket),
+    do: {:noreply, update(socket, :sidebar_open?, &(not &1))}
+```
+
+above the catch-all, the `main` class/data attribute, `:if={@sidebar_open?}` on the aside, and the toolbar button. `keys.js`: in the keydown handler, before the modifier bail-out, handle `(e.metaKey || e.ctrlKey) && (e.key === "m" || e.key === "\\")` → `preventDefault` + `pushEvent("toggle_sidebar", {})` (this must run even when the palette is open? No — keep it inside the existing "not typing, palette closed" guard). `app.css`: `.app--no-sidebar { grid-template-columns: 1fr; }`.
+
+- [ ] **Step 3: Verify, format, commit**
+
+`mix test` green; `mix assets.build` clean.
+
+```bash
+cd ~/repos/grasp/grasp && mix format && cd .. && git add -A && git commit -m "Toggle the sidebar with Cmd+M
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
 ## Self-review
 
 - **Coverage of the request.** Line height and font size (Task 2 tokens), wider cards (`--card-width: 60rem`), GitHub Light via Lumis (Tasks 1–2), drag/pan/zoom (Tasks 3–4), connectors that follow (Task 4). Milestone 3 is a separate plan.
