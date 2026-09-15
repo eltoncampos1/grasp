@@ -12,6 +12,11 @@ defmodule GraspWeb.CardComponentsTest do
     end
 
     test "returns nil for an unknown module without minting its atom" do
+      # The first call in the VM loads the modules behind it, and lazy code loading mints its
+      # own atoms; both branches are walked once so the measured call only does the lookup.
+      CardComponents.hexdocs_url("Zzz.NotARealModule#{System.unique_integer([:positive])}.foo/1")
+      CardComponents.hexdocs_url("Enum.map/2")
+
       id = "Zzz.NotARealModule#{System.unique_integer([:positive])}.foo/1"
 
       before = :erlang.system_info(:atom_count)
