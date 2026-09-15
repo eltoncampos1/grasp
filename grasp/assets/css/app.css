@@ -46,17 +46,23 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .fn:hover { color: var(--accent); }
 .fn--defp { color: var(--fg-muted); }
 
-.canvas { overflow: auto; padding: var(--space-m); }
-.roots { display: flex; flex-direction: column; gap: var(--space-l); align-items: flex-start; }
+.canvas { position: relative; overflow: hidden; padding: 0; cursor: grab; }
+.canvas:active { cursor: grabbing; }
+.canvas .empty { position: absolute; inset-block-start: 40%; inset-inline: 0; text-align: center; }
+.toolbar { position: absolute; inset-block-start: var(--space-s); inset-inline-end: var(--space-s); z-index: 3; display: flex; gap: var(--space-xs); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space-xs); }
+.toolbar button { padding: 0 var(--space-s); color: var(--fg-muted); }
+.toolbar button:hover { color: var(--fg); }
+.stage { position: absolute; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; will-change: transform; }
+.connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 0; }
+.connectors path { fill: none; stroke: var(--border); stroke-width: 1.5; }
+.roots { position: relative; z-index: 1; padding: var(--space-m); display: flex; flex-direction: column; gap: var(--space-l); align-items: flex-start; }
 
-.node { display: flex; flex-direction: row; align-items: flex-start; gap: var(--space-l); }
-.node__children { display: flex; flex-direction: column; gap: var(--space-m); position: relative; }
-.node__children::before { content: ""; position: absolute; inset-inline-start: calc(-1 * var(--space-l) / 2); inset-block: var(--space-m); border-inline-start: 1px solid var(--border); }
-.node__children > .node > .card::before { content: ""; position: absolute; inset-inline-start: calc(-1 * var(--space-l) / 2); top: var(--space-m); width: calc(var(--space-l) / 2); border-top: 1px solid var(--border); }
+.node { translate: var(--dx, 0px) var(--dy, 0px); display: flex; flex-direction: row; align-items: flex-start; gap: var(--space-l); }
+.node__children { display: flex; flex-direction: column; gap: var(--space-m); }
 
-.card { translate: var(--dx, 0px) var(--dy, 0px); position: relative; width: var(--card-width); flex: none; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-family: var(--mono); font-size: var(--code-size); }
+.card { position: relative; width: var(--card-width); flex: none; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-family: var(--mono); font-size: var(--code-size); }
 .card--focused { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
-.card__header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-s); padding: var(--space-s) var(--space-m); border-bottom: 1px solid var(--border); }
+.card__header { cursor: grab; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-s); padding: var(--space-s) var(--space-m); border-bottom: 1px solid var(--border); }
 .card__title { margin: 0; font-size: 0.9rem; font-weight: 600; }
 .card__module { color: var(--fg-muted); font-weight: 400; }
 .card__kind { margin-inline-start: var(--space-s); color: var(--fg-muted); font-weight: 400; font-size: 0.75rem; }

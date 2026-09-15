@@ -18,12 +18,6 @@ const Keys = {
       }
     }
     window.addEventListener("keydown", this.onKeydown)
-
-    this.handleEvent("focus", ({id}) => {
-      if (id == null) return
-      const card = document.getElementById(`card-${id}`)
-      card?.scrollIntoView({block: "nearest", inline: "nearest", behavior: "smooth"})
-    })
   },
 
   destroyed() {

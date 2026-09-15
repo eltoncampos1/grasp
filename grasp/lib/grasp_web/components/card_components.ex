@@ -18,12 +18,22 @@ defmodule GraspWeb.CardComponents do
   attr :editor, :string, default: nil
   attr :callers_open, :integer, default: nil
 
+  # The offset moves the whole node, not the card alone, so a card dragged by hand takes
+  # the branch it opened with it rather than leaving its children behind.
   def card_node(assigns) do
     card = Forest.card(assigns.forest, assigns.card_id)
-    assigns = assign(assigns, card: card, depth: Forest.depth(assigns.forest, assigns.card_id))
+    {dx, dy} = card.offset
+
+    assigns =
+      assign(assigns,
+        card: card,
+        depth: Forest.depth(assigns.forest, assigns.card_id),
+        dx: dx,
+        dy: dy
+      )
 
     ~H"""
-    <div class="node">
+    <div class="node" style={"--dx: #{@dx}px; --dy: #{@dy}px"}>
       <.card
         forest={@forest}
         index={@index}
@@ -103,7 +113,6 @@ defmodule GraspWeb.CardComponents do
     <article
       id={"card-#{@card.id}"}
       class={["card", @focused? && "card--focused"]}
-      style={"--dx: #{@dx}px; --dy: #{@dy}px"}
       data-function-id={@record["id"]}
       data-focused={to_string(@focused?)}
       data-depth={@depth}
@@ -198,7 +207,6 @@ defmodule GraspWeb.CardComponents do
     <article
       id={"card-#{@card.id}"}
       class={["card", "stub", @focused? && "card--focused"]}
-      style={"--dx: #{@dx}px; --dy: #{@dy}px"}
       data-function-id={@card.function_id}
       data-focused={to_string(@focused?)}
       data-depth={@depth}

@@ -103,8 +103,9 @@ defmodule Grasp.Session.Forest do
 
   @doc """
   Opens `caller_id` as the caller of `card_id`. On a root, the caller becomes the new root
-  with the card as its child; otherwise a new root tree `caller → function` is opened.
-  Returns the new root id, or nil if `card_id` is unknown.
+  with the card as its child and its offset is cleared, the automatic position it was
+  measured against having changed; otherwise a new root tree `caller → function` is
+  opened. Returns the new root id, or nil if `card_id` is unknown.
   """
   @spec open_caller(t(), id(), String.t()) :: {t(), id() | nil}
   def open_caller(%__MODULE__{} = forest, card_id, caller_id) do
@@ -116,7 +117,9 @@ defmodule Grasp.Session.Forest do
         if root?(forest, card_id) do
           {forest, new_root} = add_card(forest, caller_id, nil, nil)
           caller = %{Map.fetch!(forest.cards, new_root) | children: [card_id]}
-          card = %{card | parent_id: new_root, opened_by: card.function_id}
+          # The card stops being a root and is laid out under its caller instead, so an
+          # offset measured against its old automatic position no longer means anything.
+          card = %{card | parent_id: new_root, opened_by: card.function_id, offset: {0, 0}}
           roots = Enum.map(forest.roots, &if(&1 == card_id, do: new_root, else: &1))
           cards = forest.cards |> Map.put(new_root, caller) |> Map.put(card_id, card)
           {%{forest | roots: roots, cards: cards, focus: new_root}, new_root}

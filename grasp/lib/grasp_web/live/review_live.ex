@@ -263,19 +263,35 @@ defmodule GraspWeb.ReviewLive do
           </div>
         </nav>
       </aside>
-      <section class="canvas" id="canvas">
+      <section class="canvas" id="canvas" phx-hook="Canvas">
+        <div class="toolbar">
+          <button type="button" id="zoom-out" title="Zoom out">−</button>
+          <button type="button" id="zoom-fit" title="Fit all cards">fit</button>
+          <button type="button" id="zoom-in" title="Zoom in">+</button>
+          <button
+            type="button"
+            id="reset-layout"
+            phx-click="reset_layout"
+            title="Return cards to the automatic layout"
+          >
+            reset layout
+          </button>
+        </div>
         <p :if={@forest.roots == []} class="empty">
           Pick a function from the sidebar or press <kbd>⌘K</kbd>.
         </p>
-        <div class="roots">
-          <.card_node
-            :for={root <- @forest.roots}
-            forest={@forest}
-            index={@index}
-            card_id={root}
-            editor={@editor}
-            callers_open={@callers_open}
-          />
+        <div id="stage" class="stage">
+          <svg id="connectors" class="connectors" phx-update="ignore" aria-hidden="true"></svg>
+          <div class="roots">
+            <.card_node
+              :for={root <- @forest.roots}
+              forest={@forest}
+              index={@index}
+              card_id={root}
+              editor={@editor}
+              callers_open={@callers_open}
+            />
+          </div>
         </div>
       </section>
       <.palette

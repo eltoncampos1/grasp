@@ -71,6 +71,15 @@ defmodule Grasp.Session.ForestTest do
     refute Forest.root?(forest, a)
   end
 
+  test "open_caller/3 on a root clears the moved card's offset" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    forest = Forest.move(forest, a, {40, -12})
+    {forest, caller} = Forest.open_caller(forest, a, "Web.Controller.show/2")
+
+    assert Forest.card(forest, a).offset == {0, 0}
+    assert Forest.card(forest, caller).offset == {0, 0}
+  end
+
   test "open_caller/3 on a non-root opens a new root tree caller → function" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_child(forest, a, "B.g/0")

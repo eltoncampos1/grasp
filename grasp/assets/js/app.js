@@ -4,9 +4,10 @@ import {LiveSocket} from "phoenix_live_view"
 import "../css/app.css"
 import Palette from "./hooks/palette"
 import Keys from "./hooks/keys"
+import Canvas from "./hooks/canvas"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
-const liveSocket = new LiveSocket("/live", Socket, {params: {_csrf_token: csrfToken}, hooks: {Palette, Keys}})
+const liveSocket = new LiveSocket("/live", Socket, {params: {_csrf_token: csrfToken}, hooks: {Palette, Keys, Canvas}})
 
 liveSocket.connect()
 window.liveSocket = liveSocket

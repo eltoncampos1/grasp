@@ -252,12 +252,26 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#canvas")
   end
 
+  test "the canvas wraps the cards in a pannable stage with a connector layer and a toolbar",
+       %{view: view} do
+    assert has_element?(
+             view,
+             "#canvas[phx-hook='Canvas'] #stage svg#connectors[phx-update='ignore']"
+           )
+
+    assert has_element?(view, "#canvas .toolbar #reset-layout[phx-click='reset_layout']")
+    assert has_element?(view, "#canvas .toolbar #zoom-in")
+    assert has_element?(view, "#canvas .toolbar #zoom-out")
+    assert has_element?(view, "#canvas .toolbar #zoom-fit")
+    refute has_element?(view, "#canvas .toolbar #zoom-in[phx-click]")
+  end
+
   test "dragging a card stores its offset and reset_layout clears it", %{view: view, name: name} do
     Session.open_root(name, @greet)
 
     render_hook(view, "move_card", %{"card" => 1, "dx" => 40, "dy" => -12})
     assert has_element?(view, "#card-1[data-dx='40'][data-dy='-12']")
-    assert has_element?(view, "#card-1[style*='--dx: 40px']")
+    assert has_element?(view, ".node[style*='--dx: 40px'] > #card-1")
 
     render_hook(view, "move_card", %{"card" => "1", "dx" => "7", "dy" => "8"})
     assert has_element?(view, "#card-1[data-dx='7'][data-dy='8']")
