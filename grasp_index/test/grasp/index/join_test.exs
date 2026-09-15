@@ -1,0 +1,99 @@
+defmodule Grasp.Index.JoinTest do
+  use ExUnit.Case, async: false
+
+  alias Grasp.Index.{Extract, Join}
+  alias Grasp.TestSupport.Compile
+
+  @source ~S"""
+  defmodule Grasp.JoinTest.Sample do
+    alias Enum, as: E
+    import String, only: [upcase: 1]
+
+    def run(list, extra \\ nil) do
+      E.map(list, &helper/1)
+      upcase("a")
+      helper(extra)
+    end
+
+    defp helper(x), do: x
+  end
+  """
+
+  setup do
+    events = Compile.trace(@source, "lib/sample.ex")
+    {:ok, %{definitions: defs}} = Extract.extract(@source, "lib/sample.ex")
+    %{events: events, defs: defs}
+  end
+
+  test "function_id/3 formats Elixir and Erlang modules", _ do
+    assert Join.function_id(Grasp.JoinTest.Sample, :run, 2) == "Grasp.JoinTest.Sample.run/2"
+    assert Join.function_id(:erlang, :max, 2) == ":erlang.max/2"
+    assert Join.function_id("Grasp.JoinTest.Sample", :run, 2) == "Grasp.JoinTest.Sample.run/2"
+  end
+
+  test "pairs events with call sites into ranged calls", %{events: events, defs: defs} do
+    [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
+
+    assert run.id == "Grasp.JoinTest.Sample.run/2"
+    assert run.arities == [1, 2]
+    assert run.span == %{start_line: 5, end_line: 9}
+
+    assert %{kind: :remote, range: %{start: {6, 5}, end: {6, 10}}} = call(run, "Enum.map/2")
+
+    assert %{kind: :local, range: %{start: {6, 18}, end: {6, 24}}} =
+             call(run, "Grasp.JoinTest.Sample.helper/1")
+
+    assert %{kind: :imported, range: %{start: {7, 5}, end: {7, 11}}} =
+             call(run, "String.upcase/1")
+
+    assert run.hidden_calls == []
+  end
+
+  test "drops Kernel calls, def-registration events and events without a column", %{defs: defs} do
+    events = [
+      event(:run, 2, 6, 7, {Kernel, :if, 2}, :imported_macro),
+      event(:run, 2, 6, nil, {:erlang, :orelse, 2}, :remote),
+      event(:run, 2, 5, 7, {Module, :compile_definition_attributes, 6}, :remote)
+    ]
+
+    [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
+    assert run.calls == []
+    assert run.hidden_calls == []
+  end
+
+  test "keeps events with no matching node as hidden calls", %{defs: defs} do
+    events = [event(:run, 2, 6, 99, {MyAppWeb.CoreComponents, :button, 1}, :remote)]
+
+    [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
+
+    assert run.hidden_calls == [
+             %{target: "MyAppWeb.CoreComponents.button/1", kind: :remote, line: 6}
+           ]
+  end
+
+  test "attributes events made through a default-argument arity to the definition", %{defs: defs} do
+    events = [event(:run, 1, 6, 7, {Enum, :map, 2}, :remote)]
+
+    [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
+    assert [%{target: "Enum.map/2"}] = run.calls
+  end
+
+  test "drops events whose caller has no definition", %{defs: defs} do
+    events = [event(:generated, 0, 6, 7, {Enum, :map, 2}, :remote)]
+    assert Enum.all?(Join.join(defs, events), &(&1.calls == [] and &1.hidden_calls == []))
+  end
+
+  defp call(record, target), do: Enum.find(record.calls, &(&1.target == target))
+
+  defp event(name, arity, line, column, target, kind) do
+    %{
+      file: "lib/sample.ex",
+      module: Grasp.JoinTest.Sample,
+      function: {name, arity},
+      line: line,
+      column: column,
+      target: target,
+      kind: kind
+    }
+  end
+end
