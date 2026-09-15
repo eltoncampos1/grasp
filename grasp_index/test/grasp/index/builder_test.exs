@@ -70,8 +70,22 @@ defmodule Grasp.Index.BuilderTest do
              "SampleApp.Greeter.greet_all/1",
              "SampleApp.Workers.Mailer.perform/1",
              "SampleAppWeb.GreetController.create/2",
-             "SampleAppWeb.GreetController.show/2"
+             "SampleAppWeb.GreetController.show/2",
+             "SampleAppWeb.GreetingComponent.render/1",
+             "SampleAppWeb.HelloLive.render/1"
            ]
+  end
+
+  test "keeps a context call made inside a template as a hidden call", %{index: index} do
+    {:ok, render} = Grasp.Index.fetch_function(index, "SampleAppWeb.HelloLive.render/1")
+
+    assert %{"kind" => "remote", "line" => 12} =
+             hidden_call(render, "SampleApp.Greeter.greet/1")
+
+    assert "SampleApp.Greeter.greet/2" in Grasp.Index.callees(
+             index,
+             "SampleAppWeb.HelloLive.render/1"
+           )
   end
 
   test "lists modules including nested ones", %{index: index} do
@@ -153,6 +167,10 @@ defmodule Grasp.Index.BuilderTest do
   end
 
   defp call(record, target), do: Enum.find(record["calls"], &(&1["target"] == target))
+
+  defp hidden_call(record, target),
+    do: Enum.find(record["hidden_calls"], &(&1["target"] == target))
+
   defp find(entries, target), do: Enum.find(entries, &(&1["target"] == target))
 
   defp kind_rank(kind) do

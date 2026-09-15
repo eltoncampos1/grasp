@@ -8,7 +8,7 @@ defmodule Grasp.Index.Join do
   introduce, so calls made through any of them land on it. The event's line and column
   then locate the call node inside that definition, giving a call with a clickable range.
 
-  Four rules decide what survives:
+  Five rules decide what survives:
 
     * **Head positions.** The compiler reports its own bookkeeping at every clause head —
       `Module.compile_definition_attributes/6` and any `@on_definition` hook a library
@@ -21,8 +21,12 @@ defmodule Grasp.Index.Join do
       common case.
     * **`defdelegate`.** The delegated call is reported with no column, so it can only be
       placed by kind: for a `defdelegate`, a column-less event becomes a visible call
-      ranged over the delegate's own name. Column-less events elsewhere (boolean
-      operators expanded from `if`, bookkeeping on a delegate head) are dropped.
+      ranged over the delegate's own name.
+    * **Column-less events.** Macro- and template-generated code is reported without a
+      column — a context call inside a `~H` body is the common case. Such an event becomes
+      a hidden call when its line falls inside the definition's span; outside every span it
+      is dropped. Targets in `:erlang` are dropped too: with the compiler internals and
+      `Kernel` above, they are the operators `if`, `and` and `case` expand to.
     * **Hidden calls.** An event with a column but no matching node came from
       macro-generated code — a function component in a `~H` template, code injected by
       `use` — and is kept as a hidden call so the graph stays complete even though
@@ -90,30 +94,43 @@ defmodule Grasp.Index.Join do
   defp compiler_internal?(module),
     do: module |> Atom.to_string() |> String.starts_with?("elixir_")
 
+  # The operators `if`, `and` and `>` expand into `:erlang` calls reported with no column,
+  # where nothing else tells them apart from a template call; a hand-written
+  # `:erlang.system_time/0` carries a column and is kept.
+  defp runtime_internal?(module), do: module == :erlang
+
   defp build(definition, events) do
     sites = Map.new(definition.call_sites, &{{&1.line, &1.column}, &1.range})
     heads = MapSet.new(definition.head_positions)
     delegate_range = if definition.kind == :defdelegate, do: List.first(definition.head_ranges)
+    span = definition.start_line..definition.end_line
 
     {calls, hidden} =
       Enum.reduce(events, {[], []}, fn event, {calls, hidden} ->
         {module, name, arity} = event.target
         target = function_id(module, name, arity)
         call = fn range -> %{target: target, kind: event.kind, range: range} end
+        hidden_call = %{target: target, kind: event.kind, line: event.line}
 
         cond do
           MapSet.member?(heads, {event.line, event.column}) ->
             {calls, hidden}
 
+          event.column == nil and event.target == @definition_bookkeeping ->
+            {calls, hidden}
+
           event.column == nil ->
-            if delegate_range && event.target != @definition_bookkeeping,
-              do: {[call.(delegate_range) | calls], hidden},
-              else: {calls, hidden}
+            cond do
+              delegate_range -> {[call.(delegate_range) | calls], hidden}
+              runtime_internal?(module) -> {calls, hidden}
+              event.line in span -> {calls, [hidden_call | hidden]}
+              true -> {calls, hidden}
+            end
 
           true ->
             case Map.fetch(sites, {event.line, event.column}) do
               {:ok, range} -> {[call.(range) | calls], hidden}
-              :error -> {calls, [%{target: target, kind: event.kind, line: event.line} | hidden]}
+              :error -> {calls, [hidden_call | hidden]}
             end
         end
       end)

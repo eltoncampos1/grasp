@@ -49,7 +49,8 @@ defmodule Grasp.Index.JoinTest do
     assert run.hidden_calls == []
   end
 
-  test "drops Kernel calls, def-registration events and events without a column", %{defs: defs} do
+  test "drops Kernel calls, def-registration events and operators expanded into :erlang",
+       %{defs: defs} do
     events = [
       event(:run, 2, 6, 7, {Kernel, :if, 2}, :imported_macro),
       event(:run, 2, 6, nil, {:erlang, :orelse, 2}, :remote),
@@ -57,6 +58,24 @@ defmodule Grasp.Index.JoinTest do
     ]
 
     [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
+    assert run.calls == []
+    assert run.hidden_calls == []
+  end
+
+  test "keeps a column-less call inside a definition as a hidden call", %{defs: defs} do
+    events = [event(:run, 2, 6, nil, {SampleApp.Greeter, :greet, 1}, :remote)]
+
+    [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
+
+    assert run.calls == []
+    assert run.hidden_calls == [%{target: "SampleApp.Greeter.greet/1", kind: :remote, line: 6}]
+  end
+
+  test "drops a column-less call whose line is outside the definition span", %{defs: defs} do
+    events = [event(:run, 2, 99, nil, {SampleApp.Greeter, :greet, 1}, :remote)]
+
+    [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
+
     assert run.calls == []
     assert run.hidden_calls == []
   end
