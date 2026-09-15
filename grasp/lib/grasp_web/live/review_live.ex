@@ -28,6 +28,8 @@ defmodule GraspWeb.ReviewLive do
      assign(socket,
        name: name,
        index: IndexStore.get(),
+       index_error: IndexStore.last_error(),
+       index_path: IndexStore.path(),
        forest: Session.get(name),
        expanded_module: nil,
        callers_open: nil,
@@ -45,7 +47,13 @@ defmodule GraspWeb.ReviewLive do
   end
 
   def handle_info(:index_reloaded, socket),
-    do: {:noreply, assign(socket, index: IndexStore.get())}
+    do:
+      {:noreply,
+       assign(socket,
+         index: IndexStore.get(),
+         index_error: IndexStore.last_error(),
+         index_path: IndexStore.path()
+       )}
 
   def handle_info(_other, socket), do: {:noreply, socket}
 
@@ -203,7 +211,10 @@ defmodule GraspWeb.ReviewLive do
     ~H"""
     <main class="app app--empty">
       <h1 class="brand">Grasp</h1>
-      <p class="empty">
+      <p :if={@index_error} class="empty">
+        Could not load {@index_path}: {inspect(@index_error)}
+      </p>
+      <p :if={!@index_error} class="empty">
         No index loaded. Start with <code>mix grasp.serve --index path/to/.grasp/index.json</code>.
       </p>
     </main>

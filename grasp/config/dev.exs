@@ -2,7 +2,7 @@ import Config
 
 config :grasp, GraspWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4040],
-  check_origin: false,
+  check_origin: ["//localhost", "//127.0.0.1"],
   code_reloader: true,
   debug_errors: true,
   secret_key_base:

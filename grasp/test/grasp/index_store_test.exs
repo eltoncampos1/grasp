@@ -44,6 +44,23 @@ defmodule Grasp.IndexStoreTest do
     assert IndexStore.get().project["app"] == "reloaded"
   end
 
+  test "a failed load is remembered, reported once and not retried until the file changes" do
+    path = tmp_copy(&Map.put(&1, "version", 2))
+    IndexStore.subscribe()
+
+    assert {:error, {:unsupported_document, 2}} = IndexStore.load(path)
+    assert IndexStore.last_error() == {:unsupported_document, 2}
+    refute_receive :index_reloaded
+
+    send(IndexStore, :poll)
+    send(IndexStore, :poll)
+    assert IndexStore.path() == path
+    refute_receive :index_reloaded
+
+    assert :ok = IndexStore.load(@fixture)
+    assert IndexStore.last_error() == nil
+  end
+
   test "a changed mtime triggers a reload" do
     path = tmp_copy(& &1)
     :ok = IndexStore.load(path)
