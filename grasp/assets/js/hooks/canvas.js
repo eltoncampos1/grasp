@@ -95,9 +95,11 @@ const Canvas = {
     this.style.remove()
   },
 
+  // The translate is rounded to whole screen pixels: a fractional composited offset resamples
+  // the rasterised card text and blurs it. this.view stays fractional so small deltas accumulate.
   applyView() {
     const {x, y, scale} = this.view
-    this.style.textContent = `#stage{transform:translate(${x}px,${y}px) scale(${scale})}`
+    this.style.textContent = `#stage{transform:translate(${Math.round(x)}px,${Math.round(y)}px) scale(${scale})}`
     if (this.zoomLevel) this.zoomLevel.textContent = `${Math.round(scale * 100)}%`
   },
 
@@ -363,8 +365,12 @@ const Canvas = {
       this.view.y = this.drag.y + my
       this.applyView()
     } else {
-      const {scale} = this.view
-      this.drag.node.style.translate = `${this.drag.dx + mx / scale}px ${this.drag.dy + my / scale}px`
+      // Snapped so the offset lands on whole screen pixels at the current zoom, for the same
+      // reason applyView() rounds the pan; the stage units it is written in are 1/s of those.
+      const s = this.view.scale
+      const tx = Math.round((this.drag.dx + mx / s) * s) / s
+      const ty = Math.round((this.drag.dy + my / s) * s) / s
+      this.drag.node.style.translate = `${tx}px ${ty}px`
       this.drawConnectors()
     }
   },
