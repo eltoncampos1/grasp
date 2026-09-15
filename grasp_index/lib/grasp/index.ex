@@ -148,6 +148,15 @@ defmodule Grasp.Index do
   def functions(%__MODULE__{} = index),
     do: index.functions |> Map.values() |> Enum.sort_by(& &1["id"])
 
+  @doc "Functions defined in `module`, in source order."
+  @spec functions_in_module(t(), String.t()) :: [function_record()]
+  def functions_in_module(%__MODULE__{} = index, module) do
+    index.functions
+    |> Map.values()
+    |> Enum.filter(&(&1["module"] == module))
+    |> Enum.sort_by(&{&1["span"]["start_line"], &1["id"]})
+  end
+
   @doc "Module records as stored in the document."
   @spec modules(t()) :: [map()]
   def modules(%__MODULE__{} = index), do: index.modules

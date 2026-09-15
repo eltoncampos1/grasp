@@ -26,7 +26,11 @@ defmodule Grasp.IndexTest do
             "range" => %{"start" => [10, 5], "end" => [10, 16]}
           }
         ]),
-        function("MyApp.Wallets.debit/3", "MyApp.Wallets", "debit", 3, [3], []),
+        Map.put(
+          function("MyApp.Wallets.debit/3", "MyApp.Wallets", "debit", 3, [3], []),
+          "span",
+          %{"start_line" => 5, "end_line" => 6}
+        ),
         function(
           "MyAppWeb.WalletController.create/2",
           "MyAppWeb.WalletController",
@@ -123,6 +127,15 @@ defmodule Grasp.IndexTest do
     assert Index.search(index, "zzzzzz") == []
     assert Index.search(index, "   ") == []
     assert length(Index.search(index, "a", 2)) == 2
+  end
+
+  test "functions_in_module/2 lists a module's functions in source order", %{index: index} do
+    assert ids(Index.functions_in_module(index, "MyApp.Wallets")) == [
+             "MyApp.Wallets.credit/3",
+             "MyApp.Wallets.debit/3"
+           ]
+
+    assert Index.functions_in_module(index, "Nope") == []
   end
 
   test "changed_functions/1 returns everything not unchanged", %{index: index} do
