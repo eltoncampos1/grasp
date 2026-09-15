@@ -10,6 +10,7 @@ defmodule GraspIndex.MixProject do
       version: @version,
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
+      test_ignore_filters: [&String.starts_with?(&1, "test/fixtures/")],
       start_permanent: false,
       deps: deps(),
       description:
