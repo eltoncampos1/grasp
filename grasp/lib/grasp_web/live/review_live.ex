@@ -1,18 +1,154 @@
 defmodule GraspWeb.ReviewLive do
-  @moduledoc "The review page: sidebar, card canvas and palette. Filled in by later tasks."
+  @moduledoc """
+  The review page: a sidebar of modules and their functions, the card canvas, and the
+  palette (Task 6). State is the session's forest plus the loaded index; both arrive by
+  PubSub so any change — from this browser, another tab, or an MCP client later — renders
+  everywhere.
+  """
 
   use GraspWeb, :live_view
 
+  import GraspWeb.CardComponents
+
+  alias Grasp.{Index, IndexStore, Session}
+  alias Grasp.Session.Forest
+
   @impl true
-  def mount(_params, _session, socket) do
-    {:ok, socket}
+  def mount(params, _session, socket) do
+    name = Map.get(params, "name", "default")
+    :ok = Session.ensure(name)
+
+    if connected?(socket) do
+      :ok = Session.subscribe(name)
+      :ok = IndexStore.subscribe()
+    end
+
+    {:ok,
+     assign(socket,
+       name: name,
+       index: IndexStore.get(),
+       forest: Session.get(name),
+       expanded_module: nil,
+       editor: Application.get_env(:grasp, :editor)
+     )}
   end
 
   @impl true
+  def handle_info({:session, name, %Forest{} = forest}, %{assigns: %{name: name}} = socket) do
+    {:noreply, socket |> assign(forest: forest) |> push_event("focus", %{id: forest.focus})}
+  end
+
+  def handle_info(:index_reloaded, socket),
+    do: {:noreply, assign(socket, index: IndexStore.get())}
+
+  def handle_info(_other, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("expand_module", %{"module" => module}, socket) do
+    expanded = if socket.assigns.expanded_module == module, do: nil, else: module
+    {:noreply, assign(socket, expanded_module: expanded)}
+  end
+
+  def handle_event("open_root", %{"id" => id}, socket),
+    do: mutate(socket, &Session.open_root(&1, id))
+
+  def handle_event("open_call", %{"card" => card, "target" => target}, socket),
+    do: mutate(socket, &Session.open_child(&1, int(card), target))
+
+  def handle_event("open_caller", %{"card" => card, "caller" => caller}, socket),
+    do: mutate(socket, &Session.open_caller(&1, int(card), caller))
+
+  def handle_event("close_card", %{"card" => card}, socket),
+    do: mutate(socket, &Session.close(&1, int(card)))
+
+  def handle_event("focus_card", %{"card" => card}, socket),
+    do: mutate(socket, &Session.focus(&1, int(card)))
+
+  def handle_event("toggle_collapse", %{"card" => card}, socket),
+    do: mutate(socket, &Session.toggle_collapse(&1, int(card)))
+
+  def handle_event("move_focus", %{"dir" => dir}, socket) when dir in ~w(parent child next prev),
+    do: mutate(socket, &Session.move_focus(&1, String.to_existing_atom(dir)))
+
+  def handle_event("close_focused", _params, socket) do
+    case socket.assigns.forest.focus do
+      nil -> {:noreply, socket}
+      id -> mutate(socket, &Session.close(&1, id))
+    end
+  end
+
+  def handle_event("collapse_focused", _params, socket) do
+    case socket.assigns.forest.focus do
+      nil -> {:noreply, socket}
+      id -> mutate(socket, &Session.toggle_collapse(&1, id))
+    end
+  end
+
+  # The session broadcasts the new forest to every subscriber including this process, so
+  # the returned forest is assigned here only to make the change visible before the
+  # broadcast arrives (which matters in tests, where the view may not be connected).
+  defp mutate(socket, fun) do
+    {:noreply, assign(socket, forest: fun.(socket.assigns.name))}
+  end
+
+  defp int(value) when is_binary(value), do: String.to_integer(value)
+  defp int(value) when is_integer(value), do: value
+
+  @impl true
+  def render(%{index: nil} = assigns) do
+    ~H"""
+    <main class="app app--empty">
+      <h1 class="brand">Grasp</h1>
+      <p class="empty">
+        No index loaded. Start with <code>mix grasp.serve --index path/to/.grasp/index.json</code>.
+      </p>
+    </main>
+    """
+  end
+
   def render(assigns) do
     ~H"""
-    <main class="app">
-      <h1 class="brand">Grasp</h1>
+    <main class="app" id="app" phx-hook="Keys">
+      <aside class="sidebar">
+        <h1 class="brand">Grasp</h1>
+        <p class="sidebar__project">{@index.project["app"]}</p>
+        <nav id="modules" class="modules">
+          <div :for={module <- Index.modules(@index)} class="module-group">
+            <button
+              class={["module", @expanded_module == module["name"] && "module--open"]}
+              phx-click="expand_module"
+              phx-value-module={module["name"]}
+            >
+              {module["name"]}
+            </button>
+            <ul :if={@expanded_module == module["name"]} class="fns">
+              <li :for={fun <- Index.functions_in_module(@index, module["name"])}>
+                <button
+                  class={["fn", "fn--#{fun["kind"]}"]}
+                  phx-click="open_root"
+                  phx-value-id={fun["id"]}
+                >
+                  {fun["name"]}/{fun["arity"]}
+                </button>
+              </li>
+            </ul>
+          </div>
+        </nav>
+      </aside>
+      <section class="canvas" id="canvas">
+        <p :if={@forest.roots == []} class="empty">
+          Pick a function from the sidebar or press <kbd>⌘K</kbd>.
+        </p>
+        <div class="roots">
+          <.card_node
+            :for={root <- @forest.roots}
+            forest={@forest}
+            index={@index}
+            card_id={root}
+            editor={@editor}
+          />
+        </div>
+      </section>
     </main>
     """
   end
