@@ -23,14 +23,17 @@ defmodule Grasp.Index.Join do
       placed by kind: for a `defdelegate`, a column-less event becomes a visible call
       ranged over the delegate's own name.
     * **Column-less events.** Macro- and template-generated code is reported without a
-      column — a context call inside a `~H` body is the common case. Such an event becomes
-      a hidden call only when its line falls inside the definition's span *and* its target
-      is a definition the index holds. A macro that expands into a dependency — a template
-      engine, a query builder, `Logger`, the operators `and` and `>` in `:erlang` —
-      reports the macro's own implementation, not what the function set out to do, and on
-      a real project those outnumber the project calls worth seeing by more than ten to
-      one. Reflection the same expansion reaches for (`__schema__/1`, `__struct__/1`) is
-      dropped on the same grounds, by the `__name__` shape.
+      column — a context call inside a `~H` body is the common case. Outside a
+      `defdelegate` (which turns its one column-less delegated call into a visible call),
+      such an event becomes a hidden call only when its line falls inside the definition's
+      span *and* its target is a definition the index holds. A macro that expands into a
+      dependency — a template engine, a query builder, `Logger` — reports the macro's own
+      implementation, not what the function set out to do, and on a real project those
+      outnumber the project calls worth seeing by more than ten to one; OTP's `:erlang`
+      operators that `and` and `>` expand to are not definitions the index holds, so they
+      fall out the same way. Reflection the same expansion reaches for (`__schema__/1`,
+      `__struct__/1`) is dropped ahead of every other column-less rule, by the `__name__`
+      shape, so a `defdelegate` cannot turn one into a visible call either.
     * **Hidden calls.** An event with a column but no matching node came from
       macro-generated code — a function component in a `~H` template, code injected by
       `use` — and is kept as a hidden call so the graph stays complete even though
@@ -72,11 +75,7 @@ defmodule Grasp.Index.Join do
   @doc "Turns definitions and tracer events into function records with resolved calls."
   @spec join([Extract.definition()], [Tracer.event()]) :: [function_record()]
   def join(definitions, events) do
-    canonical =
-      for definition <- definitions, arity <- definition.arities, into: %{} do
-        {{definition.module, definition.name, arity},
-         {definition.module, definition.name, definition.arity}}
-      end
+    {canonical, indexed} = reachable(definitions)
 
     events_by_definition =
       events
@@ -86,15 +85,22 @@ defmodule Grasp.Index.Join do
         Map.get(canonical, {inspect(event.module), name, arity})
       end)
 
-    indexed =
-      for definition <- definitions,
-          arity <- definition.arities,
-          into: MapSet.new(),
-          do: function_id(definition.module, definition.name, arity)
-
     Enum.map(definitions, fn definition ->
       key = {definition.module, definition.name, definition.arity}
       build(definition, Map.get(events_by_definition, key, []), indexed)
+    end)
+  end
+
+  # Every arity a definition answers to, paired with the definition it resolves to and
+  # collected into the set of ids the index holds, in one pass over the definitions.
+  defp reachable(definitions) do
+    Enum.reduce(definitions, {%{}, MapSet.new()}, fn definition, acc ->
+      key = {definition.module, definition.name, definition.arity}
+
+      Enum.reduce(definition.arities, acc, fn arity, {canonical, indexed} ->
+        {Map.put(canonical, {definition.module, definition.name, arity}, key),
+         MapSet.put(indexed, function_id(definition.module, definition.name, arity))}
+      end)
     end)
   end
 
@@ -131,8 +137,8 @@ defmodule Grasp.Index.Join do
 
           event.column == nil ->
             cond do
-              delegate_range -> {[call.(delegate_range) | calls], hidden}
               reflection?(name) -> {calls, hidden}
+              delegate_range -> {[call.(delegate_range) | calls], hidden}
               not MapSet.member?(indexed, target) -> {calls, hidden}
               event.line in span -> {calls, [hidden_call | hidden]}
               true -> {calls, hidden}

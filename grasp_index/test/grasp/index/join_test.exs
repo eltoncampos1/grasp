@@ -199,6 +199,27 @@ defmodule Grasp.Index.JoinTest do
     assert size.hidden_calls == []
   end
 
+  test "drops a column-less reflection event reported on a defdelegate" do
+    {:ok, %{definitions: defs}} = Extract.extract(@delegate, "lib/delegates.ex")
+
+    events = [
+      %{
+        file: "lib/delegates.ex",
+        module: Grasp.JoinTest.Delegates,
+        function: {:size, 1},
+        line: 2,
+        column: nil,
+        target: {Phoenix.Component.Declarative, :__on_definition__, 6},
+        kind: :remote
+      }
+    ]
+
+    size = defs |> Join.join(events) |> record("Grasp.JoinTest.Delegates", :size)
+
+    assert size.calls == []
+    assert size.hidden_calls == []
+  end
+
   @defaults ~S"""
   defmodule Grasp.JoinTest.Defaults do
     def greet(name, prefix \\ String.trim(" p ")) do
