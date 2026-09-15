@@ -593,13 +593,16 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 6: Sidebar toggle (Cmd+M)
+### Task 6: Sidebar toggle (Cmd+M), zoom readout and Cmd+0
 
 **Files:**
-- Modify: `grasp/lib/grasp_web/live/review_live.ex`, `grasp/assets/js/hooks/keys.js`, `grasp/assets/css/app.css`
+- Modify: `grasp/lib/grasp_web/live/review_live.ex`, `grasp/assets/js/hooks/keys.js`, `grasp/assets/js/hooks/canvas.js`, `grasp/assets/css/app.css`
 - Test: `grasp/test/grasp_web/live/review_live_test.exs`
 
 **Interfaces:**
+- Zoom readout: the toolbar gains `<span id="zoom-level" class="toolbar__zoom" phx-update="ignore">100%</span>` between `#zoom-out` and `#zoom-in`. The Canvas hook writes `Math.round(scale * 100) + "%"` into it from `applyView()` (the span is ignored by patches, so the hook owns its text). Clicking the readout resets to 100% (`resetZoom()`).
+- `resetZoom()`: sets `scale` to 1 keeping the stage point under the canvas centre fixed (`zoomAt(1 / scale, centreX, centreY)`), then `applyView()`.
+- Keys hook: `Cmd+0` / `Ctrl+0` → `preventDefault` and dispatch a `grasp:zoom-reset` CustomEvent on `window`; the Canvas hook listens for it and calls `resetZoom()` (hook-to-hook via a DOM event, no server round trip). `Cmd+=`/`Cmd+-` are left to the browser.
 - Assign `sidebar_open?: true`; event `toggle_sidebar` (no params). `<main class={["app", !@sidebar_open? && "app--no-sidebar"]} data-sidebar={to_string(@sidebar_open?)}>`; the `<aside class="sidebar">` is rendered only when open (`:if={@sidebar_open?}`). A toolbar button `#toggle-sidebar[phx-click=toggle_sidebar]` (label `sidebar`, title "Show or hide the sidebar (⌘M)") sits first in the canvas toolbar.
 - Keys hook: `Cmd+M` / `Ctrl+M` and `Cmd+\` / `Ctrl+\` push `toggle_sidebar` (with `preventDefault`). Note: on macOS, Cmd+M is the OS "minimise window" shortcut and browsers may act on it before the page sees the key; `Cmd+\` is the fallback that browsers pass through.
 
@@ -627,12 +630,16 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 above the catch-all, the `main` class/data attribute, `:if={@sidebar_open?}` on the aside, and the toolbar button. `keys.js`: in the keydown handler, before the modifier bail-out, handle `(e.metaKey || e.ctrlKey) && (e.key === "m" || e.key === "\\")` → `preventDefault` + `pushEvent("toggle_sidebar", {})` (this must run even when the palette is open? No — keep it inside the existing "not typing, palette closed" guard). `app.css`: `.app--no-sidebar { grid-template-columns: 1fr; }`.
 
+- [ ] **Step 2b: Zoom readout and Cmd+0**
+
+`review_live.ex`: add the `#zoom-level` span to the toolbar as described (its initial text `100%`). `canvas.js`: in `mounted()` cache `this.zoomLevel = this.el.querySelector("#zoom-level")`; in `applyView()` set `this.zoomLevel.textContent = Math.round(this.view.scale * 100) + "%"`; add `resetZoom()`; in the capture-phase click delegation handle `#zoom-level` → `resetZoom()`; add `this.onZoomReset = () => this.resetZoom()` registered on `window` for `grasp:zoom-reset` and removed in `destroyed()`. `keys.js`: `(e.metaKey || e.ctrlKey) && e.key === "0"` → `preventDefault` + `window.dispatchEvent(new CustomEvent("grasp:zoom-reset"))`. CSS: `.toolbar__zoom { min-width: 3.5em; text-align: center; color: var(--fg-muted); cursor: pointer; font-variant-numeric: tabular-nums; }`. Test: `assert has_element?(view, "#canvas .toolbar #zoom-level[phx-update='ignore']", "100%")`.
+
 - [ ] **Step 3: Verify, format, commit**
 
 `mix test` green; `mix assets.build` clean.
 
 ```bash
-cd ~/repos/grasp/grasp && mix format && cd .. && git add -A && git commit -m "Toggle the sidebar with Cmd+M
+cd ~/repos/grasp/grasp && mix format && cd .. && git add -A && git commit -m "Toggle the sidebar with Cmd+M; show the zoom level and reset it with Cmd+0
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
