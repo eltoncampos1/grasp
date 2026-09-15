@@ -47,6 +47,18 @@ cd grasp && mix setup && mix grasp.serve --index /path/to/project/.grasp/index.j
 Open http://127.0.0.1:4040, pick a module in the sidebar or press ⌘K, and click any call
 inside a card to open the callee next to it.
 
+## Gestures
+
+- Drag a card by its header to move it, or hold Ctrl and drag from anywhere on it.
+- Drag the background to pan; hold Space to pan from anywhere, cards included.
+- ⌘ or Ctrl with the wheel zooms about the cursor; the wheel alone pans, except over
+  something that can scroll itself.
+- ⌘0 resets the zoom, as does clicking the zoom percentage in the toolbar.
+- ⌘M toggles the sidebar. On macOS the browser may take ⌘M for "minimise window", in
+  which case use ⌘\\.
+- Arrow keys walk the tree, `x` closes the focused card, `c` collapses it, ⌘K opens the
+  palette.
+
 ## License
 
 Apache-2.0.

@@ -37,6 +37,7 @@ defmodule GraspWeb.ReviewLive do
        palette_query: "",
        palette_results: [],
        palette_selected: 0,
+       sidebar_open?: true,
        editor: Application.get_env(:grasp, :editor)
      )}
   end
@@ -110,6 +111,9 @@ defmodule GraspWeb.ReviewLive do
 
   def handle_event("reset_layout", _params, socket),
     do: mutate(socket, &Session.reset_offsets/1)
+
+  def handle_event("toggle_sidebar", _params, socket),
+    do: {:noreply, update(socket, :sidebar_open?, &(not &1))}
 
   def handle_event("move_focus", %{"dir" => dir}, socket) when dir in ~w(parent child next prev),
     do: mutate(socket, &Session.move_focus(&1, String.to_existing_atom(dir)))
@@ -236,8 +240,13 @@ defmodule GraspWeb.ReviewLive do
 
   def render(assigns) do
     ~H"""
-    <main class="app" id="app" phx-hook="Keys">
-      <aside class="sidebar">
+    <main
+      class={["app", !@sidebar_open? && "app--no-sidebar"]}
+      id="app"
+      phx-hook="Keys"
+      data-sidebar={to_string(@sidebar_open?)}
+    >
+      <aside :if={@sidebar_open?} class="sidebar">
         <h1 class="brand">Grasp</h1>
         <p class="sidebar__project">{@index.project["app"]}</p>
         <nav id="modules" class="modules">
@@ -265,7 +274,16 @@ defmodule GraspWeb.ReviewLive do
       </aside>
       <section class="canvas" id="canvas" phx-hook="Canvas">
         <div class="toolbar">
+          <button
+            type="button"
+            id="toggle-sidebar"
+            phx-click="toggle_sidebar"
+            title="Show or hide the sidebar (⌘M)"
+          >
+            sidebar
+          </button>
           <button type="button" id="zoom-out" title="Zoom out">−</button>
+          <span id="zoom-level" class="toolbar__zoom" phx-update="ignore" title="Reset zoom (⌘0)">100%</span>
           <button type="button" id="zoom-fit" title="Fit all cards">fit</button>
           <button type="button" id="zoom-in" title="Zoom in">+</button>
           <button

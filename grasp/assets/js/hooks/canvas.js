@@ -8,7 +8,11 @@
 // soon as the server has rendered the offset it was pushed.
 //
 // Connector paths live inside a phx-update="ignore" <svg>, so the hook owns them and the
-// server never renders a connector.
+// server never renders a connector. The zoom readout is ignored by patches for the same
+// reason: the hook writes its text on every view change.
+//
+// A card is dragged by its header, or from anywhere on it with Ctrl held; holding Space turns
+// the whole canvas, cards included, into a pan surface.
 
 const MIN_SCALE = 0.25
 const MAX_SCALE = 2.5
@@ -16,11 +20,15 @@ const DRAG_THRESHOLD = 4
 const MARGIN = 24
 // Half a card header, so a connector leaves and arrives at the title rather than the corner.
 const PORT_Y = 18
+// A Ctrl-drag's release is still a context-menu gesture; long enough to cover the menu the
+// browser opens just after the drag has ended.
+const CTRL_MENU_GRACE = 300
 
 const Canvas = {
   mounted() {
     this.stage = this.el.querySelector("#stage")
     this.svg = this.el.querySelector("#connectors")
+    this.zoomLevel = this.el.querySelector("#zoom-level")
     this.view = {x: MARGIN, y: MARGIN, scale: 1}
     this.style =
       document.getElementById("grasp-canvas-style") ||
@@ -35,12 +43,20 @@ const Canvas = {
     this.onPointerUp = (e) => this.pointerUp(e)
     this.onPointerCancel = (e) => this.pointerCancel(e)
     this.onClickCapture = (e) => this.clickCapture(e)
+    this.onContextMenu = (e) => this.contextMenu(e)
+    this.onKeyDown = (e) => this.spaceDown(e)
+    this.onKeyUp = (e) => this.spaceUp(e)
+    this.onZoomReset = () => this.resetZoom()
     this.el.addEventListener("wheel", this.onWheel, {passive: false})
     this.el.addEventListener("pointerdown", this.onPointerDown)
     window.addEventListener("pointermove", this.onPointerMove)
     window.addEventListener("pointerup", this.onPointerUp)
     window.addEventListener("pointercancel", this.onPointerCancel)
     this.el.addEventListener("click", this.onClickCapture, true)
+    this.el.addEventListener("contextmenu", this.onContextMenu)
+    window.addEventListener("keydown", this.onKeyDown)
+    window.addEventListener("keyup", this.onKeyUp)
+    window.addEventListener("grasp:zoom-reset", this.onZoomReset)
 
     this.resizeObserver = new ResizeObserver(() => this.drawConnectors())
     this.resizeObserver.observe(this.stage)
@@ -63,6 +79,11 @@ const Canvas = {
     window.removeEventListener("pointerup", this.onPointerUp)
     window.removeEventListener("pointercancel", this.onPointerCancel)
     this.el.removeEventListener("click", this.onClickCapture, true)
+    this.el.removeEventListener("contextmenu", this.onContextMenu)
+    window.removeEventListener("keydown", this.onKeyDown)
+    window.removeEventListener("keyup", this.onKeyUp)
+    window.removeEventListener("grasp:zoom-reset", this.onZoomReset)
+    document.body.classList.remove("grasp-space")
     this.resizeObserver.disconnect()
     this.style.remove()
   },
@@ -70,6 +91,40 @@ const Canvas = {
   applyView() {
     const {x, y, scale} = this.view
     this.style.textContent = `#stage{transform:translate(${x}px,${y}px) scale(${scale})}`
+    if (this.zoomLevel) this.zoomLevel.textContent = `${Math.round(scale * 100)}%`
+  },
+
+  // Back to 1:1 about the centre of the canvas, so whatever you were looking at stays put.
+  resetZoom() {
+    this.zoomBy(1 / this.view.scale)
+  },
+
+  // Space is a page-scroll key as well as the pan modifier, and the class it sets lives on
+  // <body>, which the server never renders, so a patch mid-gesture cannot drop it.
+  spaceDown(e) {
+    if (e.key !== " ") return
+    if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return
+    // Space is how a focused button or link is pressed from the keyboard; taking it there
+    // would make the toolbar and the card controls unreachable without a pointer.
+    if (e.target.closest?.("button, a")) return
+    if (document.getElementById("palette")?.dataset.open === "true") return
+    e.preventDefault()
+    this.spaceHeld = true
+    document.body.classList.add("grasp-space")
+  },
+
+  spaceUp(e) {
+    if (e.key !== " ") return
+    this.spaceHeld = false
+    document.body.classList.remove("grasp-space")
+  },
+
+  // On macOS Ctrl+press is the context-menu gesture, so without this the menu opens over the
+  // card the press is dragging, and again on the release that drops it.
+  contextMenu(e) {
+    if (this.drag?.ctrl || Date.now() - (this.ctrlDragEndedAt || 0) < CTRL_MENU_GRACE) {
+      e.preventDefault()
+    }
   },
 
   // A drag ends in a click on whatever was under the pointer, which on a card header is
@@ -81,13 +136,14 @@ const Canvas = {
       this.suppressClick = false
       return
     }
-    const zoom = e.target.closest("#zoom-in, #zoom-out, #zoom-fit")
+    const zoom = e.target.closest("#zoom-in, #zoom-out, #zoom-fit, #zoom-level")
     if (!zoom) return
     // The toolbar zoom buttons are client-only, so nothing should reach the server.
     e.stopPropagation()
     e.preventDefault()
     if (zoom.id === "zoom-in") this.zoomBy(1.2)
     else if (zoom.id === "zoom-out") this.zoomBy(1 / 1.2)
+    else if (zoom.id === "zoom-level") this.resetZoom()
     else this.fit()
   },
 
@@ -230,35 +286,45 @@ const Canvas = {
     // A previous gesture that ended outside the canvas never got its trailing click, and a
     // stale suppression would eat this one.
     this.suppressClick = false
+    if (this.spaceHeld) return this.beginPan(e)
+    const ctrlCard = e.ctrlKey && e.target.closest(".card")
+    if (ctrlCard) return this.beginCardDrag(e, ctrlCard, true)
     const header = e.target.closest(".card__header")
     if (header && !e.target.closest("button, a")) {
-      const card = header.closest(".card")
-      const node = card.closest(".node")
-      // Without this the gesture also starts a native text selection, which then smears
-      // across every card the pointer crosses.
-      e.preventDefault()
-      this.drag = {
-        kind: "card",
-        pointerId: e.pointerId,
-        node,
-        id: card.id.replace("card-", ""),
-        startX: e.clientX,
-        startY: e.clientY,
-        dx: parseInt(card.dataset.dx || "0", 10),
-        dy: parseInt(card.dataset.dy || "0", 10),
-        moved: false,
-      }
+      this.beginCardDrag(e, header.closest(".card"), false)
     } else if (!e.target.closest(".card, .toolbar, button, a, input")) {
-      e.preventDefault()
-      this.drag = {
-        kind: "pan",
-        pointerId: e.pointerId,
-        startX: e.clientX,
-        startY: e.clientY,
-        x: this.view.x,
-        y: this.view.y,
-        moved: false,
-      }
+      this.beginPan(e)
+    }
+  },
+
+  // Without the preventDefault the gesture also starts a native text selection, which then
+  // smears across every card the pointer crosses.
+  beginCardDrag(e, card, ctrl) {
+    e.preventDefault()
+    this.drag = {
+      kind: "card",
+      ctrl,
+      pointerId: e.pointerId,
+      node: card.closest(".node"),
+      id: card.id.replace("card-", ""),
+      startX: e.clientX,
+      startY: e.clientY,
+      dx: parseInt(card.dataset.dx || "0", 10),
+      dy: parseInt(card.dataset.dy || "0", 10),
+      moved: false,
+    }
+  },
+
+  beginPan(e) {
+    e.preventDefault()
+    this.drag = {
+      kind: "pan",
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      x: this.view.x,
+      y: this.view.y,
+      moved: false,
     }
   },
 
@@ -292,6 +358,7 @@ const Canvas = {
     const drag = this.drag
     this.drag = null
     if (drag?.moved) this.suppressClick = true
+    if (drag?.ctrl) this.ctrlDragEndedAt = Date.now()
     return drag
   },
 

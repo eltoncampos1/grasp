@@ -263,7 +263,19 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#canvas .toolbar #zoom-in")
     assert has_element?(view, "#canvas .toolbar #zoom-out")
     assert has_element?(view, "#canvas .toolbar #zoom-fit")
+    assert has_element?(view, "#canvas .toolbar #zoom-level[phx-update='ignore']", "100%")
     refute has_element?(view, "#canvas .toolbar #zoom-in[phx-click]")
+  end
+
+  test "the sidebar can be hidden and shown", %{view: view} do
+    assert has_element?(view, "main.app[data-sidebar='true'] aside.sidebar")
+
+    render_hook(view, "toggle_sidebar", %{})
+    refute has_element?(view, "aside.sidebar")
+    assert has_element?(view, "main.app.app--no-sidebar[data-sidebar='false']")
+
+    view |> element("#canvas .toolbar #toggle-sidebar") |> render_click()
+    assert has_element?(view, "aside.sidebar")
   end
 
   test "dragging a card stores its offset and reset_layout clears it", %{view: view, name: name} do

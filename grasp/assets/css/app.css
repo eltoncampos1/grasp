@@ -32,7 +32,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .brand { margin: 0; padding: var(--space-s) var(--space-m); font-size: 1rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); }
 .app { display: grid; grid-template-columns: var(--sidebar-width) 1fr; height: 100vh; }
 
-.app--empty { grid-template-columns: 1fr; }
+.app--empty, .app--no-sidebar { grid-template-columns: 1fr; }
 .empty { color: var(--fg-muted); padding: var(--space-l); }
 kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.3em; }
 
@@ -52,6 +52,9 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .toolbar { position: absolute; inset-block-start: var(--space-s); inset-inline-end: var(--space-s); z-index: 3; display: flex; gap: var(--space-xs); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space-xs); }
 .toolbar button { padding: 0 var(--space-s); color: var(--fg-muted); }
 .toolbar button:hover { color: var(--fg); }
+.toolbar__zoom { min-width: 3.5em; text-align: center; color: var(--fg-muted); cursor: pointer; font-variant-numeric: tabular-nums; }
+/* Space is held down: the whole canvas pans, so everything on it offers the pan cursor. */
+body.grasp-space .canvas, body.grasp-space .card { cursor: grab; }
 .stage { position: absolute; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; will-change: transform; }
 .connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 0; }
 .connectors path { fill: none; stroke: var(--border); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
