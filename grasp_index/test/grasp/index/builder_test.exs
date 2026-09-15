@@ -74,19 +74,78 @@ defmodule Grasp.Index.BuilderTest do
            ]
   end
 
-  test "lists modules including nested ones, with an empty behaviours list", %{index: index} do
-    modules = Grasp.Index.modules(index)
-    names = Enum.map(modules, & &1["name"])
+  test "lists modules including nested ones", %{index: index} do
+    names = index |> Grasp.Index.modules() |> Enum.map(& &1["name"])
 
     assert "SampleApp.Greeter" in names
     assert "SampleApp.Greeter.Nested" in names
     assert "SampleApp.Formatter" in names
-    assert Enum.all?(modules, &(&1["behaviours"] == []))
   end
 
-  test "carries empty entry points until milestone 3", %{index: index} do
-    assert Grasp.Index.entry_points(index) == []
+  test "records entry points", %{index: index} do
+    entries = Grasp.Index.entry_points(index)
+    by_kind = Enum.group_by(entries, & &1["kind"])
+
+    assert %{
+             "label" => "GET /greet/:name",
+             "target" => "SampleAppWeb.GreetController.show/2",
+             "meta" => %{
+               "verb" => "GET",
+               "path" => "/greet/:name",
+               "router" => "SampleAppWeb.Router"
+             }
+           } = find(entries, "SampleAppWeb.GreetController.show/2")
+
+    assert find(entries, "SampleAppWeb.GreetController.create/2")["label"] == "POST /greet"
+
+    assert %{
+             "kind" => "live_route",
+             "label" => "GET /hello",
+             "target" => "SampleAppWeb.HelloLive.mount/3"
+           } =
+             Enum.find(entries, &(&1["kind"] == "live_route"))
+
+    assert %{"meta" => %{"queue" => "mail", "max_attempts" => 5}} =
+             find(entries, "SampleApp.Workers.Mailer.perform/1")
+
+    live_targets = by_kind["live_view"] |> Enum.map(& &1["target"]) |> Enum.sort()
+
+    assert live_targets == [
+             "SampleAppWeb.HelloLive.handle_event/3",
+             "SampleAppWeb.HelloLive.mount/3",
+             "SampleAppWeb.HelloLive.render/1"
+           ]
+
+    genserver_targets = by_kind["genserver"] |> Enum.map(& &1["target"]) |> Enum.sort()
+    assert genserver_targets == ["SampleApp.Counter.handle_call/3", "SampleApp.Counter.init/1"]
+
+    assert [%{"target" => "SampleApp.Application.start/2"}] = by_kind["application"]
+    assert [%{"target" => "SampleAppWeb.RequestId.call/2"}] = by_kind["plug"]
+
+    refute Enum.any?(
+             entries,
+             &String.starts_with?(&1["target"], "SampleAppWeb.GreetController.call/")
+           )
+
+    refute Enum.any?(entries, &String.starts_with?(&1["target"], "SampleAppWeb.Endpoint."))
+    assert entries == Enum.sort_by(entries, &{kind_rank(&1["kind"]), &1["label"], &1["target"]})
+  end
+
+  test "records module behaviours", %{index: index} do
+    mods = Map.new(Grasp.Index.modules(index), &{&1["name"], &1["behaviours"]})
+
+    assert "Oban.Worker" in mods["SampleApp.Workers.Mailer"]
+    assert "GenServer" in mods["SampleApp.Counter"]
+    assert mods["SampleApp.Formatter"] == []
   end
 
   defp call(record, target), do: Enum.find(record["calls"], &(&1["target"] == target))
+  defp find(entries, target), do: Enum.find(entries, &(&1["target"] == target))
+
+  defp kind_rank(kind) do
+    Enum.find_index(
+      ~w(route live_route oban_worker live_view live_component genserver supervisor application plug),
+      &(&1 == kind)
+    )
+  end
 end

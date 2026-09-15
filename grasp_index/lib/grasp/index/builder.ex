@@ -9,11 +9,12 @@ defmodule Grasp.Index.Builder do
   definitions from every `.ex` file under `:elixirc_paths`, joins the two and writes the
   document `Grasp.Index.load/1` reads. Git metadata is best-effort: `nil` when the
   project is not in a repository or `git` is not installed, and a file that cannot be
-  read or parsed is reported and skipped rather than aborting the run. Module records
-  carry an empty `"behaviours"` list until milestone 3 fills it.
+  read or parsed is reported and skipped rather than aborting the run. Entry points and
+  module behaviours come from `Grasp.Index.EntryPoints`, which introspects the modules
+  the compile just produced.
   """
 
-  alias Grasp.Index.{Extract, Join, Tracer}
+  alias Grasp.Index.{EntryPoints, Extract, Join, Tracer}
 
   @type summary :: %{
           path: String.t(),
@@ -34,14 +35,24 @@ defmodule Grasp.Index.Builder do
     {definitions, modules} = extract_all(root, paths)
     functions = Join.join(definitions, events)
 
+    indexed =
+      MapSet.new(for f <- functions, a <- f.arities, do: Join.function_id(f.module, f.name, a))
+
+    %{entry_points: entry_points, behaviours: behaviours} =
+      EntryPoints.detect(config[:app], indexed)
+
     document = %{
       "version" => 1,
       "generated_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
       "project" => %{"app" => to_string(config[:app]), "root" => root, "elixirc_paths" => paths},
       "git" => git_info(root),
-      "modules" => Enum.map(modules, &module_json/1),
+      "modules" => Enum.map(modules, &module_json(&1, behaviours)),
       "functions" => Enum.map(functions, &function_json/1),
-      "entry_points" => []
+      "entry_points" =>
+        Enum.map(
+          entry_points,
+          &%{"kind" => &1.kind, "label" => &1.label, "target" => &1.target, "meta" => &1.meta}
+        )
     }
 
     write!(out, Jason.encode!(document, pretty: true))
@@ -112,8 +123,13 @@ defmodule Grasp.Index.Builder do
     end
   end
 
-  defp module_json(module) do
-    %{"name" => module.name, "file" => module.file, "line" => module.line, "behaviours" => []}
+  defp module_json(module, behaviours) do
+    %{
+      "name" => module.name,
+      "file" => module.file,
+      "line" => module.line,
+      "behaviours" => Map.get(behaviours, module.name, [])
+    }
   end
 
   defp function_json(record) do
