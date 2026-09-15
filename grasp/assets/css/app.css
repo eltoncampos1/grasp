@@ -1,0 +1,28 @@
+:root {
+  color-scheme: dark;
+  --bg: #1b1d22;
+  --bg-raised: #22252b;
+  --bg-sunken: #15171b;
+  --border: #33373f;
+  --fg: #e6e6e6;
+  --fg-muted: #9aa0a6;
+  --accent: #7aa2f7;
+  --accent-soft: color-mix(in oklch, var(--accent) 25%, transparent);
+  --focus: #e0af68;
+  --danger: #f7768e;
+  --radius: 6px;
+  --space-xs: 0.25rem;
+  --space-s: 0.5rem;
+  --space-m: 1rem;
+  --space-l: 1.5rem;
+  --card-width: 40rem;
+  --sidebar-width: 18rem;
+  --mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
+  --sans: system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.brand { margin: 0; padding: var(--space-s) var(--space-m); font-size: 1rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); }
+.app { display: grid; grid-template-columns: var(--sidebar-width) 1fr; height: 100vh; }
