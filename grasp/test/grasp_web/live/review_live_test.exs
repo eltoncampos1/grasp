@@ -139,4 +139,28 @@ defmodule GraspWeb.ReviewLiveTest do
     render_hook(view, "move_focus", %{"dir" => "child"})
     assert has_element?(view, "#card-2[data-focused='true']")
   end
+
+  test "the header focuses a card, and the card body does not", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    Session.open_child(name, 1, @wrap)
+    assert has_element?(view, "#card-2[data-focused='true']")
+
+    view |> element("#card-1 .card__header") |> render_click()
+    assert has_element?(view, "#card-1[data-focused='true']")
+    refute has_element?(view, "#card-1[phx-click]")
+  end
+
+  test "an unhandled direction or an unparsable card id leaves the view alive", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+
+    render_hook(view, "move_focus", %{"dir" => "sideways"})
+    render_click(view, "close_card", %{"card" => "abc"})
+    render_click(view, "nonsense", %{})
+
+    assert render(view) =~ "card-1"
+    assert has_element?(view, "#card-1")
+  end
 end

@@ -84,6 +84,10 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
+  # Events are addressed by name and card id from the DOM, so a stale tab or a hand-made
+  # message must be dropped rather than take the whole page down with it.
+  def handle_event(_event, _params, socket), do: {:noreply, socket}
+
   # The session broadcasts the new forest to every subscriber including this process, so
   # the returned forest is assigned here only to make the change visible before the
   # broadcast arrives (which matters in tests, where the view may not be connected).
@@ -91,7 +95,15 @@ defmodule GraspWeb.ReviewLive do
     {:noreply, assign(socket, forest: fun.(socket.assigns.name))}
   end
 
-  defp int(value) when is_binary(value), do: String.to_integer(value)
+  # A card id that is not a number is nobody's card, and every session operation is a no-op
+  # on an unknown id, so nil carries the garbage through to the same outcome.
+  defp int(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {id, ""} -> id
+      _ -> nil
+    end
+  end
+
   defp int(value) when is_integer(value), do: value
 
   @impl true

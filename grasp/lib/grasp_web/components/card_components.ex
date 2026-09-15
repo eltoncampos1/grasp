@@ -85,10 +85,8 @@ defmodule GraspWeb.CardComponents do
       data-function-id={@record["id"]}
       data-focused={to_string(@focused?)}
       data-depth={@depth}
-      phx-click="focus_card"
-      phx-value-card={@card.id}
     >
-      <header class="card__header">
+      <header class="card__header" phx-click="focus_card" phx-value-card={@card.id}>
         <h2 class="card__title">
           <span class="card__module">{@record["module"]}.</span><span class="card__fn">{@record[
             "name"
@@ -167,10 +165,8 @@ defmodule GraspWeb.CardComponents do
       data-function-id={@card.function_id}
       data-focused={to_string(@focused?)}
       data-depth={@depth}
-      phx-click="focus_card"
-      phx-value-card={@card.id}
     >
-      <header class="card__header">
+      <header class="card__header" phx-click="focus_card" phx-value-card={@card.id}>
         <h2 class="card__title">{@card.function_id}</h2>
         <button class="card__close" phx-click="close_card" phx-value-card={@card.id}>×</button>
       </header>
@@ -190,24 +186,40 @@ defmodule GraspWeb.CardComponents do
     path = Path.join(root, file)
 
     case editor do
-      "vscode" -> "vscode://file/#{path}:#{line}"
-      "cursor" -> "cursor://file/#{path}:#{line}"
-      "zed" -> "zed://file/#{path}:#{line}"
-      "idea" -> "idea://open?file=#{URI.encode(path)}&line=#{line}"
+      "vscode" -> "vscode://file/#{encode_path(path)}:#{line}"
+      "cursor" -> "cursor://file/#{encode_path(path)}:#{line}"
+      "zed" -> "zed://file/#{encode_path(path)}:#{line}"
+      "idea" -> "idea://open?file=#{URI.encode_www_form(path)}&line=#{line}"
       _ -> nil
     end
+  end
+
+  # A space or an ampersand in a project path would otherwise truncate the link the browser
+  # hands the editor; the separators have to survive, so each segment is encoded on its own.
+  defp encode_path(path) do
+    path
+    |> String.split("/")
+    |> Enum.map_join("/", fn segment -> URI.encode(segment, &URI.char_unreserved?/1) end)
   end
 
   @doc "hexdocs URL for a standard-library function id, or nil for anything else."
   @spec hexdocs_url(String.t()) :: String.t() | nil
   def hexdocs_url(function_id) do
     with [_, module, name, arity] <- Regex.run(~r/^([A-Z][\w.]*)\.([^.\/]+)\/(\d+)$/, function_id),
-         mod = Module.concat([module]),
+         {:ok, mod} <- existing_module(module),
          {:module, ^mod} <- Code.ensure_loaded(mod),
          {:ok, app} when app in @stdlib_apps <- :application.get_application(mod) do
       "https://hexdocs.pm/#{app}/#{module}.html##{name}/#{arity}"
     else
       _ -> nil
     end
+  end
+
+  # Call targets come from the index and from the browser, so concatenating them into a
+  # module atom would let anyone grow the atom table one unknown name at a time.
+  defp existing_module(name) do
+    {:ok, Module.safe_concat([name])}
+  rescue
+    ArgumentError -> :error
   end
 end
