@@ -13,3 +13,4 @@ erl_crash.dump
 /grasp/assets/node_modules/
 .grasp/
 .DS_Store
+.superpowers/

@@ -222,9 +222,9 @@ defmodule Grasp.Index.TracerTest do
   test "records remote, local and imported calls with the function name's position" do
     events = Compile.trace(@source, "lib/sample.ex")
 
-    assert %{kind: :remote, line: 5, column: 7, target: {Enum, :map, 2}} = find(events, {Enum, :map, 2})
-    assert %{kind: :local, line: 5, column: 18} = find(events, {Grasp.TracerTest.Sample, :helper, 1})
-    assert %{kind: :imported, line: 6, column: 5, target: {String, :upcase, 1}} = find(events, {String, :upcase, 1})
+    assert %{kind: :remote, line: 6, column: 7, target: {Enum, :map, 2}} = find(events, {Enum, :map, 2})
+    assert %{kind: :local, line: 6, column: 18} = find(events, {Grasp.TracerTest.Sample, :helper, 1})
+    assert %{kind: :imported, line: 7, column: 5, target: {String, :upcase, 1}} = find(events, {String, :upcase, 1})
 
     assert Enum.all?(events, &(&1.module == Grasp.TracerTest.Sample))
     assert Enum.all?(events, &(&1.file == "lib/sample.ex"))
@@ -395,7 +395,7 @@ end
 - [ ] **Step 4: Run the tests**
 
 Run: `cd grasp_index && mix test test/grasp/index/tracer_test.exs`
-Expected: 4 tests, 0 failures. If the imported `upcase` column differs from 5, print `events` and adjust the assertion to what the compiler reports (the column must equal the position of `upcase` in the source, which is column 5 on line 6).
+Expected: 4 tests, 0 failures. If the imported `upcase` column differs from 5, print `events` and adjust the assertion to what the compiler reports (the column must equal the position of `upcase` in the source, which is column 5 on line 7).
 
 - [ ] **Step 5: Format and commit**
 
@@ -710,9 +710,18 @@ defmodule Grasp.Index.Extract do
 
   defp head_signature(_dynamic), do: nil
 
-  defp call_sites({_kind, _meta, args}) do
+  # The head is never a call site: the compiler reports a `Module.compile_definition_attributes/6`
+  # event at the head's position, and without this exclusion it would land on the function name.
+  # Guards are searched because custom guards (`when is_pos(x)`) are real calls.
+  defp call_sites({_kind, _meta, [head | rest]}) do
+    searched =
+      case head do
+        {:when, _, [_head, guard]} -> [guard | rest]
+        _ -> rest
+      end
+
     {_, sites} =
-      Macro.prewalk(args, [], fn
+      Macro.prewalk(searched, [], fn
         {:&, _, [{:/, _, [target, _arity]}]} = node, sites ->
           {node, add_site(sites, target)}
 
@@ -744,7 +753,7 @@ defmodule Grasp.Index.Extract do
       start =
         case receiver do
           {:__aliases__, alias_meta, _} -> {alias_meta[:line], alias_meta[:column]}
-          atom when is_atom(atom) -> {meta[:line], meta[:column] - String.length(inspect(atom)) - 1}
+          {:__block__, atom_meta, [atom]} when is_atom(atom) -> {atom_meta[:line], atom_meta[:column]}
           _expression -> {line, column}
         end
 
@@ -849,10 +858,11 @@ defmodule Grasp.Index.JoinTest do
     assert run.hidden_calls == []
   end
 
-  test "drops Kernel calls and events without a column", %{defs: defs} do
+  test "drops Kernel calls, def-registration events and events without a column", %{defs: defs} do
     events = [
       event(:run, 2, 6, 7, {Kernel, :if, 2}, :imported_macro),
-      event(:run, 2, 6, nil, {:erlang, :orelse, 2}, :remote)
+      event(:run, 2, 6, nil, {:erlang, :orelse, 2}, :remote),
+      event(:run, 2, 5, 7, {Module, :compile_definition_attributes, 6}, :remote)
     ]
 
     [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
@@ -924,6 +934,8 @@ defmodule Grasp.Index.Join do
   alias Grasp.Index.{Extract, Tracer}
 
   @ignored_targets [Kernel, Kernel.SpecialForms, Kernel.Utils]
+  # Emitted by the compiler at every def head while it registers the definition.
+  @ignored_calls [{Module, :compile_definition_attributes, 6}]
 
   @type call :: %{target: String.t(), kind: Tracer.kind(), range: Extract.range()}
   @type hidden_call :: %{target: String.t(), kind: Tracer.kind(), line: pos_integer()}
@@ -971,6 +983,7 @@ defmodule Grasp.Index.Join do
 
   defp keep?(%{column: nil}), do: false
   defp keep?(%{target: {module, _, _}}) when module in @ignored_targets, do: false
+  defp keep?(%{target: target}) when target in @ignored_calls, do: false
   defp keep?(_event), do: true
 
   defp build(definition, events) do
@@ -1098,7 +1111,8 @@ defmodule Grasp.IndexTest do
     assert ids(Index.search(index, "MyApp.Wallets.debit/3")) == ["MyApp.Wallets.debit/3"]
     assert ids(Index.search(index, "credit")) == ["MyApp.Wallets.credit/3"]
     assert ["MyApp.Wallets.credit/3" | _] = ids(Index.search(index, "walcre"))
-    assert ids(Index.search(index, "wallets")) == ["MyApp.Wallets.credit/3", "MyApp.Wallets.debit/3", "MyAppWeb.WalletController.create/2"]
+    assert ids(Index.search(index, "wallets")) == ["MyApp.Wallets.debit/3", "MyApp.Wallets.credit/3"]
+    assert ids(Index.search(index, "wallet")) == ["MyApp.Wallets.debit/3", "MyApp.Wallets.credit/3", "MyAppWeb.WalletController.create/2"]
     assert Index.search(index, "zzzzzz") == []
     assert Index.search(index, "   ") == []
     assert length(Index.search(index, "a", 2)) == 2
@@ -1454,7 +1468,7 @@ defmodule Grasp.Index.BuilderTest do
 
     {:ok, greet_all} = Grasp.Index.fetch_function(index, "SampleApp.Greeter.greet_all/1")
     assert %{"kind" => "remote"} = call(greet_all, "Enum.map/2")
-    assert %{"kind" => "local", "range" => %{"start" => [15, 44], "end" => [15, 49]}} =
+    assert %{"kind" => "local", "range" => %{"start" => [15, 46], "end" => [15, 51]}} =
              call(greet_all, "SampleApp.Greeter.greet/1")
 
     assert Grasp.Index.callers(index, "SampleApp.Greeter.greet/2") ==
@@ -1476,7 +1490,7 @@ defmodule Grasp.Index.BuilderTest do
 end
 ```
 
-Column check for line 15 of `greeter.ex`, `  def greet_all(names), do: Enum.map(names, &greet/1)`: two spaces, `def` 3–5, space, `greet_all(names),` 7–23, space, `do:` 25–27, space, `Enum` 29–32, `.` 33, `map` 34–36, `(` 37, `names,` 38–43, space 44... recount carefully before trusting: `&` is at column 44 and `greet` at 45 if `names,` ends at 43 and a space follows. Verify against the file with `awk 'NR==15{print index($0,"&greet")}'` and set the expected `start`/`end` to `[15, col]`/`[15, col + 5]` where `col` is the column of `g` in `greet`. Do the same check for line 9 (`Formatter` at 12, `wrap` ends at 26 exclusive) and line 10 (`shout` at 19).
+Column check for line 15 of `greeter.ex`, `  def greet_all(names), do: Enum.map(names, &greet/1)`: two spaces, `def` 3–5, space, `greet_all(names),` 7–23, space, `do:` 25–27, space, `Enum` 29–32, `.` 33, `map` 34–36, `(` 37, `names,` 38–43, space 44, `&` 45, `greet` 46–50, so the range is `[15, 46]`–`[15, 51]`. Verify against the file with `awk 'NR==15{print index($0,"&greet")+1}'` (expect 46) before trusting the assertion. Do the same check for line 9 (`Formatter` at 12, `wrap` ends at 26 exclusive) and line 10 (`shout` at 19).
 
 - [ ] **Step 3: Run to verify failure**
 
@@ -1556,6 +1570,7 @@ defmodule Grasp.Index.Builder do
       roots = Enum.map(paths, &(Path.expand(&1, root) <> "/"))
 
       Tracer.events()
+      |> Enum.map(&%{&1 | file: Path.expand(&1.file, root)})
       |> Enum.filter(fn event -> Enum.any?(roots, &String.starts_with?(event.file, &1)) end)
       |> Enum.map(&%{&1 | file: Path.relative_to(&1.file, root)})
     after
