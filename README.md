@@ -22,6 +22,28 @@ a text editor and a unified diff.
 
 See `docs/specs/2026-09-15-grasp-design.md` for the design.
 
+## Quick start
+
+In the project you want to review:
+
+```elixir
+# mix.exs
+{:grasp_index, path: "/path/to/grasp/grasp_index", only: :dev, runtime: false}
+```
+
+```
+mix deps.get && mix grasp.index
+```
+
+Then, from this repo:
+
+```
+cd grasp && mix setup && mix grasp.serve --index /path/to/project/.grasp/index.json --editor vscode
+```
+
+Open http://127.0.0.1:4040, pick a module in the sidebar or press ⌘K, and click any call
+inside a card to open the callee next to it.
+
 ## License
 
 Apache-2.0.
