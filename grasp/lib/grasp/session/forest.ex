@@ -72,42 +72,53 @@ defmodule Grasp.Session.Forest do
 
   @doc """
   Opens `function_id` as a child of `parent_id`, or focuses the existing child that shows
-  it. Returns the child id.
+  it. Returns the child id, or nil if `parent_id` is unknown.
   """
-  @spec open_child(t(), id(), String.t()) :: {t(), id()}
+  @spec open_child(t(), id(), String.t()) :: {t(), id() | nil}
   def open_child(%__MODULE__{} = forest, parent_id, function_id) do
-    parent = Map.fetch!(forest.cards, parent_id)
+    parent = card(forest, parent_id)
 
-    case Enum.find(parent.children, &(card(forest, &1).function_id == function_id)) do
-      nil ->
-        {forest, id} = add_card(forest, function_id, parent_id, function_id)
-        parent = %{parent | children: parent.children ++ [id]}
-        {%{forest | cards: Map.put(forest.cards, parent_id, parent), focus: id}, id}
+    existing =
+      parent && Enum.find(parent.children, &(card(forest, &1).function_id == function_id))
+
+    cond do
+      is_nil(parent) ->
+        {forest, nil}
 
       existing ->
         {%{forest | focus: existing}, existing}
+
+      true ->
+        {forest, id} = add_card(forest, function_id, parent_id, function_id)
+        parent = %{parent | children: parent.children ++ [id]}
+        {%{forest | cards: Map.put(forest.cards, parent_id, parent), focus: id}, id}
     end
   end
 
   @doc """
   Opens `caller_id` as the caller of `card_id`. On a root, the caller becomes the new root
   with the card as its child; otherwise a new root tree `caller → function` is opened.
+  Returns the new root id, or nil if `card_id` is unknown.
   """
-  @spec open_caller(t(), id(), String.t()) :: {t(), id()}
+  @spec open_caller(t(), id(), String.t()) :: {t(), id() | nil}
   def open_caller(%__MODULE__{} = forest, card_id, caller_id) do
-    card = Map.fetch!(forest.cards, card_id)
+    case card(forest, card_id) do
+      nil ->
+        {forest, nil}
 
-    if root?(forest, card_id) do
-      {forest, new_root} = add_card(forest, caller_id, nil, nil)
-      caller = %{Map.fetch!(forest.cards, new_root) | children: [card_id]}
-      card = %{card | parent_id: new_root, opened_by: card.function_id}
-      roots = Enum.map(forest.roots, &if(&1 == card_id, do: new_root, else: &1))
-      cards = forest.cards |> Map.put(new_root, caller) |> Map.put(card_id, card)
-      {%{forest | roots: roots, cards: cards, focus: new_root}, new_root}
-    else
-      {forest, new_root} = open_root(forest, caller_id)
-      {forest, _copy} = open_child(forest, new_root, card.function_id)
-      {%{forest | focus: new_root}, new_root}
+      card ->
+        if root?(forest, card_id) do
+          {forest, new_root} = add_card(forest, caller_id, nil, nil)
+          caller = %{Map.fetch!(forest.cards, new_root) | children: [card_id]}
+          card = %{card | parent_id: new_root, opened_by: card.function_id}
+          roots = Enum.map(forest.roots, &if(&1 == card_id, do: new_root, else: &1))
+          cards = forest.cards |> Map.put(new_root, caller) |> Map.put(card_id, card)
+          {%{forest | roots: roots, cards: cards, focus: new_root}, new_root}
+        else
+          {forest, new_root} = open_root(forest, caller_id)
+          {forest, _copy} = open_child(forest, new_root, card.function_id)
+          {%{forest | focus: new_root}, new_root}
+        end
     end
   end
 

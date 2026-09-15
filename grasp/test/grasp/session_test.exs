@@ -44,4 +44,11 @@ defmodule Grasp.SessionTest do
     Session.open_root(name, "A.f/0")
     assert Session.get(other).roots == []
   end
+
+  test "an unknown card id is a no-op that leaves the session running", %{name: name} do
+    forest = Session.open_root(name, "A.f/0")
+
+    assert Session.open_child(name, 999, "X.y/0") == forest
+    assert Session.get(name) == forest
+  end
 end

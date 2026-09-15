@@ -91,7 +91,15 @@ defmodule Grasp.Session.ForestTest do
 
     forest = Forest.focus(forest, b)
     assert Forest.move_focus(forest, :next).focus == c
+
+    assert forest |> Forest.move_focus(:next) |> Forest.move_focus(:prev) |> Map.fetch!(:focus) ==
+             b
+
+    # b is the first sibling, so :prev has nowhere to go and leaves focus where it is
     assert Forest.move_focus(forest, :prev).focus == b
+    # c is the last sibling, and d the last root
+    assert forest |> Forest.focus(c) |> Forest.move_focus(:next) |> Map.fetch!(:focus) == c
+    assert forest |> Forest.focus(d) |> Forest.move_focus(:next) |> Map.fetch!(:focus) == d
     assert Forest.move_focus(forest, :parent).focus == a
     assert forest |> Forest.focus(a) |> Forest.move_focus(:child) |> Map.fetch!(:focus) == b
     assert forest |> Forest.focus(a) |> Forest.move_focus(:next) |> Map.fetch!(:focus) == d
@@ -103,5 +111,13 @@ defmodule Grasp.Session.ForestTest do
            |> Map.fetch!(:focus) == a
 
     assert Forest.move_focus(%{forest | focus: nil}, :next).focus == a
+  end
+
+  test "open_child/3 and open_caller/3 are no-ops on an unknown card id" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+
+    assert {^forest, nil} = Forest.open_child(forest, 999, "B.g/0")
+    assert {^forest, nil} = Forest.open_caller(forest, 999, "Other.k/0")
+    assert forest.roots == [a]
   end
 end
