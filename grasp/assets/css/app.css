@@ -46,7 +46,7 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .fn:hover { color: var(--accent); }
 .fn--defp { color: var(--fg-muted); }
 
-.canvas { position: relative; overflow: hidden; padding: 0; cursor: grab; }
+.canvas { position: relative; overflow: hidden; padding: 0; cursor: grab; user-select: none; }
 .canvas:active { cursor: grabbing; }
 .canvas .empty { position: absolute; inset-block-start: 40%; inset-inline: 0; text-align: center; }
 .toolbar { position: absolute; inset-block-start: var(--space-s); inset-inline-end: var(--space-s); z-index: 3; display: flex; gap: var(--space-xs); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space-xs); }
@@ -54,13 +54,13 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .toolbar button:hover { color: var(--fg); }
 .stage { position: absolute; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; will-change: transform; }
 .connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 0; }
-.connectors path { fill: none; stroke: var(--border); stroke-width: 1.5; }
+.connectors path { fill: none; stroke: var(--border); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .roots { position: relative; z-index: 1; padding: var(--space-m); display: flex; flex-direction: column; gap: var(--space-l); align-items: flex-start; }
 
 .node { translate: var(--dx, 0px) var(--dy, 0px); display: flex; flex-direction: row; align-items: flex-start; gap: var(--space-l); }
 .node__children { display: flex; flex-direction: column; gap: var(--space-m); }
 
-.card { position: relative; width: var(--card-width); flex: none; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-family: var(--mono); font-size: var(--code-size); }
+.card { cursor: auto; position: relative; width: var(--card-width); flex: none; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-family: var(--mono); font-size: var(--code-size); }
 .card--focused { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
 .card__header { cursor: grab; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-s); padding: var(--space-s) var(--space-m); border-bottom: 1px solid var(--border); }
 .card__title { margin: 0; font-size: 0.9rem; font-weight: 600; }
@@ -77,7 +77,7 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .caller:hover { color: var(--accent); }
 .card__collapse, .card__close { padding: 0 var(--space-xs); color: var(--fg-muted); }
 .card__close:hover { color: var(--danger); }
-.card .card__body { margin: 0; padding: var(--space-xs) 0; overflow-x: auto; line-height: var(--code-leading); background: var(--code-bg); }
+.card .card__body { user-select: text; margin: 0; padding: var(--space-xs) 0; overflow-x: auto; line-height: var(--code-leading); background: var(--code-bg); }
 .line { display: block; padding-inline: var(--space-s); white-space: pre; }
 .ln { display: inline-block; width: 3ch; margin-inline-end: var(--space-s); text-align: end; color: var(--fg-muted); user-select: none; }
 .call { cursor: pointer; border-bottom: 1px dashed var(--accent); }

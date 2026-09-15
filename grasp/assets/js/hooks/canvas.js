@@ -33,11 +33,13 @@ const Canvas = {
     this.onPointerDown = (e) => this.pointerDown(e)
     this.onPointerMove = (e) => this.pointerMove(e)
     this.onPointerUp = (e) => this.pointerUp(e)
+    this.onPointerCancel = () => this.endDrag()
     this.onClickCapture = (e) => this.clickCapture(e)
     this.el.addEventListener("wheel", this.onWheel, {passive: false})
     this.el.addEventListener("pointerdown", this.onPointerDown)
     window.addEventListener("pointermove", this.onPointerMove)
     window.addEventListener("pointerup", this.onPointerUp)
+    window.addEventListener("pointercancel", this.onPointerCancel)
     this.el.addEventListener("click", this.onClickCapture, true)
 
     this.resizeObserver = new ResizeObserver(() => this.drawConnectors())
@@ -59,6 +61,7 @@ const Canvas = {
     this.el.removeEventListener("pointerdown", this.onPointerDown)
     window.removeEventListener("pointermove", this.onPointerMove)
     window.removeEventListener("pointerup", this.onPointerUp)
+    window.removeEventListener("pointercancel", this.onPointerCancel)
     this.el.removeEventListener("click", this.onClickCapture, true)
     this.resizeObserver.disconnect()
     this.style.remove()
@@ -89,16 +92,8 @@ const Canvas = {
   },
 
   wheel(e) {
-    const body = e.target.closest?.(".card__body")
-    if (
-      body &&
-      !e.ctrlKey &&
-      !e.metaKey &&
-      Math.abs(e.deltaX) > Math.abs(e.deltaY) &&
-      body.scrollWidth > body.clientWidth
-    ) {
-      return
-    }
+    // A zoom modifier means the canvas, whatever is under the cursor.
+    if (!e.ctrlKey && !e.metaKey && this.scrollableUnder(e)) return
     e.preventDefault()
     if (e.ctrlKey || e.metaKey) {
       this.zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY)
@@ -107,6 +102,24 @@ const Canvas = {
       this.view.y -= e.deltaY
       this.applyView()
     }
+  },
+
+  // Anything between the cursor and the canvas that can absorb this wheel gesture itself —
+  // a code body scrolled sideways, the callers dropdown scrolled down — keeps it, because
+  // panning the whole canvas instead would leave that content unreachable.
+  scrollableUnder(e) {
+    const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)
+    let el = e.target instanceof Element ? e.target : null
+    while (el && el !== this.el) {
+      const style = getComputedStyle(el)
+      const overflow = horizontal ? style.overflowX : style.overflowY
+      const overflows = horizontal
+        ? el.scrollWidth > el.clientWidth
+        : el.scrollHeight > el.clientHeight
+      if ((overflow === "auto" || overflow === "scroll") && overflows) return true
+      el = el.parentElement
+    }
+    return false
   },
 
   zoomBy(factor) {
@@ -161,6 +174,8 @@ const Canvas = {
 
   revealCard(id) {
     if (id == null) return
+    // A focus arriving mid-gesture would pan the ground out from under the pointer.
+    if (this.drag) return
     const card = document.getElementById(`card-${id}`)
     if (!card) return
     const r = this.el.getBoundingClientRect()
@@ -189,6 +204,9 @@ const Canvas = {
     if (header && !e.target.closest("button, a")) {
       const card = header.closest(".card")
       const node = card.closest(".node")
+      // Without this the gesture also starts a native text selection, which then smears
+      // across every card the pointer crosses.
+      e.preventDefault()
       this.drag = {
         kind: "card",
         node,
@@ -200,6 +218,7 @@ const Canvas = {
         moved: false,
       }
     } else if (!e.target.closest(".card, .toolbar, button, a, input")) {
+      e.preventDefault()
       this.drag = {
         kind: "pan",
         startX: e.clientX,
@@ -213,6 +232,9 @@ const Canvas = {
 
   pointerMove(e) {
     if (!this.drag) return
+    // The button came up while the pointer was outside the window, so the pointerup that
+    // would have ended this gesture was never delivered; this move is the first news of it.
+    if (e.buttons === 0) return this.pointerUp(e)
     const mx = e.clientX - this.drag.startX
     const my = e.clientY - this.drag.startY
     if (!this.drag.moved && Math.hypot(mx, my) < DRAG_THRESHOLD) return
@@ -228,12 +250,19 @@ const Canvas = {
     }
   },
 
-  pointerUp(e) {
-    if (!this.drag) return
+  // A cancelled gesture (the browser took the pointer for a system drag or gesture) is
+  // abandoned where it stands: no move is pushed, and the next patch restores the card.
+  endDrag() {
     const drag = this.drag
     this.drag = null
+    if (drag?.moved) this.suppressClick = true
+    return drag
+  },
+
+  pointerUp(e) {
+    if (!this.drag) return
+    const drag = this.endDrag()
     if (!drag.moved) return
-    this.suppressClick = true
     if (drag.kind === "card") {
       const {scale} = this.view
       const dx = Math.round(drag.dx + (e.clientX - drag.startX) / scale)
@@ -260,7 +289,11 @@ const Canvas = {
       const x2 = (b.left - s.left) / scale
       const y2 = (b.top - s.top) / scale + PORT_Y
       const mid = (x1 + x2) / 2
-      paths.push(`<path d="M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}" />`)
+      // The stroke is in stage units, so at the smallest zoom it would thin to under half a
+      // pixel and disappear; the presentation attribute backs up the stylesheet's rule.
+      paths.push(
+        `<path vector-effect="non-scaling-stroke" d="M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}" />`,
+      )
     }
     this.svg.setAttribute("width", String(this.stage.scrollWidth))
     this.svg.setAttribute("height", String(this.stage.scrollHeight))
