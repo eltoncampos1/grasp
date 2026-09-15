@@ -1,24 +1,27 @@
 :root {
-  color-scheme: dark;
-  --bg: #1b1d22;
-  --bg-raised: #22252b;
-  --bg-sunken: #15171b;
-  --border: #33373f;
-  --fg: #e6e6e6;
-  --fg-muted: #9aa0a6;
-  --accent: #7aa2f7;
-  --accent-soft: color-mix(in oklch, var(--accent) 25%, transparent);
-  --focus: #e0af68;
-  --backdrop: color-mix(in oklch, var(--bg-sunken) 70%, transparent);
-  --danger: #f7768e;
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-raised: #ffffff;
+  --bg-sunken: #f6f8fa;
   --code-bg: #ffffff;
+  --border: #d0d7de;
+  --fg: #1f2328;
+  --fg-muted: #57606a;
+  --accent: #0969da;
+  --accent-soft: color-mix(in oklch, var(--accent) 14%, transparent);
+  --focus: #9a6700;
+  --danger: #cf222e;
+  --backdrop: color-mix(in oklch, var(--fg) 35%, transparent);
+  --shadow: 0 1px 3px color-mix(in oklch, var(--fg) 12%, transparent);
   --radius: 6px;
   --space-xs: 0.25rem;
   --space-s: 0.5rem;
   --space-m: 1rem;
   --space-l: 1.5rem;
-  --card-width: 40rem;
+  --card-width: 60rem;
   --sidebar-width: 18rem;
+  --code-size: 0.8rem;
+  --code-leading: 1.25;
   --mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
   --sans: system-ui, sans-serif;
 }
@@ -37,7 +40,7 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .sidebar__project { margin: 0 var(--space-m) var(--space-s); color: var(--fg-muted); font-family: var(--mono); }
 .modules { display: flex; flex-direction: column; padding-bottom: var(--space-l); }
 .module { display: block; width: 100%; text-align: start; padding: var(--space-xs) var(--space-m); font-family: var(--mono); font-size: 0.85rem; color: var(--fg-muted); }
-.module:hover, .module--open { color: var(--fg); background: var(--bg-raised); }
+.module:hover, .module--open { color: var(--fg); background: color-mix(in oklch, var(--accent) 8%, transparent); }
 .fns { list-style: none; margin: 0; padding: 0 0 var(--space-xs) var(--space-l); }
 .fn { display: block; width: 100%; text-align: start; padding: 2px var(--space-s); font-family: var(--mono); font-size: 0.85rem; }
 .fn:hover { color: var(--accent); }
@@ -51,7 +54,7 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .node__children::before { content: ""; position: absolute; inset-inline-start: calc(-1 * var(--space-l) / 2); inset-block: var(--space-m); border-inline-start: 1px solid var(--border); }
 .node__children > .node > .card::before { content: ""; position: absolute; inset-inline-start: calc(-1 * var(--space-l) / 2); top: var(--space-m); width: calc(var(--space-l) / 2); border-top: 1px solid var(--border); }
 
-.card { position: relative; width: var(--card-width); flex: none; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); font-family: var(--mono); font-size: 0.85rem; }
+.card { position: relative; width: var(--card-width); flex: none; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-family: var(--mono); font-size: var(--code-size); }
 .card--focused { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
 .card__header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-s); padding: var(--space-s) var(--space-m); border-bottom: 1px solid var(--border); }
 .card__title { margin: 0; font-size: 0.9rem; font-weight: 600; }
@@ -63,14 +66,14 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .card__callers { position: relative; }
 .card__callers-toggle { padding: 0; color: var(--fg-muted); }
 .card__callers-toggle:hover, .card__callers-toggle[aria-expanded="true"] { color: var(--accent); }
-.card__callers ul { position: absolute; z-index: 2; margin: var(--space-xs) 0 0; padding: var(--space-xs); list-style: none; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); max-height: 16rem; overflow: auto; }
+.card__callers ul { position: absolute; z-index: 2; margin: var(--space-xs) 0 0; padding: var(--space-xs); list-style: none; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); max-height: 16rem; overflow: auto; }
 .caller { display: block; width: 100%; text-align: start; padding: 2px var(--space-s); white-space: nowrap; }
 .caller:hover { color: var(--accent); }
 .card__collapse, .card__close { padding: 0 var(--space-xs); color: var(--fg-muted); }
 .card__close:hover { color: var(--danger); }
-.card .card__body { margin: 0; padding: var(--space-s) 0; overflow-x: auto; line-height: 1.45; background: var(--code-bg); }
-.line { display: block; padding-inline: var(--space-m); white-space: pre; }
-.ln { display: inline-block; width: 3ch; margin-inline-end: var(--space-m); text-align: end; color: var(--fg-muted); user-select: none; }
+.card .card__body { margin: 0; padding: var(--space-xs) 0; overflow-x: auto; line-height: var(--code-leading); background: var(--code-bg); }
+.line { display: block; padding-inline: var(--space-s); white-space: pre; }
+.ln { display: inline-block; width: 3ch; margin-inline-end: var(--space-s); text-align: end; color: var(--fg-muted); user-select: none; }
 .call { cursor: pointer; border-bottom: 1px dashed var(--accent); }
 .call:hover { background: var(--accent-soft); }
 .call[data-open="true"] { background: var(--accent-soft); border-bottom-style: solid; }
@@ -83,7 +86,7 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .stub__docs { color: var(--accent); }
 
 .palette-backdrop { position: fixed; inset: 0; background: var(--backdrop); z-index: 9; }
-.palette { position: fixed; inset-block-start: 12vh; inset-inline: 0; margin-inline: auto; z-index: 10; width: min(48rem, 90vw); padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-raised); color: var(--fg); }
+.palette { position: fixed; inset-block-start: 12vh; inset-inline: 0; margin-inline: auto; z-index: 10; width: min(48rem, 90vw); padding: 0; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); background: var(--bg-raised); color: var(--fg); }
 .palette input { width: 100%; padding: var(--space-m); font: inherit; font-family: var(--mono); color: var(--fg); background: var(--bg-sunken); border: 0; border-bottom: 1px solid var(--border); }
 .palette input:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
 .palette__results { list-style: none; margin: 0; padding: var(--space-xs) 0; max-height: 50vh; overflow: auto; }
