@@ -593,7 +593,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 6: Sidebar toggle (Cmd+M), zoom readout and Cmd+0
+### Task 6: Sidebar toggle (Cmd+M), zoom readout, Cmd+0, Space-pan and Ctrl-drag
 
 **Files:**
 - Modify: `grasp/lib/grasp_web/live/review_live.ex`, `grasp/assets/js/hooks/keys.js`, `grasp/assets/js/hooks/canvas.js`, `grasp/assets/css/app.css`
@@ -634,12 +634,21 @@ above the catch-all, the `main` class/data attribute, `:if={@sidebar_open?}` on 
 
 `review_live.ex`: add the `#zoom-level` span to the toolbar as described (its initial text `100%`). `canvas.js`: in `mounted()` cache `this.zoomLevel = this.el.querySelector("#zoom-level")`; in `applyView()` set `this.zoomLevel.textContent = Math.round(this.view.scale * 100) + "%"`; add `resetZoom()`; in the capture-phase click delegation handle `#zoom-level` → `resetZoom()`; add `this.onZoomReset = () => this.resetZoom()` registered on `window` for `grasp:zoom-reset` and removed in `destroyed()`. `keys.js`: `(e.metaKey || e.ctrlKey) && e.key === "0"` → `preventDefault` + `window.dispatchEvent(new CustomEvent("grasp:zoom-reset"))`. CSS: `.toolbar__zoom { min-width: 3.5em; text-align: center; color: var(--fg-muted); cursor: pointer; font-variant-numeric: tabular-nums; }`. Test: `assert has_element?(view, "#canvas .toolbar #zoom-level[phx-update='ignore']", "100%")`.
 
+- [ ] **Step 2c: Space-pan and Ctrl-drag**
+
+Today a pointer-down on a card never pans, and dragging is header-only. Add to `canvas.js`:
+- **Space held = pan anywhere.** Window `keydown`/`keyup` listeners track `this.spaceHeld` for `e.key === " "` when the target is not an input/textarea and the palette is closed; `keydown` calls `preventDefault()` (stops page scroll) and adds class `grasp-space` to `document.body` (body is not LiveView-rendered, so the class survives patches); `keyup` removes both. In `pointerDown`, when `this.spaceHeld` is true start a `pan` drag regardless of target (cards included) and `preventDefault()` so no text selection starts. CSS: `body.grasp-space .canvas, body.grasp-space .card { cursor: grab; }`.
+- **Ctrl+press on a card = drag the card.** In `pointerDown`, when `e.ctrlKey` and `e.target.closest(".card")` exists (any part of the card, body included), start a `card` drag for that card and `preventDefault()` (no text selection). While a ctrl-initiated drag is active, suppress the context menu: a `contextmenu` listener on the canvas calls `preventDefault()` when `this.drag?.ctrl` or a ctrl-drag ended within the last 300 ms (`this.ctrlDragEndedAt`). Header drags keep working without modifiers.
+- Remove all new listeners in `destroyed()`.
+
+Document the gestures in `grasp/README.md` (Space+drag pans anywhere; Ctrl+drag moves a card from anywhere on it; header drag moves a card; Cmd/Ctrl+wheel zooms; Cmd+0 resets zoom; Cmd+M / Cmd+\\ toggles the sidebar).
+
 - [ ] **Step 3: Verify, format, commit**
 
 `mix test` green; `mix assets.build` clean.
 
 ```bash
-cd ~/repos/grasp/grasp && mix format && cd .. && git add -A && git commit -m "Toggle the sidebar with Cmd+M; show the zoom level and reset it with Cmd+0
+cd ~/repos/grasp/grasp && mix format && cd .. && git add -A && git commit -m "Toggle the sidebar with Cmd+M; zoom readout, Cmd+0, Space-pan and Ctrl-drag
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
