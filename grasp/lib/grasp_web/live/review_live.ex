@@ -1,7 +1,7 @@
 defmodule GraspWeb.ReviewLive do
   @moduledoc """
   The review page: a sidebar of modules and their functions, the card canvas, and the
-  palette (Task 6). State is the session's forest plus the loaded index; both arrive by
+  Cmd+K palette. State is the session's forest plus the loaded index; both arrive by
   PubSub so any change — from this browser, another tab, or an MCP client later — renders
   everywhere.
   """
@@ -9,6 +9,7 @@ defmodule GraspWeb.ReviewLive do
   use GraspWeb, :live_view
 
   import GraspWeb.CardComponents
+  import GraspWeb.Palette
 
   alias Grasp.{Index, IndexStore, Session}
   alias Grasp.Session.Forest
@@ -29,6 +30,8 @@ defmodule GraspWeb.ReviewLive do
        index: IndexStore.get(),
        forest: Session.get(name),
        expanded_module: nil,
+       palette_query: "",
+       palette_results: [],
        editor: Application.get_env(:grasp, :editor)
      )}
   end
@@ -84,9 +87,41 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
+  def handle_event("palette_search", %{"q" => query}, socket) do
+    results = Index.search(socket.assigns.index, query, 20)
+    {:noreply, assign(socket, palette_query: query, palette_results: results)}
+  end
+
+  def handle_event("palette_submit", _params, socket) do
+    case socket.assigns.palette_results do
+      [first | _] -> open_from_palette(socket, first["id"], false)
+      [] -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("palette_open", %{"id" => id} = params, socket) do
+    child? = params["child"] in [true, "true"]
+    open_from_palette(socket, id, child?)
+  end
+
   # Events are addressed by name and card id from the DOM, so a stale tab or a hand-made
   # message must be dropped rather than take the whole page down with it.
   def handle_event(_event, _params, socket), do: {:noreply, socket}
+
+  defp open_from_palette(socket, id, child?) do
+    name = socket.assigns.name
+
+    forest =
+      case {child?, socket.assigns.forest.focus} do
+        {true, focus} when is_integer(focus) -> Session.open_child(name, focus, id)
+        _ -> Session.open_root(name, id)
+      end
+
+    {:noreply,
+     socket
+     |> assign(forest: forest, palette_query: "", palette_results: [])
+     |> push_event("palette:close", %{})}
+  end
 
   # The session broadcasts the new forest to every subscriber including this process, so
   # the returned forest is assigned here only to make the change visible before the
@@ -161,6 +196,7 @@ defmodule GraspWeb.ReviewLive do
           />
         </div>
       </section>
+      <.palette query={@palette_query} results={@palette_results} />
     </main>
     """
   end

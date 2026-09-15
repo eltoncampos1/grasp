@@ -77,3 +77,11 @@ kbd { font-family: var(--mono); background: var(--bg-raised); border: 1px solid 
 .stub .card__header { border-bottom: 0; }
 .stub__text, .stub__docs { margin: 0 var(--space-m) var(--space-s); display: block; color: var(--fg-muted); }
 .stub__docs { color: var(--accent); }
+
+.palette { width: min(48rem, 90vw); padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-raised); color: var(--fg); }
+.palette::backdrop { background: color-mix(in oklch, black 60%, transparent); }
+.palette input { width: 100%; padding: var(--space-m); font: inherit; font-family: var(--mono); color: var(--fg); background: var(--bg-sunken); border: 0; border-bottom: 1px solid var(--border); outline: none; }
+.palette__results { list-style: none; margin: 0; padding: var(--space-xs) 0; max-height: 50vh; overflow: auto; }
+.palette__item { display: flex; justify-content: space-between; gap: var(--space-m); width: 100%; padding: var(--space-xs) var(--space-m); text-align: start; font-family: var(--mono); }
+.palette__results li[aria-selected="true"] .palette__item { background: var(--accent-soft); }
+.palette__meta { color: var(--fg-muted); font-size: 0.75rem; white-space: nowrap; }
