@@ -1,0 +1,319 @@
+# Grasp — call-chain code review for Elixir
+
+## Problem
+
+Reviewing agent-generated Elixir is slow. Editors show one function at a time, following
+a call chain means jumping between files, and a unified diff shows changed lines with no
+sense of where they sit in the program's flow. As agents write more code than humans can
+read this way, review becomes the bottleneck.
+
+Grasp renders a function as a card. Clicking any call inside it opens the callee as a
+child card to the right, so a long chain reads left to right and several branches can be
+open at once. Cards show the function's diff against a base branch. The top level lists
+the codebase's entry points, and Cmd+K finds any function. An MCP server lets coding
+agents arrange cards, annotate them and author guided tours (next/back with a
+highlighted call) so the human reviews what the agent wants to explain.
+
+## Decisions
+
+- Standalone repository at `~/repos/grasp`, open source from day one (Apache-2.0).
+- Two independent Mix projects, not an umbrella. `grasp_index` is the indexer a target
+  project adds as a dev dependency; `grasp` is the Phoenix LiveView viewer plus MCP
+  server and is never a dependency of the target.
+- Call resolution comes from an **Elixir compiler tracer** (exact, the mechanism behind
+  `mix xref` and Boundary), with **Sourceror** supplying definition spans and call ranges.
+  Reach was evaluated and rejected as the engine: its source-level resolution misses
+  what macros inject, and it is a large fast-moving dependency of which only a slice
+  would be used.
+- PR mode diffs against a **local git base ref**. The base side is Sourceror-parsed
+  only; it is never recompiled.
+- MCP over **Streamable HTTP** at `/mcp` on the same endpoint as the UI, via
+  `anubis_mcp ~> 2.0`.
+- Sessions and tours persist as **JSON files** under `.grasp/sessions/` in the target
+  repository, so agents can write them and they can travel with a PR.
+- Cards form a **tree**, not a strip: a card can have many children so multiple
+  branches are visible side by side.
+- Entry points in v1: Phoenix routes (controller actions and LiveView routes), Oban
+  workers, LiveView and LiveComponent callbacks, GenServer, Supervisor, Application and
+  Plug callbacks.
+- Toolchain pinned to Elixir 1.20.4 / OTP 29 (`.mise.toml`); `grasp_index` requires
+  Elixir `~> 1.18`.
+
+## Repository layout
+
+```
+grasp/
+  README.md  LICENSE  .mise.toml  .github/workflows/ci.yml  docs/specs/
+  grasp_index/   # hex-publishable. Deps: sourceror, jason. Mix task, tracer, extraction,
+                 # entry-point detection, git base diff, Grasp.Index reader (shared).
+  grasp/         # Phoenix LiveView viewer + MCP. Deps: phoenix, phoenix_live_view ~> 1.2,
+                 # bandit, jason, makeup, makeup_elixir, anubis_mcp ~> 2.0,
+                 # {:grasp_index, path: "../grasp_index"}
+```
+
+## Part 1 — `grasp_index`
+
+In the target project:
+
+```elixir
+{:grasp_index, "~> 0.1", only: :dev, runtime: false}
+```
+
+```
+mix grasp.index [--base main] [--out .grasp/index.json]
+```
+
+### Pipeline
+
+1. **Trace compile.** Register `Grasp.Index.Tracer` via
+   `Code.put_compiler_option(:tracers, ...)`, enable `parser_options: [columns: true]`,
+   then `Mix.Task.run("compile", ["--force"])`. The tracer records into ETS, for the
+   events `:remote_function`, `:local_function`, `:imported_function`, `:remote_macro`,
+   `:imported_macro` and `:local_macro`: caller file, caller `{module, function, arity}`
+   from `env`, line, column, callee MFA and event kind. Events fired outside a function
+   body (`env.function == nil`) are dropped. Only files under the project's
+   `elixirc_paths` are kept, so dependencies are excluded.
+2. **Extract definitions with Sourceror.** For each source file: parse, walk `defmodule`
+   with a module stack (nested modules resolve to their full name), and collect
+   `def`, `defp`, `defmacro`, `defmacrop`, `defguard`, `defguardp` and `defdelegate`
+   clauses grouped by `{module, name, arity}`. A head with default arguments registers
+   every arity it defines, all pointing at the one definition. The span runs from the
+   first attached attribute or leading comment (`@doc`, `@spec`, `@impl`) through the
+   last clause's `end`; the source text is the file slice for that span. Every call node
+   inside the bodies is collected with `Sourceror.get_range/1`, keyed by start
+   line and column.
+3. **Join.** Each tracer event finds its definition by caller MFA (falling back to
+   file and line containment) and its call node by line and column, producing a call
+   with a target id, kind and range. Events with no matching node are macro-generated
+   (function components inside `~H`, `use`-injected code) and are kept as
+   `hidden_calls`, so the callers/callees graph stays exact even where nothing is
+   clickable.
+4. **Entry points.** After `Mix.Task.run("loadpaths")`, iterate the application's
+   modules (`:application.get_key(app, :modules)`) and read
+   `module_info(:attributes)[:behaviour]`:
+   - `Phoenix.Router`: `Phoenix.Router.routes/1` yields each route with verb, path and
+     pipelines. Controller routes target `{plug, plug_opts, 2}`. LiveView routes
+     (`plug == Phoenix.LiveView.Plug`, `metadata.phoenix_live_view`) target the view's
+     `mount/3`.
+   - `Oban.Worker`: `perform/1`, with queue and max attempts from `__opts__/0`.
+   - `Phoenix.LiveView` and `Phoenix.LiveComponent`: exported callbacks among
+     `mount/3`, `handle_params/3`, `handle_event/3`, `handle_info/2`, `handle_async/3`,
+     `update/2`, `render/1`.
+   - `GenServer`: `init/1`, `handle_call/3`, `handle_cast/2`, `handle_info/2`,
+     `handle_continue/2`, `terminate/2`. `Supervisor`: `init/1`. `Application`:
+     `start/2`. `Plug`: `call/2`, skipped when the module is already a route target.
+5. **Base ref (PR mode).** With `--base REF`, changed files come from
+   `git diff --name-only REF` (working tree included) filtered to `.ex` and `.exs`. Each
+   base version is read with `git show REF:path` and run through step 2 only.
+   Definitions are matched by MFA across the two sides, giving each function a `change`
+   of `added`, `modified`, `removed` or `unchanged`; `base_source` is stored for modified
+   and removed functions. Removed functions become definitions flagged `removed: true`
+   with no calls. A function moved between files without change counts as unchanged.
+6. **Write JSON** to `--out`.
+
+### Index JSON (version 1)
+
+```jsonc
+{
+  "version": 1,
+  "generated_at": "2026-09-15T10:00:00Z",
+  "project": { "app": "luuna", "root": "/abs/path", "elixirc_paths": ["lib"] },
+  "git": { "head": "sha", "branch": "...", "base_ref": "main", "base_sha": "sha" }, // null outside git
+  "modules": [
+    { "name": "Luuna.Wallets", "file": "lib/luuna/wallets.ex", "line": 1, "behaviours": ["GenServer"] }
+  ],
+  "functions": [
+    {
+      "id": "Luuna.Wallets.credit/3",
+      "module": "Luuna.Wallets", "name": "credit", "arity": 3, "arities": [2, 3],
+      "kind": "def", "file": "lib/luuna/wallets.ex",
+      "span": { "start_line": 40, "end_line": 62 },
+      "source": "@doc ...\ndef credit(...)",
+      "calls": [
+        { "target": "Luuna.Ledger.post/2", "kind": "remote",
+          "range": { "start": [45, 5], "end": [45, 22] } }
+      ],
+      "hidden_calls": [ { "target": "LuunaWeb.CoreComponents.button/1", "kind": "remote", "line": 50 } ],
+      "change": "modified", "base_source": "...", "removed": false
+    }
+  ],
+  "entry_points": [
+    { "kind": "route", "label": "GET /players/:id",
+      "target": "LuunaWeb.PlayerController.show/2",
+      "meta": { "verb": "GET", "path": "/players/:id", "pipelines": ["browser"] } },
+    { "kind": "oban_worker", "label": "Luuna.Workers.Forex",
+      "target": "Luuna.Workers.Forex.perform/1", "meta": { "queue": "forex" } },
+    { "kind": "live_view", "label": "LuunaWeb.PlayerLive",
+      "target": "LuunaWeb.PlayerLive.mount/3", "meta": {} },
+    { "kind": "genserver", "label": "Luuna.Cache", "target": "Luuna.Cache.init/1", "meta": {} }
+  ]
+}
+```
+
+`Grasp.Index` (shared reader): `load/1` into an ETS-backed struct, `fetch_function/2`,
+`callers/2` (reverse index built at load), `callees/2`, `search/3` (substring and
+subsequence scoring over `Mod.fun/arity`), `entry_points/1`, `changed_functions/1`,
+`modules/1`.
+
+## Part 2 — `grasp` viewer
+
+```
+cd grasp && mix grasp.serve --index ../../heat/apps/luuna/.grasp/index.json [--port 4040] [--editor vscode]
+```
+
+Binds to 127.0.0.1. Reloads the index when the file's mtime changes (2 s poll) and
+broadcasts the reload.
+
+### Session
+
+`Grasp.Session` is a GenServer per named session, found through a Registry. State:
+
+- `roots`: ordered card ids in column zero.
+- `cards`: map of card id to `%{function_id, parent_id, children, opened_by,
+  highlight, view, collapsed}` where `opened_by` is the call target that opened the
+  card, `highlight` is `nil`, `%{call: target_id}` or `%{lines: a..b}`, and `view` is
+  `:source` or `:diff`.
+- `focus`: the focused card id.
+- `annotations`: keyed by function id, each `%{id, author, body, line}` with author
+  `"agent"` or `"human"` and a markdown body.
+- `tour`: `nil` or `%{title, steps, position}` where a step is
+  `%{function_id, highlight, note, parent_step}`.
+
+Every mutation broadcasts on `session:<name>` and debounce-writes
+`<project.root>/.grasp/sessions/<name>.json`. A session loads from disk if the file
+exists.
+
+### Card tree
+
+- Clicking a call opens the callee as a child of that card. A card may have many
+  children, so several branches are visible at once.
+- Clicking a call whose child is already open focuses that child and scrolls to it. The
+  call span stays marked while its child is open.
+- Closing a card closes its subtree. Collapsing hides the subtree behind a count badge.
+- Opening a caller from a root card's callers menu re-parents: the caller becomes a new
+  root with the card as its child. From a non-root card, it opens a new root tree of
+  caller then function.
+- Palette and entry-point selection append a new root. Shift+Enter opens as a child of
+  the focused card instead.
+- MCP `set_cards` replaces the whole forest.
+
+### Layout
+
+A two-dimensional scrollable canvas. A node renders as a horizontal flex of the card
+followed by a vertical stack of its child nodes, recursively, so layout is pure CSS. Cards
+have a fixed width so every depth starts at the same x. Each subtree hangs from its
+parent's top edge and a CSS connector joins parent to child. Roots stack vertically in
+column zero. Arrow keys move focus to parent, child or sibling; `x` closes and `c`
+collapses the focused card.
+
+### Page
+
+`GraspWeb.ReviewLive` serves `/` (session `default`) and `/s/:name`. A left sidebar lists
+entry points grouped by kind, collapsible, and in PR mode a Changes list grouped by
+module with added/modified/removed badges. The canvas fills the rest. When a tour is
+active, a bar shows its title, step position, the step's note, and Back/Next (keys `[`
+and `]`). A tour step opens its function as a child of the `parent_step` card, defaulting
+to the previous step when that function calls it and otherwise to a new root, then
+focuses it with the step's highlight.
+
+### Card
+
+- Header: `Mod.fun/arity`, `file:line` that opens the `--editor` URL scheme, change
+  badge, Source/Diff toggle, callers menu, collapse, close.
+- Body: Makeup-highlighted source. Every resolved call is wrapped in a clickable span.
+  The highlighted call gets a ring and is scrolled into view. Calls with an open child
+  are marked. Calls to functions outside the index (deps, stdlib) render muted and open
+  a stub card linking to hexdocs.
+- Footer: "Also calls" for hidden calls, then annotations with author badges and an
+  add-annotation form.
+
+### Highlighting and diffs
+
+Makeup with `makeup_elixir` runs server-side. The token stream is walked tracking line
+and column so tokens inside a call range can be wrapped; results are cached per function
+in ETS. The diff view runs `List.myers_difference/2` over the lines of `base_source` and
+`source` and renders a unified diff with gutters. "After" lines keep their clickable
+calls; removed lines are highlighted only. Removed functions show their base source in a
+red-tinted card.
+
+### Command palette
+
+A JS hook opens a `<dialog>` on Cmd+K or Ctrl+K. The input's debounced `phx-change`
+drives `Grasp.Index.search/3`; arrow keys move the selection client-side, Enter opens as a
+new root, Shift+Enter as a child of the focused card. Results show id, def/defp, change
+badge and file.
+
+### Assets
+
+esbuild bundles the two hooks (palette, scroll-into-view). Styling is one hand-written
+CSS file with custom properties and a dark theme. No Tailwind.
+
+## Part 3 — MCP
+
+Served by `anubis_mcp` at `/mcp` over Streamable HTTP. A session is created on first
+reference.
+
+- Read tools: `search_functions(query, limit)`, `get_function(id)` returning source,
+  file, span, calls, callers, change and base source, `get_callers(id)`,
+  `get_callees(id)`, `find_paths(from, to, max_depth)` (breadth-first search over the
+  call graph, for building tours), `list_entry_points(kind?)`, `list_changes()`,
+  `list_modules()`.
+- Session tools: `list_sessions()`, `get_session(name)`, `set_cards(name, forest)`
+  where a node is `{function_id, highlight?, children}`,
+  `open_card(name, function_id, parent_card_id?, highlight?)`, `close_card(name, card_id)`,
+  `focus_card(name, card_id)`, `annotate(name, function_id, body, line?)`,
+  `clear_annotations(name, function_id?)`, `set_tour(name, title, steps)`,
+  `tour_goto(name, position)`, `clear_tour(name)`, `reload_index()`.
+- Resources: `grasp://function/{id}`, `grasp://entry-points`, `grasp://changes`.
+- Prompt `build_review_tour`: instructs an agent to read `list_changes`, trace each
+  change to its entry point with `find_paths`, and author a tour with annotations.
+
+Registering in Claude Code:
+
+```
+claude mcp add --transport http grasp http://127.0.0.1:4040/mcp
+```
+
+## Testing
+
+- `grasp_index`: a fixture project at `test/fixtures/sample_app` with phoenix,
+  phoenix_live_view and oban as deps (no database, nothing started) containing a router,
+  a controller, a LiveView, an Oban worker, a GenServer, nested modules, default
+  arguments, multi-clause functions, a `~H` function-component call, and calls through
+  an alias and an import. An integration test runs `mix grasp.index` in the fixture as a
+  subprocess and asserts on the JSON. Unit tests cover Sourceror extraction, the tracer
+  to range join, and the git base diff against a temporary git repository built in the
+  test.
+- `grasp`: a committed fixture `index.json` generated from the sample app.
+  `Phoenix.LiveViewTest` covers: clicking a call opens a child card, clicking it again
+  focuses the existing child, closing a card removes its subtree, opening a caller from a
+  root re-parents, palette search and Enter, the diff toggle, tour next/back highlighting
+  the step's call, and annotation rendering. `Grasp.Session` has a persistence
+  round-trip test. MCP is tested as JSON-RPC over `/mcp` with `Phoenix.ConnTest`:
+  initialize, tools/list, then `set_cards` followed by an assertion that the LiveView
+  re-rendered.
+- CI: GitHub Actions on Elixir 1.20 / OTP 29 for both packages: format check, compile
+  with warnings as errors, tests.
+
+## Milestones
+
+1. Repo scaffold and `grasp_index` steps 1 to 3 and 6: definitions, calls, JSON. Run it
+   on a real Phoenix project.
+2. Viewer: load the index, card tree with click-to-open, highlighting, palette.
+3. Entry points: index step 4 and the sidebar.
+4. PR mode: base ref extraction, change badges, Changes sidebar, diff view.
+5. Sessions: GenServer, persistence, annotations UI.
+6. MCP tools, resources, tours and the tour bar.
+7. README for strangers, CI, editor links, `mix grasp.serve` polish.
+
+## Verification
+
+- `mix grasp.index --base main` in a Phoenix project produces `.grasp/index.json`; a
+  known chain (controller action to context to `Repo`) resolves with ranges.
+- `mix grasp.serve` at http://127.0.0.1:4040: click through a four-deep chain, open a
+  second branch from the same card, Cmd+K to a function, toggle diff on a modified
+  function.
+- From Claude Code with the MCP registered: `set_cards` and `set_tour`, watch the browser
+  update live, reload the page and confirm the session file restored it.
+- Both packages pass `mix format --check-formatted`, `mix compile --warnings-as-errors`
+  and `mix test`.
