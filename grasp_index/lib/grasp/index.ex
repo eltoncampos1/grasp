@@ -89,12 +89,13 @@ defmodule Grasp.Index do
       |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
       |> Map.new(fn {target, callers} -> {target, Enum.sort(callers)} end)
 
-    entry_points = List.wrap(document["entry_points"])
+    entry_points =
+      document["entry_points"]
+      |> List.wrap()
+      |> Enum.filter(&(is_map(&1) and is_binary(&1["target"])))
 
     entry_points_by_target =
-      entry_points
-      |> Enum.filter(&(is_map(&1) and is_binary(&1["target"])))
-      |> Enum.group_by(&Map.get(aliases, &1["target"], &1["target"]))
+      Enum.group_by(entry_points, &Map.get(aliases, &1["target"], &1["target"]))
 
     %__MODULE__{
       version: 1,
@@ -171,7 +172,13 @@ defmodule Grasp.Index do
   @spec modules(t()) :: [map()]
   def modules(%__MODULE__{} = index), do: index.modules
 
-  @doc "Entry-point records as stored in the document."
+  @doc """
+  Entry-point records as stored in the document.
+
+  A record that is not a map naming a target is dropped when the document is read, so the
+  list is the same one `entry_points_for/2` was indexed from and a caller rendering it
+  never has to guard the shape.
+  """
   @spec entry_points(t()) :: [map()]
   def entry_points(%__MODULE__{} = index), do: index.entry_points
 

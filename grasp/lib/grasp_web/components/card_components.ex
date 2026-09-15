@@ -10,6 +10,13 @@ defmodule GraspWeb.CardComponents do
   alias Grasp.Session.Forest
 
   @stdlib_apps [:elixir, :logger, :eex, :ex_unit, :mix, :iex]
+  @badge_labels %{
+    "live_route" => "live route",
+    "oban_worker" => "worker",
+    "live_view" => "live view",
+    "live_component" => "component",
+    "genserver" => "GenServer"
+  }
   @function_id ~r/^([A-Z][\w.]*)\.([^.\/]+)\/(\d+)$/
 
   attr :forest, Forest, required: true
@@ -200,12 +207,11 @@ defmodule GraspWeb.CardComponents do
   end
 
   # A callback entry is labelled with the function it is, which the card title already
-  # says; the kind is the part the badge adds. A route's label is the one thing neither
-  # the title nor the body carries, so it is shown in full.
-  defp badge_label(%{"kind" => kind, "label" => label}) when kind in ~w(route live_route),
-    do: label
-
-  defp badge_label(%{"kind" => kind}), do: kind
+  # says; the kind is the part the badge adds, spelled the way a reader would say it
+  # rather than the way the index stores it. A route's path is the one thing neither the
+  # title nor the body carries, so it is shown in full.
+  defp badge_label(%{"kind" => "route", "label" => label}), do: label
+  defp badge_label(%{"kind" => kind}), do: Map.get(@badge_labels, kind, kind)
 
   defp stub_card(assigns) do
     {dx, dy} = assigns.card.offset

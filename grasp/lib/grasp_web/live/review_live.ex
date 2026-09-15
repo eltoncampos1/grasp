@@ -2,7 +2,8 @@ defmodule GraspWeb.ReviewLive do
   @moduledoc """
   The review page: a sidebar that starts from the project's entry points — routes, jobs,
   live views, processes — with the module list as its last group, the card canvas, and the
-  Cmd+K palette. State is the session's forest plus the loaded index; both arrive by
+  Cmd+K palette. Which sidebar groups arrive open is the sidebar's decision, taken once
+  from the index at mount and then owned by whoever clicks. State is the session's forest plus the loaded index; both arrive by
   PubSub so any change — from this browser, another tab, or an MCP client later — renders
   everywhere.
   """
@@ -16,7 +17,7 @@ defmodule GraspWeb.ReviewLive do
   alias Grasp.{Index, IndexStore, Session}
   alias Grasp.Session.Forest
 
-  @groups ~w(routes oban live genservers otp plugs modules)
+  @groups GraspWeb.Sidebar.group_kinds()
 
   @impl true
   def mount(params, _session, socket) do
@@ -28,15 +29,17 @@ defmodule GraspWeb.ReviewLive do
       :ok = IndexStore.subscribe()
     end
 
+    index = IndexStore.get()
+
     {:ok,
      assign(socket,
        name: name,
-       index: IndexStore.get(),
+       index: index,
        index_error: IndexStore.last_error(),
        index_path: IndexStore.path(),
        forest: Session.get(name),
        expanded_module: nil,
-       expanded_groups: MapSet.new(["routes"]),
+       expanded_groups: default_expanded(index),
        callers_open: nil,
        palette_open?: false,
        palette_query: "",

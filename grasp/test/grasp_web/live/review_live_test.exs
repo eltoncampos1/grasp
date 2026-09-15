@@ -22,13 +22,21 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(
              view,
+             "#entries .group[data-kind='routes'] .group__heading",
+             "SampleAppWeb.Router"
+           )
+
+    assert has_element?(
+             view,
              "#entries .group[data-kind='routes'] button.entry[phx-value-id='#{@show}']",
              "GET /greet/:name"
            )
 
-    refute has_element?(view, "#entries .group[data-kind='oban'] button.entry")
+    assert has_element?(view, "#group-oban[hidden]")
 
     view |> element("#entries .group[data-kind='oban'] .group__title") |> render_click()
+
+    refute has_element?(view, "#group-oban[hidden]")
 
     assert has_element?(
              view,
@@ -45,8 +53,9 @@ defmodule GraspWeb.ReviewLiveTest do
   test "every group but the routes starts collapsed, and callbacks sit under their module", %{
     view: view
   } do
-    refute has_element?(view, "#entries .group[data-kind='genservers'] button.entry")
+    assert has_element?(view, "#group-genservers[hidden] button.entry")
     view |> element("#entries .group[data-kind='live'] .group__title") |> render_click()
+    refute has_element?(view, "#group-live[hidden]")
 
     assert has_element?(
              view,
@@ -70,17 +79,19 @@ defmodule GraspWeb.ReviewLiveTest do
   test "a card badges every entry point that reaches it", %{view: view, name: name} do
     Session.open_root(name, @mount)
 
-    assert has_element?(view, "#card-1 .badge.badge--live_route", "GET /hello")
-    assert has_element?(view, "#card-1 .badge.badge--live_view", "live_view")
+    assert has_element?(view, "#card-1 .badge.badge--live_route", "live route")
+    assert has_element?(view, "#card-1 .badge.badge--live_view", "live view")
 
     Session.open_root(name, @greet)
     refute has_element?(view, "#card-2 .badge")
   end
 
   test "renders the module list and expands a module into its functions", %{view: view} do
-    refute has_element?(view, "#modules button.module")
+    assert has_element?(view, "#group-modules[hidden] #modules button.module")
 
     view |> element("#entries .group[data-kind='modules'] .group__title") |> render_click()
+
+    refute has_element?(view, "#group-modules[hidden]")
 
     assert has_element?(view, "#modules button.module", "SampleApp.Greeter")
     refute has_element?(view, "#modules button.fn", "greet/2")

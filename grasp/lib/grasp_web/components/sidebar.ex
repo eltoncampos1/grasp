@@ -4,14 +4,21 @@ defmodule GraspWeb.Sidebar do
   list as the last group.
 
   A review starts at the edge of the system — a request, a job, a mounted view — not at an
-  alphabetical list of modules, so the groups are ordered from the outside in and only the
-  routes open by default. A kind with nothing in it is not rendered at all, which is what
-  makes the same sidebar readable in a library (no routes, no jobs) and in a web app.
+  alphabetical list of modules, so the groups are ordered from the outside in. A kind with
+  nothing in it is not rendered at all, which is what makes the same sidebar readable in a
+  library (no routes, no jobs) and in a web app; a kind the viewer has no group for still
+  lands in "Other", so an entry the indexer learns to find is never invisible here.
 
-  Callback entries name the function they are, so repeating the module on every row would
-  bury the part that differs in a sidebar too narrow to hold it; each group therefore
-  prints a module heading once and lists its callbacks under it by name and arity alone,
-  with the full id on the row's `title`. Routes carry their own label and stay flat.
+  Entries name the function they are, so repeating the module on every row would bury the
+  part that differs in a sidebar too narrow to hold it; each group therefore prints a
+  heading once and lists what is under it by name and arity alone, with the full id on the
+  row's `title`. Routes are headed by their router — a forwarded router is a section of the
+  URL space, and its rows keep their `VERB /path` label, ordered by path.
+
+  Which group opens on arrival is decided once, at mount, by `default_expanded/1`: the
+  routes when there are few enough to read as a list, the module list when there are no
+  entry points at all, and nothing otherwise. Every group's body is rendered either way and
+  hidden when collapsed, so the `aria-controls` on its title always names an element.
   """
 
   use GraspWeb, :html
@@ -31,6 +38,38 @@ defmodule GraspWeb.Sidebar do
     {"plugs", "Plugs", ["plug"]}
   ]
 
+  @known_kinds Enum.flat_map(@groups, fn {_kind, _title, kinds} -> kinds end)
+  @group_kinds Enum.map(@groups, fn {kind, _title, _kinds} -> kind end) ++ ~w(other modules)
+
+  # Past this many routes the list is a wall rather than a table of contents, and the
+  # reader is better served by the search palette.
+  @routes_open_max 50
+
+  @doc "Every group the sidebar can render, as the `data-kind` its title toggles."
+  @spec group_kinds() :: [String.t()]
+  def group_kinds, do: @group_kinds
+
+  @doc """
+  The groups a review of `index` opens with.
+
+  The routes are the table of contents of a web app, so they open while they still read as
+  one; a project with no entry points at all is a library, where the module list is the
+  only way in.
+  """
+  @spec default_expanded(Index.t() | nil) :: MapSet.t(String.t())
+  def default_expanded(nil), do: MapSet.new()
+
+  def default_expanded(%Index{} = index) do
+    groups = groups(index)
+    routes = Enum.find(groups, &(&1.kind == "routes"))
+
+    cond do
+      routes && routes.count <= @routes_open_max -> MapSet.new(["routes"])
+      groups == [] -> MapSet.new(["modules"])
+      true -> MapSet.new()
+    end
+  end
+
   attr :index, Index, required: true
   attr :expanded, MapSet, required: true
   attr :expanded_module, :string, default: nil
@@ -46,10 +85,13 @@ defmodule GraspWeb.Sidebar do
           kind={group.kind}
           title={group.title}
           count={group.count}
-          body_id={"group-#{group.kind}"}
           open?={open?(@expanded, group.kind)}
         />
-        <div :if={open?(@expanded, group.kind)} id={"group-#{group.kind}"} class="group__body">
+        <div
+          id={"group-#{group.kind}"}
+          class="group__body"
+          hidden={not open?(@expanded, group.kind)}
+        >
           <div :for={{module, entries} <- group.modules} class="group__module">
             <h2 :if={module} class="group__heading">{module}</h2>
             <button
@@ -69,30 +111,31 @@ defmodule GraspWeb.Sidebar do
           kind="modules"
           title="Modules"
           count={length(@modules)}
-          body_id="modules"
           open?={open?(@expanded, "modules")}
         />
-        <div :if={open?(@expanded, "modules")} id="modules" class="group__body">
-          <div :for={module <- @modules} class="module-group">
-            <button
-              class={["module", @expanded_module == module["name"] && "module--open"]}
-              phx-click="expand_module"
-              phx-value-module={module["name"]}
-            >
-              {module["name"]}
-            </button>
-            <ul :if={@expanded_module == module["name"]} class="fns">
-              <li :for={fun <- Index.functions_in_module(@index, module["name"])}>
-                <button
-                  class={["fn", "fn--#{fun["kind"]}"]}
-                  phx-click="open_root"
-                  phx-value-id={fun["id"]}
-                >
-                  {fun["name"]}/{fun["arity"]}
-                </button>
-              </li>
-            </ul>
-          </div>
+        <div id="group-modules" class="group__body" hidden={not open?(@expanded, "modules")}>
+          <nav id="modules">
+            <div :for={module <- @modules} class="module-group">
+              <button
+                class={["module", @expanded_module == module["name"] && "module--open"]}
+                phx-click="expand_module"
+                phx-value-module={module["name"]}
+              >
+                {module["name"]}
+              </button>
+              <ul :if={@expanded_module == module["name"]} class="fns">
+                <li :for={fun <- Index.functions_in_module(@index, module["name"])}>
+                  <button
+                    class={["fn", "fn--#{fun["kind"]}"]}
+                    phx-click="open_root"
+                    phx-value-id={fun["id"]}
+                  >
+                    {fun["name"]}/{fun["arity"]}
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </nav>
         </div>
       </section>
     </nav>
@@ -102,7 +145,6 @@ defmodule GraspWeb.Sidebar do
   attr :kind, :string, required: true
   attr :title, :string, required: true
   attr :count, :integer, required: true
-  attr :body_id, :string, required: true
   attr :open?, :boolean, required: true
 
   defp group_title(assigns) do
@@ -113,7 +155,7 @@ defmodule GraspWeb.Sidebar do
       phx-value-group={@kind}
       data-open={to_string(@open?)}
       aria-expanded={to_string(@open?)}
-      aria-controls={@body_id}
+      aria-controls={"group-#{@kind}"}
     >
       {@title}<span class="group__count">{@count}</span>
     </button>
@@ -122,12 +164,11 @@ defmodule GraspWeb.Sidebar do
 
   defp open?(expanded, kind), do: MapSet.member?(expanded, kind)
 
-  # Routes are listed as they come (the index already orders them by kind, label and
-  # target); everything else is a callback, so it is bucketed under its module.
   defp groups(%Index{} = index) do
     by_kind = Enum.group_by(Index.entry_points(index), & &1["kind"])
+    other = {"other", "Other", by_kind |> Map.keys() |> Kernel.--(@known_kinds) |> Enum.sort()}
 
-    for {kind, title, kinds} <- @groups,
+    for {kind, title, kinds} <- @groups ++ [other],
         entries = Enum.flat_map(kinds, &Map.get(by_kind, &1, [])),
         entries != [] do
       %{
@@ -139,7 +180,16 @@ defmodule GraspWeb.Sidebar do
     end
   end
 
-  defp by_module("routes", entries), do: [{nil, entries}]
+  # A route is not a callback on a module: what it belongs to is the router that declared
+  # it, and a path reads as a list only in path order.
+  defp by_module("routes", entries) do
+    entries
+    |> Enum.group_by(&meta(&1, "router"))
+    |> Enum.sort_by(fn {router, _entries} -> router end)
+    |> Enum.map(fn {router, routes} ->
+      {router, Enum.sort_by(routes, &{meta(&1, "path"), meta(&1, "verb")})}
+    end)
+  end
 
   defp by_module(_kind, entries) do
     entries
@@ -147,9 +197,11 @@ defmodule GraspWeb.Sidebar do
     |> Enum.sort_by(fn {module, _entries} -> module end)
   end
 
-  # A row under a module heading has already been told its module, and the id is too long
-  # for the sidebar's width; the name and arity are what the reader is scanning for, and
-  # the id stays on the row as its title.
+  defp meta(entry, key), do: Map.get(entry["meta"] || %{}, key)
+
+  # A row under a heading has already been told its module, and the id is too long for the
+  # sidebar's width; the name and arity are what the reader is scanning for, and the id
+  # stays on the row as its title.
   defp row_label(nil, entry), do: entry["label"]
 
   defp row_label(module, entry) do
@@ -159,7 +211,6 @@ defmodule GraspWeb.Sidebar do
     end
   end
 
-  defp row_title(nil, entry), do: entry["meta"]["router"]
   defp row_title(_module, entry), do: entry["target"]
 
   defp module_of(target) when is_binary(target) do

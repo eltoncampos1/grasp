@@ -46,6 +46,9 @@ kbd { font-family: var(--mono); background: var(--bg-sunken); border: 1px solid 
 .group__title:hover { color: var(--fg); }
 .group__count { margin-inline-start: auto; color: var(--fg-subtle); font-variant-numeric: tabular-nums; text-transform: none; }
 .group__body { display: flex; flex-direction: column; padding-bottom: var(--space-s); }
+/* The body is rendered collapsed as well, so the title's aria-controls always resolves;
+   it has a display of its own, so the user agent's [hidden] rule alone would not hide it. */
+.group__body[hidden] { display: none; }
 .group__module { display: flex; flex-direction: column; }
 .group__heading { margin: var(--space-xs) 0 0; padding: 0 var(--space-m); font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--fg-subtle); }
 .entry { display: block; width: 100%; text-align: start; padding: 2px var(--space-m); font-family: var(--mono); font-size: 13px; }

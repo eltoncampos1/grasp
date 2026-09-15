@@ -170,6 +170,14 @@ defmodule Grasp.IndexTest do
     assert Index.entry_points_for(index, "MyApp.Wallets.debit/3") == []
   end
 
+  test "entry_points/1 drops a record that names no target" do
+    document = Map.update!(document(), "entry_points", &["nonsense", %{"kind" => "route"} | &1])
+
+    assert {:ok, index} = Index.from_document(document)
+    assert length(Index.entry_points(index)) == 3
+    assert Enum.all?(Index.entry_points(index), &is_binary(&1["target"]))
+  end
+
   test "changed_functions/1 returns everything not unchanged", %{index: index} do
     assert ids(Index.changed_functions(index)) == ["MyApp.Ledger.post/2"]
   end
