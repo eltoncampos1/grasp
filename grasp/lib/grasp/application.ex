@@ -2,9 +2,6 @@ defmodule Grasp.Application do
   @moduledoc """
   Supervision tree of the Grasp viewer: PubSub, the index store, the session registry
   and supervisor, and the endpoint.
-
-  The session registry and supervisor arrive in Task 3; for now PubSub, the index store
-  and the endpoint start.
   """
 
   use Application
@@ -14,6 +11,8 @@ defmodule Grasp.Application do
     children = [
       {Phoenix.PubSub, name: Grasp.PubSub},
       {Grasp.IndexStore, []},
+      {Registry, keys: :unique, name: Grasp.SessionRegistry},
+      {DynamicSupervisor, name: Grasp.SessionSupervisor, strategy: :one_for_one},
       GraspWeb.Endpoint
     ]
 
