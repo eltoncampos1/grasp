@@ -166,7 +166,7 @@ Replace the four `*/…` lines in the root `.gitignore` with:
 
 - [ ] **Step 3: Scrub employer-specific names from the spec**
 
-In `docs/specs/2026-09-15-grasp-design.md`: replace `Luuna.Wallets` → `MyApp.Wallets`, `Luuna.Ledger` → `MyApp.Ledger`, `LuunaWeb.` → `MyAppWeb.`, `Luuna.Workers.Forex` → `MyApp.Workers.Forex`, `Luuna.Cache` → `MyApp.Cache`, `"app": "luuna"` → `"app": "my_app"`, `lib/luuna/` → `lib/my_app/`, and the serve example path `../../heat/apps/luuna/.grasp/index.json` → `../my_app/.grasp/index.json`. Run `grep -n -i luuna docs/ README.md` and expect no output.
+In `docs/specs/2026-09-15-grasp-design.md`: rewrite every example that names a real private application so it uses the generic `MyApp` / `MyAppWeb` / `my_app` placeholders instead — the module names in the Index JSON sample, the `project.app` value, the `lib/<app>/` source paths, and the `--index` path in the `mix grasp.serve` example (which becomes `../my_app/.grasp/index.json`). Then grep `docs/` and `README.md` case-insensitively for the old application name and expect no output.
 
 - [ ] **Step 4: Fetch deps, compile, run the empty suite**
 

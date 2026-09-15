@@ -117,35 +117,35 @@ mix grasp.index [--base main] [--out .grasp/index.json]
 {
   "version": 1,
   "generated_at": "2026-09-15T10:00:00Z",
-  "project": { "app": "luuna", "root": "/abs/path", "elixirc_paths": ["lib"] },
+  "project": { "app": "my_app", "root": "/abs/path", "elixirc_paths": ["lib"] },
   "git": { "head": "sha", "branch": "...", "base_ref": "main", "base_sha": "sha" }, // null outside git
   "modules": [
-    { "name": "Luuna.Wallets", "file": "lib/luuna/wallets.ex", "line": 1, "behaviours": ["GenServer"] }
+    { "name": "MyApp.Wallets", "file": "lib/my_app/wallets.ex", "line": 1, "behaviours": ["GenServer"] }
   ],
   "functions": [
     {
-      "id": "Luuna.Wallets.credit/3",
-      "module": "Luuna.Wallets", "name": "credit", "arity": 3, "arities": [2, 3],
-      "kind": "def", "file": "lib/luuna/wallets.ex",
+      "id": "MyApp.Wallets.credit/3",
+      "module": "MyApp.Wallets", "name": "credit", "arity": 3, "arities": [2, 3],
+      "kind": "def", "file": "lib/my_app/wallets.ex",
       "span": { "start_line": 40, "end_line": 62 },
       "source": "@doc ...\ndef credit(...)",
       "calls": [
-        { "target": "Luuna.Ledger.post/2", "kind": "remote",
+        { "target": "MyApp.Ledger.post/2", "kind": "remote",
           "range": { "start": [45, 5], "end": [45, 22] } }
       ],
-      "hidden_calls": [ { "target": "LuunaWeb.CoreComponents.button/1", "kind": "remote", "line": 50 } ],
+      "hidden_calls": [ { "target": "MyAppWeb.CoreComponents.button/1", "kind": "remote", "line": 50 } ],
       "change": "modified", "base_source": "...", "removed": false
     }
   ],
   "entry_points": [
     { "kind": "route", "label": "GET /players/:id",
-      "target": "LuunaWeb.PlayerController.show/2",
+      "target": "MyAppWeb.PlayerController.show/2",
       "meta": { "verb": "GET", "path": "/players/:id", "pipelines": ["browser"] } },
-    { "kind": "oban_worker", "label": "Luuna.Workers.Forex",
-      "target": "Luuna.Workers.Forex.perform/1", "meta": { "queue": "forex" } },
-    { "kind": "live_view", "label": "LuunaWeb.PlayerLive",
-      "target": "LuunaWeb.PlayerLive.mount/3", "meta": {} },
-    { "kind": "genserver", "label": "Luuna.Cache", "target": "Luuna.Cache.init/1", "meta": {} }
+    { "kind": "oban_worker", "label": "MyApp.Workers.Forex",
+      "target": "MyApp.Workers.Forex.perform/1", "meta": { "queue": "forex" } },
+    { "kind": "live_view", "label": "MyAppWeb.PlayerLive",
+      "target": "MyAppWeb.PlayerLive.mount/3", "meta": {} },
+    { "kind": "genserver", "label": "MyApp.Cache", "target": "MyApp.Cache.init/1", "meta": {} }
   ]
 }
 ```
@@ -158,7 +158,7 @@ subsequence scoring over `Mod.fun/arity`), `entry_points/1`, `changed_functions/
 ## Part 2 — `grasp` viewer
 
 ```
-cd grasp && mix grasp.serve --index ../../heat/apps/luuna/.grasp/index.json [--port 4040] [--editor vscode]
+cd grasp && mix grasp.serve --index ../my_app/.grasp/index.json [--port 4040] [--editor vscode]
 ```
 
 Binds to 127.0.0.1. Reloads the index when the file's mtime changes (2 s poll) and

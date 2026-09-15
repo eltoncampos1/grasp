@@ -2,10 +2,10 @@
 /deps/
 /doc/
 /cover/
-*/_build/
-*/deps/
-*/doc/
-*/cover/
+**/_build/
+**/deps/
+**/doc/
+**/cover/
 *.ez
 *.beam
 erl_crash.dump
