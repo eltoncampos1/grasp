@@ -33,6 +33,8 @@ highlighted call) so the human reviews what the agent wants to explain.
   repository, so agents can write them and they can travel with a PR.
 - Cards form a **tree**, not a strip: a card can have many children so multiple
   branches are visible side by side.
+- Highlighting by **Lumis** (tree-sitter) with the `github_light` theme; the whole UI
+  uses the GitHub Light palette.
 - Entry points in v1: Phoenix routes (controller actions and LiveView routes), Oban
   workers, LiveView and LiveComponent callbacks, GenServer, Supervisor, Application and
   Plug callbacks.
@@ -47,7 +49,7 @@ grasp/
   grasp_index/   # hex-publishable. Deps: sourceror, jason. Mix task, tracer, extraction,
                  # entry-point detection, git base diff, Grasp.Index reader (shared).
   grasp/         # Phoenix LiveView viewer + MCP. Deps: phoenix, phoenix_live_view ~> 1.2,
-                 # bandit, jason, makeup, makeup_elixir, anubis_mcp ~> 2.0,
+                 # bandit, jason, lumis, lazy_html, anubis_mcp ~> 2.0,
                  # {:grasp_index, path: "../grasp_index"}
 ```
 
@@ -218,12 +220,33 @@ exists.
 
 ### Layout
 
-A two-dimensional scrollable canvas. A node renders as a horizontal flex of the card
-followed by a vertical stack of its child nodes, recursively, so layout is pure CSS. Cards
-have a fixed width so every depth starts at the same x. Each subtree hangs from its
-parent's top edge and a CSS connector joins parent to child. Roots stack vertically in
-column zero. Arrow keys move focus to parent, child or sibling; `x` closes and `c`
-collapses the focused card.
+A two-dimensional canvas that pans and zooms. A node renders as a horizontal flex of the
+card followed by a vertical stack of its child nodes, recursively, so the automatic layout
+is pure CSS. Cards have a fixed width (`--card-width`, 60rem) so every depth starts at the
+same x. Each subtree hangs from its parent's top edge and roots stack vertically in column
+zero. Arrow keys move focus to parent, child or sibling; `x` closes and `c` collapses the
+focused card.
+
+The canvas pans by dragging empty background, by holding Space and dragging from anywhere
+(cards included), or with the wheel; Ctrl or Cmd with the wheel zooms about the cursor. A
+toolbar carries the sidebar toggle, zoom out, a zoom readout that resets to 100% when
+clicked, fit, zoom in and "reset layout". The view — `{x, y, scale}` — lives only in the
+canvas hook and is written to a stylesheet rule for the stage rather than to an inline
+style, so a LiveView patch cannot wipe it mid-gesture. A wheel over something that can
+scroll itself — a code body scrolled sideways, an open callers menu — is left to that
+element.
+
+Each card carries a persistent offset from its automatic position, set by dragging its
+header or by Ctrl-dragging anywhere on it. The drag shows an inline translate at once and
+pushes `move_card` on release; the offset is stored on the card in the session forest
+(`Forest.move/3`) and re-rendered as `--dx`/`--dy` on the node, so a dragged card takes its
+subtree with it. Re-parenting a card resets its offset, and "reset layout"
+(`Forest.reset_offsets/1`) clears every offset at once.
+
+Connectors are an SVG overlay, not CSS: the hook measures each parent and child card and
+draws a cubic path between their header ports, so a line follows a card that has been
+dragged. The overlay sits inside a `phx-update="ignore"` element — the server never renders
+a connector — and its strokes are non-scaling, so they stay visible at the smallest zoom.
 
 ### Page
 
@@ -239,7 +262,7 @@ focuses it with the step's highlight.
 
 - Header: `Mod.fun/arity`, `file:line` that opens the `--editor` URL scheme, change
   badge, Source/Diff toggle, callers menu, collapse, close.
-- Body: Makeup-highlighted source. Every resolved call is wrapped in a clickable span.
+- Body: Lumis-highlighted source. Every resolved call is wrapped in a clickable span.
   The highlighted call gets a ring and is scrolled into view. Calls with an open child
   are marked. Calls to functions outside the index (deps, stdlib) render muted and open
   a stub card linking to hexdocs.
@@ -248,9 +271,22 @@ focuses it with the step's highlight.
 
 ### Highlighting and diffs
 
-Makeup with `makeup_elixir` runs server-side. The token stream is walked tracking line
-and column so tokens inside a call range can be wrapped; results are cached per function
-in ETS. The diff view runs `List.myers_difference/2` over the lines of `base_source` and
+Lumis (tree-sitter) runs server-side. `Lumis.highlight/2` with the `:html_linked` formatter
+returns one `div` per source line whose children are nested `span.l-*` runs; the HTML is
+parsed into text runs, each carrying the class of its innermost span and a start column, so
+a run can be split at a call range's boundary and the pieces inside a range wrapped in one
+clickable span. The theme is `github_light`, inlined into the root layout at compile time
+from `Lumis.Theme.build_css!/1`; the rest of the UI uses the same GitHub Light palette.
+
+tree-sitter is super-linear on deeply nested binary-operator trees — a twenty-step `|>`
+pipeline parses in tens of milliseconds, a forty-step one in hundreds — and a card
+re-renders on every LiveView pass, so the parse is memoised per function id in an ETS
+table. The table is owned by `Grasp.IndexStore`, which clears it on every index reload: a
+cached piece list carries absolute line numbers, so a stale entry would outlive the span it
+was computed for. Only the source-derived pieces are cached; the range split and the call
+wrapping depend on the card and on which of its calls are open, and stay per render.
+
+The diff view runs `List.myers_difference/2` over the lines of `base_source` and
 `source` and renders a unified diff with gutters. "After" lines keep their clickable
 calls; removed lines are highlighted only. Removed functions show their base source in a
 red-tinted card.
@@ -264,8 +300,10 @@ badge and file.
 
 ### Assets
 
-esbuild bundles the two hooks (palette, scroll-into-view). Styling is one hand-written
-CSS file with custom properties and a dark theme. No Tailwind.
+esbuild bundles the three hooks (palette, keys, canvas). Styling is one hand-written CSS
+file of custom properties over the GitHub Light palette, plus the Lumis theme stylesheet
+inlined in the root layout. No Tailwind. `lazy_html` is a runtime dependency, not a
+test-only one: it parses Lumis' HTML on every highlight the cache misses.
 
 ### Known gaps (milestone 2)
 
@@ -328,6 +366,10 @@ claude mcp add --transport http grasp http://127.0.0.1:4040/mcp
 1. Repo scaffold and `grasp_index` steps 1 to 3 and 6: definitions, calls, JSON. Run it
    on a real Phoenix project.
 2. Viewer: load the index, card tree with click-to-open, highlighting, palette.
+   - Milestone 2.1 went back over the viewer: Lumis highlighting with the `github_light`
+     theme, the GitHub Light palette and denser 60rem cards, per-card layout offsets in
+     the session, and a canvas that pans, zooms, drags cards and draws its own
+     connectors. Routers and entry points are unchanged — they remain milestone 3.
 3. Entry points: index step 4 and the sidebar.
 4. PR mode: base ref extraction, change badges, Changes sidebar, diff view.
 5. Sessions: GenServer, persistence, annotations UI.

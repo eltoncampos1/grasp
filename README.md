@@ -4,7 +4,8 @@ Call-chain code review for Elixir.
 
 Grasp renders a function as a card. Click any call inside it and the callee opens as a
 child card to the right, so a deep call chain reads left to right instead of as a series
-of editor jumps. A sidebar lists the project's modules and their functions, a card's
+of editor jumps. The cards sit on a canvas that pans, zooms and lets you drag a card
+anywhere you want it. A sidebar lists the project's modules and their functions, a card's
 callers menu opens the other way up the chain, Cmd+K finds any function, and every card
 links its `file:line` into your editor.
 
