@@ -3,7 +3,7 @@ defmodule Grasp.Application do
   Supervision tree of the Grasp viewer: PubSub, the index store, the session registry
   and supervisor, and the endpoint.
 
-  Later tasks add `Grasp.IndexStore` and the session supervisor; in this task only PubSub
+  The session registry and supervisor arrive in Task 3; for now PubSub, the index store
   and the endpoint start.
   """
 
@@ -13,6 +13,7 @@ defmodule Grasp.Application do
   def start(_type, _args) do
     children = [
       {Phoenix.PubSub, name: Grasp.PubSub},
+      {Grasp.IndexStore, []},
       GraspWeb.Endpoint
     ]
 

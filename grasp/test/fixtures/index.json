@@ -1,0 +1,235 @@
+{
+  "entry_points": [],
+  "functions": [
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [],
+      "change": "unchanged",
+      "file": "lib/sample_app/formatter.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Formatter.wrap/1",
+      "kind": "def",
+      "module": "SampleApp.Formatter",
+      "name": "wrap",
+      "removed": false,
+      "source": "  @doc \"Wraps text in brackets.\"\n  @spec wrap(String.t()) :: String.t()\n  def wrap(text), do: \"[\" <> text <> \"]\"",
+      "span": {
+        "end_line": 6,
+        "start_line": 4
+      }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              10,
+              37
+            ],
+            "start": [
+              10,
+              24
+            ]
+          },
+          "target": "String.upcase/1"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app/formatter.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Formatter.shout/1",
+      "kind": "def",
+      "module": "SampleApp.Formatter",
+      "name": "shout",
+      "removed": false,
+      "source": "  @doc \"Upcases text and adds an exclamation mark.\"\n  @spec shout(String.t()) :: String.t()\n  def shout(text), do: String.upcase(text) <> \"!\"",
+      "span": {
+        "end_line": 10,
+        "start_line": 8
+      }
+    },
+    {
+      "arities": [
+        1,
+        2
+      ],
+      "arity": 2,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              9,
+              26
+            ],
+            "start": [
+              9,
+              12
+            ]
+          },
+          "target": "SampleApp.Formatter.wrap/1"
+        },
+        {
+          "kind": "imported",
+          "range": {
+            "end": [
+              10,
+              24
+            ],
+            "start": [
+              10,
+              19
+            ]
+          },
+          "target": "SampleApp.Formatter.shout/1"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app/greeter.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Greeter.greet/2",
+      "kind": "def",
+      "module": "SampleApp.Greeter",
+      "name": "greet",
+      "removed": false,
+      "source": "  @doc \"Greets someone, loudly if asked.\"\n  @spec greet(String.t(), boolean()) :: String.t()\n  def greet(name, loud? \\\\ false) do\n    text = Formatter.wrap(name)\n    if loud?, do: shout(text), else: text\n  end",
+      "span": {
+        "end_line": 11,
+        "start_line": 6
+      }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              15,
+              37
+            ],
+            "start": [
+              15,
+              29
+            ]
+          },
+          "target": "Enum.map/2"
+        },
+        {
+          "kind": "local",
+          "range": {
+            "end": [
+              15,
+              51
+            ],
+            "start": [
+              15,
+              46
+            ]
+          },
+          "target": "SampleApp.Greeter.greet/1"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app/greeter.ex",
+      "hidden_calls": [
+        {
+          "kind": "remote",
+          "line": 15,
+          "target": "SampleApp.Formatter.shout/1"
+        }
+      ],
+      "id": "SampleApp.Greeter.greet_all/1",
+      "kind": "def",
+      "module": "SampleApp.Greeter",
+      "name": "greet_all",
+      "removed": false,
+      "source": "  @doc \"Greets everyone.\"\n  @spec greet_all([String.t()]) :: [String.t()]\n  def greet_all(names), do: Enum.map(names, &greet/1)",
+      "span": {
+        "end_line": 15,
+        "start_line": 13
+      }
+    },
+    {
+      "arities": [
+        0
+      ],
+      "arity": 0,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              22,
+              43
+            ],
+            "start": [
+              22,
+              20
+            ]
+          },
+          "target": "SampleApp.Greeter.greet/1"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app/greeter.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Greeter.Nested.hello/0",
+      "kind": "def",
+      "module": "SampleApp.Greeter.Nested",
+      "name": "hello",
+      "removed": false,
+      "source": "    @doc \"Greets from inside.\"\n    @spec hello() :: String.t()\n    def hello, do: SampleApp.Greeter.greet(\"nested\")",
+      "span": {
+        "end_line": 22,
+        "start_line": 20
+      }
+    }
+  ],
+  "generated_at": "2026-09-15T00:00:00Z",
+  "git": null,
+  "modules": [
+    {
+      "behaviours": [],
+      "file": "lib/sample_app/formatter.ex",
+      "line": 1,
+      "name": "SampleApp.Formatter"
+    },
+    {
+      "behaviours": [],
+      "file": "lib/sample_app/greeter.ex",
+      "line": 1,
+      "name": "SampleApp.Greeter"
+    },
+    {
+      "behaviours": [],
+      "file": "lib/sample_app/greeter.ex",
+      "line": 17,
+      "name": "SampleApp.Greeter.Nested"
+    }
+  ],
+  "project": {
+    "app": "sample_app",
+    "elixirc_paths": [
+      "lib"
+    ],
+    "root": "/tmp/sample_app"
+  },
+  "version": 1
+}
