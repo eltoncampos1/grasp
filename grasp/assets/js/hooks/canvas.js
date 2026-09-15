@@ -33,7 +33,7 @@ const Canvas = {
     this.onPointerDown = (e) => this.pointerDown(e)
     this.onPointerMove = (e) => this.pointerMove(e)
     this.onPointerUp = (e) => this.pointerUp(e)
-    this.onPointerCancel = () => this.endDrag()
+    this.onPointerCancel = (e) => this.pointerCancel(e)
     this.onClickCapture = (e) => this.clickCapture(e)
     this.el.addEventListener("wheel", this.onWheel, {passive: false})
     this.el.addEventListener("pointerdown", this.onPointerDown)
@@ -106,20 +106,50 @@ const Canvas = {
 
   // Anything between the cursor and the canvas that can absorb this wheel gesture itself —
   // a code body scrolled sideways, the callers dropdown scrolled down — keeps it, because
-  // panning the whole canvas instead would leave that content unreachable.
+  // panning the whole canvas instead would leave that content unreachable. An element that
+  // has run out of scroll in this direction absorbs nothing, so the canvas pans instead of
+  // the gesture dying against the end of a list.
   scrollableUnder(e) {
     const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)
     let el = e.target instanceof Element ? e.target : null
     while (el && el !== this.el) {
       const style = getComputedStyle(el)
       const overflow = horizontal ? style.overflowX : style.overflowY
-      const overflows = horizontal
-        ? el.scrollWidth > el.clientWidth
-        : el.scrollHeight > el.clientHeight
-      if ((overflow === "auto" || overflow === "scroll") && overflows) return true
+      const scrollable = overflow === "auto" || overflow === "scroll"
+      if (scrollable && this.canScroll(el, style, horizontal, e)) return true
       el = el.parentElement
     }
     return false
+  },
+
+  // A classic scrollbar on the other axis takes space out of the client box without taking
+  // it out of the scroll box, so an element that only ever scrolls sideways still reports a
+  // scrollHeight one scrollbar taller than its clientHeight. Measuring that gutter and
+  // discounting it is what keeps a vertical wheel over a wide code body panning the canvas
+  // rather than crawling through 15px of phantom overflow.
+  canScroll(el, style, horizontal, e) {
+    if (horizontal) {
+      const gutter = Math.max(
+        0,
+        el.offsetWidth -
+          el.clientWidth -
+          parseFloat(style.borderLeftWidth) -
+          parseFloat(style.borderRightWidth),
+      )
+      return e.deltaX > 0
+        ? el.scrollLeft + el.clientWidth < el.scrollWidth - gutter
+        : el.scrollLeft > 0
+    }
+    const gutter = Math.max(
+      0,
+      el.offsetHeight -
+        el.clientHeight -
+        parseFloat(style.borderTopWidth) -
+        parseFloat(style.borderBottomWidth),
+    )
+    return e.deltaY > 0
+      ? el.scrollTop + el.clientHeight < el.scrollHeight - gutter
+      : el.scrollTop > 0
   },
 
   zoomBy(factor) {
@@ -209,6 +239,7 @@ const Canvas = {
       e.preventDefault()
       this.drag = {
         kind: "card",
+        pointerId: e.pointerId,
         node,
         id: card.id.replace("card-", ""),
         startX: e.clientX,
@@ -221,6 +252,7 @@ const Canvas = {
       e.preventDefault()
       this.drag = {
         kind: "pan",
+        pointerId: e.pointerId,
         startX: e.clientX,
         startY: e.clientY,
         x: this.view.x,
@@ -230,8 +262,14 @@ const Canvas = {
     }
   },
 
+  // A second pointer — a touch, a pen, the other half of a pinch — reports its own stream of
+  // moves and releases; only the one that started the gesture may drive or end it.
+  otherPointer(e) {
+    return !this.drag || (e.pointerId !== undefined && e.pointerId !== this.drag.pointerId)
+  },
+
   pointerMove(e) {
-    if (!this.drag) return
+    if (this.otherPointer(e)) return
     // The button came up while the pointer was outside the window, so the pointerup that
     // would have ended this gesture was never delivered; this move is the first news of it.
     if (e.buttons === 0) return this.pointerUp(e)
@@ -250,8 +288,6 @@ const Canvas = {
     }
   },
 
-  // A cancelled gesture (the browser took the pointer for a system drag or gesture) is
-  // abandoned where it stands: no move is pushed, and the next patch restores the card.
   endDrag() {
     const drag = this.drag
     this.drag = null
@@ -259,8 +295,21 @@ const Canvas = {
     return drag
   },
 
+  // The browser took the pointer for a gesture of its own, so the drag is abandoned rather
+  // than completed: nothing is pushed, the card goes back to the offset the server last
+  // rendered, and no click follows a cancel for the suppression to be waiting for.
+  pointerCancel(e) {
+    if (this.otherPointer(e)) return
+    const drag = this.endDrag()
+    this.suppressClick = false
+    if (drag.kind === "card") {
+      drag.node.style.translate = ""
+      this.drawConnectors()
+    }
+  },
+
   pointerUp(e) {
-    if (!this.drag) return
+    if (this.otherPointer(e)) return
     const drag = this.endDrag()
     if (!drag.moved) return
     if (drag.kind === "card") {
