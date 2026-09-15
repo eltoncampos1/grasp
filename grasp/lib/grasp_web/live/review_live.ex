@@ -30,6 +30,7 @@ defmodule GraspWeb.ReviewLive do
        index: IndexStore.get(),
        forest: Session.get(name),
        expanded_module: nil,
+       callers_open: nil,
        palette_open?: false,
        palette_query: "",
        palette_results: [],
@@ -54,17 +55,34 @@ defmodule GraspWeb.ReviewLive do
     {:noreply, assign(socket, expanded_module: expanded)}
   end
 
-  def handle_event("open_root", %{"id" => id}, socket),
-    do: mutate(socket, &Session.open_root(&1, id))
+  def handle_event("open_root", %{"id" => id}, socket) when is_binary(id),
+    do: mutate(socket, &Session.open_root(&1, canonical(socket, id)))
 
-  def handle_event("open_call", %{"card" => card, "target" => target}, socket),
-    do: mutate(socket, &Session.open_child(&1, int(card), target))
+  def handle_event("open_call", %{"card" => card, "target" => target}, socket)
+      when is_binary(target),
+      do: mutate(socket, &Session.open_child(&1, int(card), canonical(socket, target), target))
 
-  def handle_event("open_caller", %{"card" => card, "caller" => caller}, socket),
-    do: mutate(socket, &Session.open_caller(&1, int(card), caller))
+  def handle_event("open_caller", %{"card" => card, "caller" => caller}, socket)
+      when is_binary(caller) do
+    socket = assign(socket, callers_open: nil)
+    mutate(socket, &Session.open_caller(&1, int(card), canonical(socket, caller)))
+  end
 
-  def handle_event("close_card", %{"card" => card}, socket),
-    do: mutate(socket, &Session.close(&1, int(card)))
+  def handle_event("toggle_callers", %{"card" => card}, socket) do
+    id = int(card)
+    open = if socket.assigns.callers_open == id, do: nil, else: id
+
+    {:noreply, assign(socket, callers_open: open, forest: Session.focus(socket.assigns.name, id))}
+  end
+
+  def handle_event("close_card", %{"card" => card}, socket) do
+    id = int(card)
+
+    socket =
+      if socket.assigns.callers_open == id, do: assign(socket, callers_open: nil), else: socket
+
+    mutate(socket, &Session.close(&1, id))
+  end
 
   def handle_event("focus_card", %{"card" => card}, socket),
     do: mutate(socket, &Session.focus(&1, int(card)))
@@ -90,7 +108,7 @@ defmodule GraspWeb.ReviewLive do
   end
 
   def handle_event("palette_show", _params, socket),
-    do: {:noreply, assign(socket, palette_open?: true, palette_selected: 0)}
+    do: {:noreply, assign(socket, palette_open?: true, palette_selected: 0, callers_open: nil)}
 
   def handle_event("palette_hide", _params, socket), do: {:noreply, reset_palette(socket)}
 
@@ -118,7 +136,7 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
-  def handle_event("palette_open", %{"id" => id} = params, socket),
+  def handle_event("palette_open", %{"id" => id} = params, socket) when is_binary(id),
     do: open_from_palette(socket, id, child?(params))
 
   # Events are addressed by name and card id from the DOM, so a stale tab or a hand-made
@@ -131,6 +149,7 @@ defmodule GraspWeb.ReviewLive do
 
   defp open_from_palette(socket, id, child?) do
     name = socket.assigns.name
+    id = canonical(socket, id)
 
     forest =
       case {child?, socket.assigns.forest.focus} do
@@ -139,6 +158,16 @@ defmodule GraspWeb.ReviewLive do
       end
 
     {:noreply, socket |> assign(forest: forest) |> reset_palette()}
+  end
+
+  # A call written against a default-argument alias (`greet/1` for `greet/2`) names a
+  # function the index stores under its defining arity; opening the raw id instead would
+  # give the same function a second card that no call span can ever mark as open.
+  defp canonical(socket, id) do
+    case socket.assigns.index && Index.fetch_function(socket.assigns.index, id) do
+      {:ok, record} -> record["id"]
+      _ -> id
+    end
   end
 
   defp reset_palette(socket) do
@@ -167,6 +196,7 @@ defmodule GraspWeb.ReviewLive do
   end
 
   defp int(value) when is_integer(value), do: value
+  defp int(_value), do: nil
 
   @impl true
   def render(%{index: nil} = assigns) do
@@ -220,6 +250,7 @@ defmodule GraspWeb.ReviewLive do
             index={@index}
             card_id={root}
             editor={@editor}
+            callers_open={@callers_open}
           />
         </div>
       </section>

@@ -43,10 +43,13 @@ defmodule Grasp.Session do
   @spec open_root(name(), String.t()) :: Forest.t()
   def open_root(name, function_id), do: mutate(name, &Forest.open_root(&1, function_id))
 
-  @doc "Opens (or focuses) `function_id` as a child of `card_id`."
-  @spec open_child(name(), Forest.id(), String.t()) :: Forest.t()
-  def open_child(name, card_id, function_id),
-    do: mutate(name, &Forest.open_child(&1, card_id, function_id))
+  @doc """
+  Opens (or focuses) `function_id` as a child of `card_id`; `opened_by` records the call
+  target that was clicked when it differs from the function's canonical id.
+  """
+  @spec open_child(name(), Forest.id(), String.t(), String.t() | nil) :: Forest.t()
+  def open_child(name, card_id, function_id, opened_by \\ nil),
+    do: mutate(name, &Forest.open_child(&1, card_id, function_id, opened_by))
 
   @doc "Opens `caller_id` as the caller of `card_id`."
   @spec open_caller(name(), Forest.id(), String.t()) :: Forest.t()

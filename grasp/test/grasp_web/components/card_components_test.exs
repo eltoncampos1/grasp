@@ -28,6 +28,11 @@ defmodule GraspWeb.CardComponentsTest do
       assert CardComponents.hexdocs_url("GraspWeb.CardComponents.hexdocs_url/1") == nil
       assert CardComponents.hexdocs_url("not a function id") == nil
     end
+
+    test "returns nil for anything that is not a string" do
+      assert CardComponents.hexdocs_url(123) == nil
+      assert CardComponents.hexdocs_url(%{"id" => "Enum.map/2"}) == nil
+    end
   end
 
   describe "editor_url/4" do

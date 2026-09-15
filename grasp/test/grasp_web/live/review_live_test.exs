@@ -94,6 +94,8 @@ defmodule GraspWeb.ReviewLiveTest do
   test "opening a caller from a root re-parents the tree", %{view: view, name: name} do
     Session.open_root(name, @greet)
 
+    view |> element("#card-1 .card__callers-toggle") |> render_click()
+
     view
     |> element("#card-1 .card__callers button.caller[phx-value-caller='#{@greet_all}']")
     |> render_click()
@@ -104,6 +106,100 @@ defmodule GraspWeb.ReviewLiveTest do
            )
 
     assert has_element?(view, "#card-2-children #card-1[data-depth='1']")
+  end
+
+  test "the callers menu opens on click, focuses its card and closes again", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.open_child(name, 1, @wrap)
+    assert has_element?(view, "#card-1[data-focused='false']")
+    refute has_element?(view, "#card-1 .card__callers ul")
+
+    view |> element("#card-1 .card__callers-toggle") |> render_click()
+    assert has_element?(view, "#card-1 .card__callers ul button.caller", @greet_all)
+    assert has_element?(view, "#card-1[data-focused='true']")
+
+    view |> element("#card-1 .card__callers-toggle") |> render_click()
+    refute has_element?(view, "#card-1 .card__callers ul")
+  end
+
+  test "opening a caller closes the callers menu", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    view |> element("#card-1 .card__callers-toggle") |> render_click()
+
+    view
+    |> element("#card-1 .card__callers button.caller[phx-value-caller='#{@greet_all}']")
+    |> render_click()
+
+    refute has_element?(view, ".card__callers ul")
+  end
+
+  test "an arity alias resolves to the defining function", %{view: view, name: name} do
+    Session.open_root(name, @greet_all)
+
+    view
+    |> element("#card-1 span.call[data-target='SampleApp.Greeter.greet/1']")
+    |> render_click()
+
+    assert has_element?(view, "#card-2[data-function-id='#{@greet}']")
+    refute has_element?(view, "#card-3")
+  end
+
+  test "a call through an arity alias marks the open child and reuses it", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    view |> element("#card-1 .card__callers-toggle") |> render_click()
+
+    view
+    |> element("#card-1 .card__callers button.caller[phx-value-caller='#{@greet_all}']")
+    |> render_click()
+
+    assert has_element?(
+             view,
+             "#card-2 span.call[data-target='SampleApp.Greeter.greet/1'][data-open='true']"
+           )
+
+    view
+    |> element("#card-2 span.call[data-target='SampleApp.Greeter.greet/1']")
+    |> render_click()
+
+    assert has_element?(view, "#card-1[data-focused='true']")
+    refute has_element?(view, "#card-3")
+  end
+
+  test "a non-string id or target is ignored", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+
+    render_hook(view, "palette_open", %{"id" => 123, "child" => false})
+    render_click(view, "open_call", %{"card" => "1", "target" => 5})
+    render_click(view, "open_root", %{"id" => %{"a" => 1}})
+    render_click(view, "open_caller", %{"card" => "1", "caller" => 7})
+    render_click(view, "focus_card", %{"card" => %{"a" => 1}})
+    render_click(view, "toggle_callers", %{"card" => ["1"]})
+
+    assert has_element?(view, "#card-1")
+    refute has_element?(view, "#card-2")
+  end
+
+  test "a hidden call opens a child card", %{view: view, name: name} do
+    Session.open_root(name, @greet_all)
+
+    view |> element("#card-1 .card__also button.also", @shout) |> render_click()
+
+    assert has_element?(view, "#card-1-children #card-2[data-function-id='#{@shout}']")
+  end
+
+  test "opening a call pushes a focus event for the new card", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+
+    view |> element("#card-1 span.call[data-target='#{@wrap}']") |> render_click()
+    render(view)
+
+    assert_push_event(view, "focus", %{id: 2})
   end
 
   test "an external call opens a stub card", %{view: view, name: name} do
@@ -148,6 +244,12 @@ defmodule GraspWeb.ReviewLiveTest do
     view |> element("#card-1 .card__header") |> render_click()
     assert has_element?(view, "#card-1[data-focused='true']")
     refute has_element?(view, "#card-1[phx-click]")
+  end
+
+  test "the bare route serves the default session", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/")
+    assert has_element?(view, "#app .sidebar .brand", "Grasp")
+    assert has_element?(view, "#canvas")
   end
 
   test "an unhandled direction or an unparsable card id leaves the view alive", %{

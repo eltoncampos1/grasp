@@ -73,9 +73,12 @@ defmodule Grasp.Session.Forest do
   @doc """
   Opens `function_id` as a child of `parent_id`, or focuses the existing child that shows
   it. Returns the child id, or nil if `parent_id` is unknown.
+
+  `opened_by` is the call target the click named, which differs from `function_id` when
+  the call went through a default-argument arity alias.
   """
-  @spec open_child(t(), id(), String.t()) :: {t(), id() | nil}
-  def open_child(%__MODULE__{} = forest, parent_id, function_id) do
+  @spec open_child(t(), id(), String.t(), String.t() | nil) :: {t(), id() | nil}
+  def open_child(%__MODULE__{} = forest, parent_id, function_id, opened_by \\ nil) do
     parent = card(forest, parent_id)
 
     existing =
@@ -89,7 +92,7 @@ defmodule Grasp.Session.Forest do
         {%{forest | focus: existing}, existing}
 
       true ->
-        {forest, id} = add_card(forest, function_id, parent_id, function_id)
+        {forest, id} = add_card(forest, function_id, parent_id, opened_by || function_id)
         parent = %{parent | children: parent.children ++ [id]}
         {%{forest | cards: Map.put(forest.cards, parent_id, parent), focus: id}, id}
     end

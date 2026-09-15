@@ -10,11 +10,13 @@ defmodule GraspWeb.CardComponents do
   alias Grasp.Session.Forest
 
   @stdlib_apps [:elixir, :logger, :eex, :ex_unit, :mix, :iex]
+  @function_id ~r/^([A-Z][\w.]*)\.([^.\/]+)\/(\d+)$/
 
   attr :forest, Forest, required: true
   attr :index, Index, required: true
   attr :card_id, :integer, required: true
   attr :editor, :string, default: nil
+  attr :callers_open, :integer, default: nil
 
   def card_node(assigns) do
     card = Forest.card(assigns.forest, assigns.card_id)
@@ -22,7 +24,14 @@ defmodule GraspWeb.CardComponents do
 
     ~H"""
     <div class="node">
-      <.card forest={@forest} index={@index} card={@card} depth={@depth} editor={@editor} />
+      <.card
+        forest={@forest}
+        index={@index}
+        card={@card}
+        depth={@depth}
+        editor={@editor}
+        callers_open={@callers_open}
+      />
       <div
         :if={@card.children != [] and not @card.collapsed}
         class="node__children"
@@ -34,6 +43,7 @@ defmodule GraspWeb.CardComponents do
           index={@index}
           card_id={child}
           editor={@editor}
+          callers_open={@callers_open}
         />
       </div>
     </div>
@@ -45,6 +55,7 @@ defmodule GraspWeb.CardComponents do
   attr :card, :map, required: true
   attr :depth, :integer, required: true
   attr :editor, :string, default: nil
+  attr :callers_open, :integer, default: nil
 
   def card(assigns) do
     case Index.fetch_function(assigns.index, assigns.card.function_id) do
@@ -55,7 +66,13 @@ defmodule GraspWeb.CardComponents do
 
   defp function_card(assigns) do
     %{forest: forest, index: index, card: card, record: record} = assigns
-    open_targets = for child <- card.children, c = Forest.card(forest, child), do: c.opened_by
+
+    open_targets =
+      for child <- card.children,
+          c = Forest.card(forest, child),
+          alias_id <- arity_aliases(index, c.function_id),
+          do: alias_id
+
     external? = fn target -> match?(:error, Index.fetch_function(index, target)) end
 
     assigns =
@@ -100,9 +117,16 @@ defmodule GraspWeb.CardComponents do
           <span :if={!@editor_href} class="card__file">
             {@record["file"]}:{@record["span"]["start_line"]}
           </span>
-          <details :if={@callers != []} class="card__callers">
-            <summary>callers ({length(@callers)})</summary>
-            <ul>
+          <div :if={@callers != []} class="card__callers">
+            <button
+              class="card__callers-toggle"
+              phx-click="toggle_callers"
+              phx-value-card={@card.id}
+              aria-expanded={to_string(@callers_open == @card.id)}
+            >
+              callers ({length(@callers)})
+            </button>
+            <ul :if={@callers_open == @card.id}>
               <li :for={caller <- @callers}>
                 <button
                   class="caller"
@@ -114,7 +138,7 @@ defmodule GraspWeb.CardComponents do
                 </button>
               </li>
             </ul>
-          </details>
+          </div>
           <button
             :if={@card.children != []}
             class="card__collapse"
@@ -155,7 +179,8 @@ defmodule GraspWeb.CardComponents do
     assigns =
       assign(assigns,
         focused?: assigns.forest.focus == assigns.card.id,
-        docs: hexdocs_url(assigns.card.function_id)
+        docs: hexdocs_url(assigns.card.function_id),
+        stale?: indexed_module?(assigns.index, assigns.card.function_id)
       )
 
     ~H"""
@@ -170,7 +195,12 @@ defmodule GraspWeb.CardComponents do
         <h2 class="card__title">{@card.function_id}</h2>
         <button class="card__close" phx-click="close_card" phx-value-card={@card.id}>×</button>
       </header>
-      <p class="stub__text">Not in the index (a dependency or the standard library).</p>
+      <p :if={@stale?} class="stub__text">
+        No longer in the index — renamed or removed since it was written.
+      </p>
+      <p :if={!@stale?} class="stub__text">
+        Not in the index (a dependency or the standard library).
+      </p>
       <a :if={@docs} class="stub__docs" href={@docs} target="_blank" rel="noopener">Open on hexdocs</a>
     </article>
     """
@@ -203,15 +233,48 @@ defmodule GraspWeb.CardComponents do
   end
 
   @doc "hexdocs URL for a standard-library function id, or nil for anything else."
-  @spec hexdocs_url(String.t()) :: String.t() | nil
+  @spec hexdocs_url(term()) :: String.t() | nil
+  def hexdocs_url(function_id) when not is_binary(function_id), do: nil
+
   def hexdocs_url(function_id) do
-    with [_, module, name, arity] <- Regex.run(~r/^([A-Z][\w.]*)\.([^.\/]+)\/(\d+)$/, function_id),
+    with [_, module, name, arity] <- Regex.run(@function_id, function_id),
          {:ok, mod} <- existing_module(module),
          {:module, ^mod} <- Code.ensure_loaded(mod),
          {:ok, app} when app in @stdlib_apps <- :application.get_application(mod) do
       "https://hexdocs.pm/#{app}/#{module}.html##{name}/#{arity}"
     else
       _ -> nil
+    end
+  end
+
+  # A card opened before the index was rewritten may show a function the project no longer
+  # defines; its module still being indexed is what separates that from a dependency.
+  defp indexed_module?(%Index{} = index, function_id) do
+    case module_of(function_id) do
+      nil -> false
+      module -> Enum.any?(Index.modules(index), &(&1["name"] == module))
+    end
+  end
+
+  defp module_of(function_id) when is_binary(function_id) do
+    case Regex.run(@function_id, function_id) do
+      [_, module, _name, _arity] -> module
+      nil -> nil
+    end
+  end
+
+  defp module_of(_function_id), do: nil
+
+  # Every arity a definition answers to, so a call written against a default-argument
+  # alias is marked as open even though the card shows the defining arity.
+  defp arity_aliases(%Index{} = index, function_id) do
+    case Index.fetch_function(index, function_id) do
+      {:ok, record} ->
+        for arity <- record["arities"] || List.wrap(record["arity"]),
+            do: "#{record["module"]}.#{record["name"]}/#{arity}"
+
+      :error ->
+        [function_id]
     end
   end
 
