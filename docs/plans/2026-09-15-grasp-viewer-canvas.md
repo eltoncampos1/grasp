@@ -546,7 +546,7 @@ export default Canvas
 - [ ] **Step 3: CSS**
 
 - `.canvas { position: relative; overflow: hidden; padding: 0; cursor: grab; }` and `.canvas:active { cursor: grabbing; }`.
-- `.stage { position: absolute; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; will-change: transform; }` (no `transform` here — the hook's style tag sets it).
+- `.stage { position: absolute; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; }` (no `transform` here — the hook's style tag sets it).
 - `.connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 0; }` and `.connectors path { fill: none; stroke: var(--border); stroke-width: 1.5; }`.
 - `.roots { position: relative; z-index: 1; padding: var(--space-m); }`.
 - `.toolbar { position: absolute; inset-block-start: var(--space-s); inset-inline-end: var(--space-s); z-index: 3; display: flex; gap: var(--space-xs); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space-xs); }` and `.toolbar button { padding: 0 var(--space-s); color: var(--fg-muted); } .toolbar button:hover { color: var(--fg); }`.
@@ -655,9 +655,40 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
+### Task 7: Crisp text while dragging and panning
+
+**Files:**
+- Modify: `grasp/assets/js/hooks/canvas.js`, `grasp/assets/css/app.css`
+
+**Problem:** dragging a card (and panning) blurs the text even at 100% zoom. Two causes: the hook writes fractional translates during a drag (`${dx + mx / scale}px`) and pans (`translate(${x}px, ${y}px)` with fractional `x`/`y`), so composited text lands on subpixel offsets; and `.stage { will-change: transform }` forces a compositor layer that rasterises text once and shifts it, which blurs at any fractional offset.
+
+- [x] **Step 1: Round the pan translate**
+
+In `applyView()`, write the pan translate as whole screen pixels: `translate(${Math.round(x)}px, ${Math.round(y)}px) scale(${scale})` (keep `this.view.x/y` fractional internally so small wheel deltas still accumulate). A two-line comment above `applyView()` says why.
+
+- [x] **Step 2: Round the drag displacement**
+
+During a card drag, round the temporary inline translate to whole screen pixels: with `s = this.view.scale`, use `tx = Math.round((drag.dx + mx / s) * s) / s` and likewise `ty`; write `${tx}px ${ty}px`. The final pushed `dx`/`dy` are already `Math.round`ed integers in stage units, which at scale 1 are whole pixels. At any other scale the card keeps whatever subpixel phase its layout gave it: it does not shimmer while moving, but it is not on a grid.
+
+- [x] **Step 3: Drop the compositor hint**
+
+Remove `will-change: transform` from `.stage`. Keep `transform-origin: 0 0`. Neither `backface-visibility: hidden` nor `translateZ(0)` is added — they are a common blur *cause*, not a fix. Where zoom is not 100%, text is still resampled by the CSS scale; that is expected.
+
+- [x] **Step 4: Verify and commit**
+
+`mix assets.build` clean; `mix test` green (no test covers the hook). Read the generated bundle to confirm the rounding is present.
+
+```bash
+cd ~/repos/grasp/grasp && mix format && cd .. && git add -A && git commit -m "Keep card text crisp while dragging and panning
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
 ## Self-review
 
 - **Coverage of the request.** Line height and font size (Task 2 tokens), wider cards (`--card-width: 60rem`), GitHub Light via Lumis (Tasks 1–2), drag/pan/zoom (Tasks 3–4), connectors that follow (Task 4). Milestone 3 is a separate plan.
 - **Type consistency.** `offset` is `{integer, integer}` in Forest; the LiveView coerces `dx`/`dy` with `int/1`; the card renders `--dx`/`--dy` in px and `data-dx`/`data-dy` as bare integers, which the hook reads back with `parseInt`. `move_card` payload keys `card`, `dx`, `dy` match between hook and handler.
 - **LiveView-patch safety.** The only hook-set attributes are the inline `translate` during a drag (cleared in `updated()`) and the SVG children inside `phx-update="ignore"`; the transform lives in a head `<style>`. The toolbar buttons that are client-only have no `phx-*` attributes.
-- **Known soft spots.** Lumis's per-line divs are assumed to reproduce the source text exactly (tree-sitter highlighting is lossless; the fixture test guards the column base). Wheel-to-pan competes with horizontal code scrolling; the rule "horizontal wheel over an overflowing code body scrolls the code" is the compromise. Card drags move the card only, not its subtree; connectors make that legible.
+- **Known soft spots.** Lumis's per-line divs are assumed to reproduce the source text exactly (tree-sitter highlighting is lossless; the fixture test guards the column base). Wheel-to-pan competes with horizontal code scrolling; the rule "horizontal wheel over an overflowing code body scrolls the code" is the compromise. A card drag carries the card's subtree with it — the offset lands on the `.node`, whose children are laid out inside it — so a branch keeps its shape; connectors follow either way.

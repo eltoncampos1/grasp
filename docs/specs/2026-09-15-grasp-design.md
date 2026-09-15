@@ -191,9 +191,10 @@ broadcasts the reload.
 
 - `roots`: ordered card ids in column zero.
 - `cards`: map of card id to `%{function_id, parent_id, children, opened_by,
-  highlight, view, collapsed}` where `opened_by` is the call target that opened the
-  card, `highlight` is `nil`, `%{call: target_id}` or `%{lines: a..b}`, and `view` is
-  `:source` or `:diff`.
+  highlight, view, collapsed, offset}` where `opened_by` is the call target that opened
+  the card, `highlight` is `nil`, `%{call: target_id}` or `%{lines: a..b}`, `view` is
+  `:source` or `:diff`, and `offset` is `{dx, dy}` in stage pixels from the card's
+  automatic position (`{0, 0}` when untouched).
 - `focus`: the focused card id.
 - `annotations`: keyed by function id, each `%{id, author, body, line}` with author
   `"agent"` or `"human"` and a markdown body.
