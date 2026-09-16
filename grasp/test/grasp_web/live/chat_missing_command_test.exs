@@ -17,7 +17,7 @@ defmodule GraspWeb.ChatMissingCommandTest do
     view: view
   } do
     view |> element("#toggle-chat") |> render_click()
-    view |> form("#chat form", %{"prompt" => "show me greet"}) |> render_submit()
+    view |> form("#chat-form", %{"prompt" => "show me greet"}) |> render_submit()
 
     assert has_element?(view, ~s(#chat .msg[data-type="error"]), "GRASP_AGENT_COMMAND")
     refute has_element?(view, ~s(#chat .msg[data-type="user"]))

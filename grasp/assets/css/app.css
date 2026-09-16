@@ -170,6 +170,8 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .chat__debug p { margin: var(--space-xs) 0 0; white-space: pre-wrap; }
 .chat__debug summary { cursor: pointer; }
 .chat form { display: flex; gap: var(--space-xs); padding: var(--space-s); border-top: 1px solid var(--border); }
+.chat__model { align-items: center; font-size: 12px; color: var(--fg-muted); }
+.chat__model select { font: inherit; color: var(--fg); background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 4px; padding: 2px var(--space-xs); }
 .chat input { flex: 1; font: inherit; padding: var(--space-xs) var(--space-s); border: 1px solid var(--border); border-radius: 4px; background: var(--bg-sunken); color: var(--fg); }
 .chat button { color: var(--fg-muted); padding: var(--space-xs) var(--space-s); }
 .chat button:hover:not(:disabled) { color: var(--accent); }

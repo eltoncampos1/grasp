@@ -20,7 +20,7 @@ defmodule GraspWeb.ChatTest do
     view |> element("#toggle-chat") |> render_click()
     # Subscribed before the run starts: the fake CLI can finish before a later subscribe lands.
     :ok = Grasp.Agent.subscribe(name)
-    view |> form("#chat form", %{"prompt" => "show me greet"}) |> render_submit()
+    view |> form("#chat-form", %{"prompt" => "show me greet"}) |> render_submit()
     assert has_element?(view, ~s(#chat .msg[data-type="user"]), "show me greet")
 
     assert_receive {:agent, ^name, %{running?: false}}, 2_000
@@ -37,16 +37,29 @@ defmodule GraspWeb.ChatTest do
     refute has_element?(view, "#chat button[disabled]", "Send")
   end
 
+  test "the model picker chooses the CLI model for the next run", %{view: view, name: name} do
+    view |> element("#toggle-chat") |> render_click()
+    assert has_element?(view, ~s(#chat-model-select option[value=""][selected]))
+
+    view |> form("#chat .chat__model", %{"model" => "sonnet"}) |> render_change()
+    assert has_element?(view, ~s(#chat-model-select option[value="sonnet"][selected]))
+
+    :ok = Grasp.Agent.subscribe(name)
+    view |> form("#chat-form", %{"prompt" => "show me greet"}) |> render_submit()
+    assert_receive {:agent, ^name, %{running?: false}}, 2_000
+    assert Grasp.Agent.get(name).last_result =~ "--model sonnet"
+  end
+
   test "a blank prompt is ignored", %{view: view} do
     view |> element("#toggle-chat") |> render_click()
-    view |> form("#chat form", %{"prompt" => "   "}) |> render_submit()
+    view |> form("#chat-form", %{"prompt" => "   "}) |> render_submit()
     refute has_element?(view, ~s(#chat .msg[data-type="user"]))
   end
 
   test "a failed run shows the error and the log", %{view: view, name: name} do
     view |> element("#toggle-chat") |> render_click()
     :ok = Grasp.Agent.subscribe(name)
-    view |> form("#chat form", %{"prompt" => "FAIL please"}) |> render_submit()
+    view |> form("#chat-form", %{"prompt" => "FAIL please"}) |> render_submit()
     assert_receive {:agent, ^name, %{running?: false}}, 2_000
     assert has_element?(view, ~s(#chat .msg[data-type="error"]), "status 3")
     assert has_element?(view, "#chat .chat__debug", "something went wrong on stderr")
@@ -58,7 +71,7 @@ defmodule GraspWeb.ChatTest do
   } do
     view |> element("#toggle-chat") |> render_click()
     :ok = Grasp.Agent.subscribe(name)
-    view |> form("#chat form", %{"prompt" => "SLOW one"}) |> render_submit()
+    view |> form("#chat-form", %{"prompt" => "SLOW one"}) |> render_submit()
 
     assert has_element?(view, "#chat button[disabled]", "Send")
     view |> element(~s(#chat button[phx-click="chat_stop"]), "Stop") |> render_click()

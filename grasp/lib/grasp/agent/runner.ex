@@ -52,7 +52,7 @@ defmodule Grasp.Agent.Runner do
   @impl true
   def init(name) do
     Process.flag(:trap_exit, true)
-    {:ok, %{name: name, stream: Stream.new(), port: nil, buffer: "", running?: false}}
+    {:ok, %{name: name, stream: Stream.new(), port: nil, buffer: "", running?: false, model: nil}}
   end
 
   @impl true
@@ -71,7 +71,7 @@ defmodule Grasp.Agent.Runner do
         session: state.name,
         mcp_url: Command.mcp_url(),
         resume: state.stream.claude_session_id,
-        model: Application.get_env(:grasp, :agent_model)
+        model: state.model || Application.get_env(:grasp, :agent_model)
       )
 
     case executable(command) do
@@ -97,6 +97,9 @@ defmodule Grasp.Agent.Runner do
   end
 
   def handle_call(:stop, _from, state), do: {:reply, :ok, broadcast(halt(state, "stopped"))}
+
+  def handle_call({:set_model, model}, _from, state),
+    do: {:reply, :ok, broadcast(%{state | model: model})}
 
   def handle_call(:reset, _from, state) do
     state = halt(state, nil)
@@ -161,7 +164,8 @@ defmodule Grasp.Agent.Runner do
       running?: state.running?,
       claude_session_id: state.stream.claude_session_id,
       log: state.stream.log,
-      last_result: state.stream.result_text
+      last_result: state.stream.result_text,
+      model: state.model
     }
   end
 

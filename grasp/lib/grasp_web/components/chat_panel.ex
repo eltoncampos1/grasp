@@ -32,7 +32,16 @@ defmodule GraspWeb.ChatPanel do
         <p :for={line <- @agent.log}>{line}</p>
       </details>
       <p :if={@error} class="msg" data-type="error">{@error}</p>
-      <form phx-submit="chat_send">
+      <form phx-change="chat_model" class="chat__model">
+        <label for="chat-model-select">Model</label>
+        <select id="chat-model-select" name="model" aria-label="Model">
+          <option value="" selected={is_nil(@agent.model)}>default</option>
+          <option :for={model <- Grasp.Agent.models()} value={model} selected={@agent.model == model}>
+            {model}
+          </option>
+        </select>
+      </form>
+      <form id="chat-form" phx-submit="chat_send">
         <input
           type="text"
           name="prompt"

@@ -20,7 +20,8 @@ defmodule Grasp.Agent do
           running?: boolean(),
           claude_session_id: String.t() | nil,
           log: [String.t()],
-          last_result: String.t() | nil
+          last_result: String.t() | nil,
+          model: String.t() | nil
         }
 
   @doc "Starts the conversation named `name` if it is not running."
@@ -53,6 +54,25 @@ defmodule Grasp.Agent do
   @doc "Ends a live run; a finished conversation is left alone."
   @spec stop(name()) :: :ok
   def stop(name), do: GenServer.call(Runner.via(name), :stop)
+
+  @models ~w(haiku sonnet opus fable)
+
+  @doc "The model aliases the chat panel offers, cheapest first."
+  @spec models() :: [String.t()]
+  def models, do: @models
+
+  @doc """
+  Picks the model the next run passes to the CLI; nil returns to the configured default
+  (`:agent_model`, or the CLI's own default). Applies to the next prompt, so a conversation
+  can continue on a cheaper model after an expensive one mapped the ground.
+  """
+  @spec set_model(name(), String.t() | nil) :: :ok | {:error, :unknown_model}
+  def set_model(name, nil), do: GenServer.call(Runner.via(name), {:set_model, nil})
+
+  def set_model(name, model) when model in @models,
+    do: GenServer.call(Runner.via(name), {:set_model, model})
+
+  def set_model(_name, _model), do: {:error, :unknown_model}
 
   @doc "Ends a live run and clears the transcript, the log and the CLI session id."
   @spec reset(name()) :: :ok

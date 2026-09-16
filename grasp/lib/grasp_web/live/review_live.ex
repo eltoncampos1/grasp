@@ -191,6 +191,15 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
+  # An empty pick returns to the configured default; anything the facade does not know is
+  # ignored rather than reported, since the select cannot offer it.
+  def handle_event("chat_model", %{"model" => model}, socket) when is_binary(model) do
+    case Grasp.Agent.set_model(socket.assigns.name, if(model == "", do: nil, else: model)) do
+      :ok -> {:noreply, refresh_agent(socket)}
+      {:error, :unknown_model} -> {:noreply, socket}
+    end
+  end
+
   def handle_event("chat_stop", _params, socket) do
     :ok = Grasp.Agent.stop(socket.assigns.name)
     {:noreply, refresh_agent(socket)}

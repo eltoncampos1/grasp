@@ -39,6 +39,26 @@ defmodule Grasp.Agent.RunnerTest do
     assert Enum.count(entries, &(&1.type == :user)) == 2
   end
 
+  test "set_model/2 picks the model of the next run and survives a reset", %{name: name} do
+    assert Grasp.Agent.get(name).model == nil
+    assert {:error, :unknown_model} = Grasp.Agent.set_model(name, "gpt-99")
+    :ok = Grasp.Agent.set_model(name, "haiku")
+    assert_receive {:agent, ^name, %{model: "haiku"}}
+
+    :ok = Grasp.Agent.send_prompt(name, "cheap question")
+    assert_receive {:agent, ^name, %{running?: false}}, 2_000
+    assert Grasp.Agent.get(name).last_result =~ "--model haiku"
+
+    :ok = Grasp.Agent.reset(name)
+    assert_receive {:agent, ^name, %{last_result: nil, model: "haiku"}}
+
+    :ok = Grasp.Agent.set_model(name, nil)
+    assert_receive {:agent, ^name, %{model: nil}}
+    :ok = Grasp.Agent.send_prompt(name, "back to default")
+    assert_receive {:agent, ^name, %{running?: false, last_result: "" <> argv}}, 2_000
+    refute argv =~ "--model"
+  end
+
   test "a prompt sent while a run is live is refused", %{name: name} do
     :ok = Grasp.Agent.send_prompt(name, "SLOW one")
     assert {:error, :running} = Grasp.Agent.send_prompt(name, "two")
