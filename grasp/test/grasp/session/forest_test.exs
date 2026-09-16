@@ -469,6 +469,39 @@ defmodule Grasp.Session.ForestTest do
       assert Forest.dissolve_group(forest, 999) == forest
     end
 
+    test "rename_group/3 retitles a group, leaving unknown ids and blank titles alone" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, flow} = Forest.group_cards(forest, "Flow", [a])
+
+      renamed = Forest.rename_group(forest, flow, "Deposits")
+
+      assert Forest.group(renamed, flow) == %{id: flow, title: "Deposits"}
+      assert Forest.group_of(renamed, a) == %{id: flow, title: "Deposits"}
+      assert Forest.group(renamed, 999) == nil
+
+      assert Forest.rename_group(forest, 999, "Deposits") == forest
+      assert Forest.rename_group(forest, flow, "   ") == forest
+      assert Forest.rename_group(forest, flow, "") == forest
+    end
+
+    test "add_to_group/3 joins an existing group and deletes the one it empties" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, b} = Forest.open_child(forest, a, "B.g/0")
+      {forest, c} = Forest.open_child(forest, a, "C.h/2")
+      {forest, flow} = Forest.group_cards(forest, "Flow", [a])
+      {forest, edges} = Forest.group_cards(forest, "Edges", [b])
+
+      joined = Forest.add_to_group(forest, flow, [b, c, 999])
+
+      assert Forest.group_of(joined, b).id == flow
+      assert Forest.group_of(joined, c).id == flow
+      assert Map.keys(joined.groups) == [flow]
+      assert map_size(joined.cards) == 3
+
+      assert Forest.add_to_group(forest, 999, [a]) == forest
+      assert Forest.add_to_group(forest, edges, []) == forest
+    end
+
     test "sections/1 lays every group out on its own, ungrouped cards last" do
       {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
       {forest, b} = Forest.open_child(forest, a, "B.g/0")

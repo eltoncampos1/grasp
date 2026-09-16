@@ -176,6 +176,9 @@ Arranging the cards:
   here takes it out of the one it was in, and a group left with no cards is gone.
 - `ungroup_cards(name, card_ids)` — take cards out of their groups, back to the untitled
   section.
+- `rename_group(name, group_id, title)` — give a group another title, keeping its id and its
+  cards. Regrouping under a new title would draw the same picture but build a different
+  group, so a frame that outgrew its name is renamed rather than rebuilt.
 - `set_view(name, card_id, view)` — show a card as its `source` or as its `diff` against
   the base, to point at what the branch did to a function rather than at the function.
   Only a modified function has a diff; asking for one of anything else is an error.

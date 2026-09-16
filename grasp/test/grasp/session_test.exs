@@ -169,6 +169,29 @@ defmodule Grasp.SessionTest do
     assert Session.get(name) == forest
   end
 
+  test "rename_group and add_to_group mirror the forest and broadcast", %{name: name} do
+    :ok = Session.subscribe(name)
+
+    forest = Session.open_root(name, "SampleApp.Greeter.greet/2")
+    root = forest.focus
+    forest = Session.open_child(name, root, "SampleApp.Formatter.wrap/1")
+    [child] = Forest.callees(forest, root)
+
+    forest = Session.group_cards(name, "Greeting", [root])
+    greeting = Forest.group_of(forest, root).id
+
+    forest = Session.rename_group(name, greeting, "Request")
+
+    assert Forest.group_of(forest, root) == %{id: greeting, title: "Request"}
+    assert_receive {:session, ^name, ^forest}
+
+    forest = Session.add_to_group(name, greeting, [child])
+
+    assert Forest.group_of(forest, child).id == greeting
+    assert_receive {:session, ^name, ^forest}
+    assert Session.get(name) == forest
+  end
+
   test "list/0 names the running sessions", %{name: name} do
     assert name in Session.list()
   end

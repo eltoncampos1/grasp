@@ -53,6 +53,23 @@ defmodule Grasp.MCP.Tools do
   end
 
   @doc """
+  The group `group_id` of the session named `session`, or the message a tool answers with
+  when the session has no such group.
+
+  Starts the session if it is not running, as `fetch_card/2` does.
+  """
+  @spec fetch_group(Session.name(), Forest.group_id()) ::
+          {:ok, Forest.group()} | {:error, String.t()}
+  def fetch_group(session, group_id) do
+    :ok = Session.ensure(session)
+
+    case Forest.group(Session.get(session), group_id) do
+      nil -> {:error, "unknown group: #{group_id}"}
+      group -> {:ok, group}
+    end
+  end
+
+  @doc """
   The record for the function id `id`, or the message a tool answers an unknown id with.
 
   Any arity a definition with default arguments answers to resolves to that definition, so

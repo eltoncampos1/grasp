@@ -308,6 +308,43 @@ defmodule Grasp.Session.Forest do
     {forest |> regroup(ids, group_id) |> prune_groups(), group_id}
   end
 
+  @doc """
+  Retitles `group_id`, keeping its id and every card in it.
+
+  An unknown group and a blank title both leave the graph as it was, so a frame is never
+  left standing with no name to draw. Renaming is what changes a title: naming the same
+  cards in `group_cards/3` under another one builds a different group, and any id held
+  elsewhere then points at a group that has gone.
+  """
+  @spec rename_group(t(), group_id(), String.t()) :: t()
+  def rename_group(%__MODULE__{} = forest, group_id, title) when is_binary(title) do
+    case {Map.get(forest.groups, group_id), String.trim(title)} do
+      {nil, _title} ->
+        forest
+
+      {_group, ""} ->
+        forest
+
+      {group, _trimmed} ->
+        %{forest | groups: Map.put(forest.groups, group_id, %{group | title: title})}
+    end
+  end
+
+  @doc """
+  Puts every card in `ids` into the group `group_id`, whatever that group is called.
+
+  This joins a group by id and creates none, so an unknown group leaves the graph
+  unchanged — the counterpart to `group_cards/3`, which finds or creates a group by title.
+  A card already in another group leaves it, unknown ids are ignored, and a group whose last
+  member has left is deleted.
+  """
+  @spec add_to_group(t(), group_id(), [id()]) :: t()
+  def add_to_group(%__MODULE__{} = forest, group_id, ids) when is_list(ids) do
+    if Map.has_key?(forest.groups, group_id),
+      do: forest |> regroup(ids, group_id) |> prune_groups(),
+      else: forest
+  end
+
   @doc "Takes every card in `ids` out of its group, deleting a group left with no members."
   @spec ungroup_cards(t(), [id()]) :: t()
   def ungroup_cards(%__MODULE__{} = forest, ids) when is_list(ids),
@@ -318,6 +355,10 @@ defmodule Grasp.Session.Forest do
   def dissolve_group(%__MODULE__{} = forest, group_id) do
     forest |> regroup(members(forest, group_id), nil) |> prune_groups()
   end
+
+  @doc "The group `group_id` names, or nil when the graph has no such group."
+  @spec group(t(), group_id()) :: group() | nil
+  def group(%__MODULE__{} = forest, group_id), do: Map.get(forest.groups, group_id)
 
   @doc "The group `id` belongs to; nil when it belongs to none, or is not a known card."
   @spec group_of(t(), id()) :: group() | nil

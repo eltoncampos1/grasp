@@ -577,7 +577,8 @@ first reference. Results are JSON text content, so any MCP client can read them.
 - Session tools: `get_session(name)`, `set_cards(name, cards)`, `open_card(name,
   function_id, parent_card_id?, highlight?)`, `close_card(name, card_id)`,
   `focus_card(name, card_id)`, `highlight_card(name, card_id, highlight)`,
-  `group_cards(name, title, card_ids)`, `ungroup_cards(name, card_ids)`. Every session
+  `group_cards(name, title, card_ids)`, `ungroup_cards(name, card_ids)`,
+  `rename_group(name, group_id, title)`. Every session
   tool returns the resulting graph as JSON — `focus`, `cards` (each with its id,
   `function_id`, `collapsed`, `highlight`, the `group` it is in and the ids in `callers`
   and `callees`), `edges` (`from`, `to`, the call `target` and the palette `color`),
@@ -589,6 +590,12 @@ first reference. Results are JSON text content, so any MCP client can read them.
   group, so naming it in a second takes it out of the first, and a group left with no cards
   is deleted. An unknown card id is a tool error naming it, and an empty title is refused,
   so a group is never created with no name to draw.
+- `rename_group` names a group by its id and changes only its title: the cards stay put and
+  the id stands, so a `group` or `sections` entry already quoted still names the same group.
+  An unknown group id is a tool error naming it and an empty title is refused, the way
+  `group_cards` refuses one. The forest carries the pair this is built on — `rename_group/3`
+  and `add_to_group/3`, which joins cards to a group by id rather than by title and creates
+  none — and the viewer's manual grouping drives the same two.
 - `set_cards` replaces the graph. `cards` is a flat list of `{key, function_id,
   parent_key?, group?, highlight?}`; `group` is a title rather than an id, so entries
   sharing one land in the same group and the groups are created in the order their titles

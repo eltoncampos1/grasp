@@ -397,6 +397,35 @@ defmodule Grasp.MCP.SessionToolsTest do
     end
   end
 
+  describe "rename_group" do
+    test "the group takes the new title and keeps its cards", %{session: session} do
+      run(Tools.OpenCard, %{session: session, function_id: @show})
+      run(Tools.GroupCards, %{session: session, title: "Request", card_ids: [1]})
+
+      body = json!(run(Tools.RenameGroup, %{session: session, group_id: 1, title: " Deposits "}))
+
+      assert body["groups"] == [%{"id" => 1, "title" => "Deposits", "cards" => [1]}]
+      assert card(body, 1)["group"] == 1
+    end
+
+    test "an unknown group and a blank title are errors and nothing moves", %{session: session} do
+      run(Tools.OpenCard, %{session: session, function_id: @show})
+      run(Tools.GroupCards, %{session: session, title: "Request", card_ids: [1]})
+      before = Session.get(session)
+
+      response = run(Tools.RenameGroup, %{session: session, group_id: 7, title: "Deposits"})
+
+      assert response.isError
+      assert [%{"text" => "unknown group: 7"}] = response.content
+
+      response = run(Tools.RenameGroup, %{session: session, group_id: 1, title: "   "})
+
+      assert response.isError
+      assert [%{"text" => "title is required"}] = response.content
+      assert Session.get(session) == before
+    end
+  end
+
   describe "input schemas" do
     test "name the session, the cards and the required ids" do
       # Anubis leaves a field's default out of the JSON schema, so the description carries it
@@ -408,6 +437,8 @@ defmodule Grasp.MCP.SessionToolsTest do
       assert "view" in Tools.SetView.input_schema()["required"]
       assert Tools.GroupCards.input_schema()["required"] == ["title", "card_ids"]
       assert Tools.UngroupCards.input_schema()["required"] == ["card_ids"]
+      assert "group_id" in Tools.RenameGroup.input_schema()["required"]
+      assert "title" in Tools.RenameGroup.input_schema()["required"]
       refute Tools.GetSession.input_schema()["required"]
     end
   end

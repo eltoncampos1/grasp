@@ -31,4 +31,5 @@ defmodule Grasp.MCP.Server do
   component(Tools.SetView)
   component(Tools.GroupCards)
   component(Tools.UngroupCards)
+  component(Tools.RenameGroup)
 end

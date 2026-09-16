@@ -104,6 +104,21 @@ defmodule Grasp.Session do
   @spec ungroup_cards(name(), [Forest.id()]) :: Forest.t()
   def ungroup_cards(name, card_ids), do: mutate(name, &Forest.ungroup_cards(&1, card_ids))
 
+  @doc """
+  Retitles `group_id`, keeping its cards. A blank title or an unknown group changes nothing.
+  """
+  @spec rename_group(name(), Forest.group_id(), String.t()) :: Forest.t()
+  def rename_group(name, group_id, title),
+    do: mutate(name, &Forest.rename_group(&1, group_id, title))
+
+  @doc """
+  Puts `card_ids` into the existing group `group_id`, out of whatever group they were in. An
+  unknown group changes nothing, and a group left with no members is deleted.
+  """
+  @spec add_to_group(name(), Forest.group_id(), [Forest.id()]) :: Forest.t()
+  def add_to_group(name, group_id, card_ids),
+    do: mutate(name, &Forest.add_to_group(&1, group_id, card_ids))
+
   @doc "Deletes `group_id`, leaving its cards in the graph with no group."
   @spec dissolve_group(name(), Forest.group_id()) :: Forest.t()
   def dissolve_group(name, group_id), do: mutate(name, &Forest.dissolve_group(&1, group_id))
