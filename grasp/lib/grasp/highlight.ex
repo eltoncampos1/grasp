@@ -22,6 +22,9 @@ defmodule Grasp.Highlight do
   table is owned by `Grasp.IndexStore`, which clears it on every index reload — a cached
   piece list carries absolute line numbers, so a stale entry would outlive the span it was
   computed for. Without the table (a unit test with no store running) every render parses.
+
+  A card's `highlight` — the call to outline or the range of lines to shade — is applied
+  as the HTML is built, after the cache, and so is never part of what is memoised.
   """
 
   require Logger
@@ -31,7 +34,8 @@ defmodule Grasp.Highlight do
   @type opts :: [
           card_id: pos_integer(),
           open_targets: [String.t()],
-          external?: (String.t() -> boolean())
+          external?: (String.t() -> boolean()),
+          highlight: nil | %{optional(String.t()) => String.t() | [integer()]}
         ]
 
   @doc "Highlighted HTML for `record` with clickable call spans; see the moduledoc."
@@ -40,6 +44,8 @@ defmodule Grasp.Highlight do
     card_id = Keyword.fetch!(opts, :card_id)
     open = MapSet.new(Keyword.get(opts, :open_targets, []))
     external? = Keyword.get(opts, :external?, fn _ -> false end)
+    highlight = Keyword.get(opts, :highlight)
+    highlighted_call = highlight["call"]
     first_line = record["span"]["start_line"]
 
     ranges =
@@ -60,9 +66,9 @@ defmodule Grasp.Highlight do
           by_line
           |> Map.get(line, [])
           |> Enum.flat_map(&split_at_ranges(&1, ranges))
-          |> wrap_calls(ranges, card_id, open, external?)
+          |> wrap_calls(ranges, card_id, open, external?, highlighted_call)
 
-        ~s(<span class="line" data-line="#{line}"><span class="ln">#{line}</span>#{body}</span>)
+        ~s(<span class="line" data-line="#{line}"#{highlighted_line(highlight, line)}><span class="ln">#{line}</span>#{body}</span>)
       end)
 
     {:safe, html}
@@ -188,7 +194,12 @@ defmodule Grasp.Highlight do
     Enum.reverse(pieces)
   end
 
-  defp wrap_calls(pieces, ranges, card_id, open, external?) do
+  defp highlighted_line(%{"lines" => [first, last]}, line) when first <= line and line <= last,
+    do: ~s( data-highlight="true")
+
+  defp highlighted_line(_highlight, _line), do: ""
+
+  defp wrap_calls(pieces, ranges, card_id, open, external?, highlighted_call) do
     pieces
     |> Enum.chunk_by(&covering(&1, ranges))
     |> Enum.map_join(fn [first | _] = chunk ->
@@ -201,7 +212,8 @@ defmodule Grasp.Highlight do
         %{target: target} ->
           attrs =
             ~s( data-target="#{escape(target)}" data-open="#{MapSet.member?(open, target)}") <>
-              ~s( data-external="#{escape(to_string(external?.(target)))}" phx-click="open_call" phx-value-card="#{escape(to_string(card_id))}" phx-value-target="#{escape(target)}")
+              ~s( data-external="#{escape(to_string(external?.(target)))}" phx-click="open_call" phx-value-card="#{escape(to_string(card_id))}" phx-value-target="#{escape(target)}") <>
+              if target == highlighted_call, do: ~s( data-highlight="true"), else: ""
 
           ~s(<span class="call"#{attrs}>#{inner}</span>)
       end

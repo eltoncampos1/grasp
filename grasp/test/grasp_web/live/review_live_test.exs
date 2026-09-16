@@ -123,6 +123,20 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#card-1 .card__file", "lib/sample_app/greeter.ex:6")
   end
 
+  test "a highlighted card renders the ring and the tinted lines", %{view: view, name: name} do
+    %{roots: [id]} = Session.open_root(name, @greet)
+    Session.set_highlight(name, id, %{"call" => @wrap})
+
+    assert has_element?(
+             view,
+             ~s(#card-#{id} .call[data-highlight="true"][data-target="#{@wrap}"])
+           )
+
+    Session.set_highlight(name, id, %{"lines" => [9, 10]})
+    assert has_element?(view, ~s(#card-#{id} .line[data-highlight="true"][data-line="9"]))
+    refute has_element?(view, ~s(#card-#{id} .call[data-highlight="true"]))
+  end
+
   test "clicking a call opens the callee as a child; clicking again focuses it", %{
     view: view,
     name: name

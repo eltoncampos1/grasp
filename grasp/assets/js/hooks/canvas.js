@@ -30,7 +30,7 @@ const Canvas = {
     this.svg = this.el.querySelector("#connectors")
     this.zoomLevel = this.el.querySelector("#zoom-level")
     this.view = {x: MARGIN, y: MARGIN, scale: 1}
-    this.lastFocus = null
+    this.lastReveal = null
     this.style =
       document.getElementById("grasp-canvas-style") ||
       document.head.appendChild(
@@ -68,9 +68,13 @@ const Canvas = {
     this.resizeObserver.observe(this.stage)
     // Every session mutation pushes the focus, a move_card included, so revealing on each
     // one would pan away from the card just dropped; only a change of focus is a reveal.
+    // A highlight arrives on the card that already has focus, so the card's highlight key
+    // is part of what counts as a change — without it the first highlight pans and every
+    // later one on the same card does not.
     this.handleEvent("focus", ({id}) => {
-      if (id === this.lastFocus) return
-      this.lastFocus = id
+      const key = document.getElementById(`card-${id}`)?.dataset.highlightKey || ""
+      if (`${id}:${key}` === this.lastReveal) return
+      this.lastReveal = `${id}:${key}`
       this.revealCard(id)
     })
     this.drawConnectors()
@@ -292,8 +296,11 @@ const Canvas = {
     if (this.drag) return
     const card = document.getElementById(`card-${id}`)
     if (!card) return
+    // A card carrying a highlight is revealed at what it points at, which on a long body
+    // is nowhere near the card's own top-left corner.
+    const target = card.querySelector('[data-highlight="true"]') || card
     const r = this.el.getBoundingClientRect()
-    const b = card.getBoundingClientRect()
+    const b = target.getBoundingClientRect()
     let dx = 0,
       dy = 0
     // Pulling a wide card's right edge into view must never push its left edge out, so the

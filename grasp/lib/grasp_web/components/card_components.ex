@@ -106,7 +106,8 @@ defmodule GraspWeb.CardComponents do
           Grasp.Highlight.render(record,
             card_id: card.id,
             open_targets: open_targets,
-            external?: external?
+            external?: external?,
+            highlight: card.highlight
           ),
         editor_href:
           editor_url(
@@ -123,6 +124,7 @@ defmodule GraspWeb.CardComponents do
       class={["card", @focused? && "card--focused"]}
       data-function-id={@record["id"]}
       data-focused={to_string(@focused?)}
+      data-highlight-key={highlight_key(@card.highlight)}
       data-depth={@depth}
       data-dx={@dx}
       data-dy={@dy}
@@ -205,6 +207,12 @@ defmodule GraspWeb.CardComponents do
     </article>
     """
   end
+
+  # The canvas reveals a card again when this key changes, so a highlight pushed onto the
+  # card that already has focus is still panned to.
+  defp highlight_key(%{"call" => target}), do: "call:#{target}"
+  defp highlight_key(%{"lines" => [first, last]}), do: "lines:#{first}-#{last}"
+  defp highlight_key(_highlight), do: nil
 
   # A callback entry is labelled with the function it is, which the card title already
   # says; the kind is the part the badge adds, spelled the way a reader would say it

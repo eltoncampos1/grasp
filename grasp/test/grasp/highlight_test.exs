@@ -200,4 +200,24 @@ defmodule Grasp.HighlightTest do
     assert LazyHTML.attribute(call, "data-target") == [target]
     assert LazyHTML.attribute(call, "phx-value-target") == [target]
   end
+
+  test "a highlighted call carries data-highlight and the others do not" do
+    html = render(highlight: %{"call" => "Enum.map/2"})
+    assert LazyHTML.query(html, ~s(.call[data-highlight="true"])) |> Enum.count() == 1
+
+    assert LazyHTML.query(html, ~s(.call[data-highlight="true"]))
+           |> LazyHTML.attribute("data-target") == ["Enum.map/2"]
+  end
+
+  test "highlighted lines carry data-highlight over the range only" do
+    html = render(highlight: %{"lines" => [11, 12]})
+
+    assert LazyHTML.query(html, ~s(.line[data-highlight="true"]))
+           |> LazyHTML.attribute("data-line") == ~w(11 12)
+  end
+
+  test "no highlight, no attribute" do
+    html = render()
+    assert LazyHTML.query(html, "[data-highlight]") |> Enum.count() == 0
+  end
 end

@@ -107,6 +107,8 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .call:hover { background: var(--accent-soft); }
 .call[data-open="true"] { background: var(--accent-soft); border-bottom-style: solid; }
 .call[data-external="true"] { border-bottom-color: var(--fg-muted); opacity: 0.8; }
+.call[data-highlight="true"] { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; background: var(--accent-soft); }
+.line[data-highlight="true"] { background: var(--accent-soft); }
 .card__also { display: flex; flex-wrap: wrap; gap: var(--space-xs); padding: var(--space-s) var(--space-m); border-top: 1px solid var(--border); font-size: 12px; }
 .card__also-label { color: var(--fg-muted); }
 .also { color: var(--accent); }
