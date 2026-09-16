@@ -29,7 +29,6 @@ const Canvas = {
   mounted() {
     this.stage = this.el.querySelector("#stage")
     this.svg = this.el.querySelector("#connectors")
-    this.edges = this.svg?.querySelector("#edges")
     this.zoomLevel = this.el.querySelector("#zoom-level")
     this.view = {x: MARGIN, y: MARGIN, scale: 1}
     this.lastReveal = null
@@ -441,9 +440,21 @@ const Canvas = {
   // palette slot the call site is already painted with, so the line and the text it leaves
   // agree without the hook knowing what the colours are.
   drawConnectors() {
-    if (!this.svg || !this.edges) return
+    // The group lives in a phx-update="ignore" subtree and so normally outlives every patch;
+    // were one ever to replace it, a cached node would go on collecting paths nothing renders.
+    if (!this.edges?.isConnected) this.edges = this.svg?.querySelector("#edges")
+    if (!this.edges) return
     const s = this.stage.getBoundingClientRect()
     const {scale} = this.view
+    // A card holds many call sites and a callee is often called twice, so measuring per edge
+    // would read the same box over and over on every pointermove of a drag.
+    const boxes = new Map()
+    const boxOf = (el) => {
+      let box = boxes.get(el)
+      if (!box) boxes.set(el, (box = el.getBoundingClientRect()))
+      return box
+    }
+    const within = (v, lo, hi) => Math.min(Math.max(v, lo), hi)
     const paths = []
     for (const site of this.el.querySelectorAll("[data-edge-to]")) {
       const card = site.closest(".card")
@@ -452,33 +463,37 @@ const Canvas = {
       // A collapse takes the callee off the canvas without touching the call site's own
       // markup, so an edge is as likely to be hanging as attached.
       if (!callee) continue
-      const b = callee.getBoundingClientRect()
+      const b = boxOf(callee)
       if (!b.width && !b.height) continue
 
-      // A call site the browser gives no box — laid out away, or inside a subtree that is
-      // not displayed — cannot say where on the card its edge starts, so the edge leaves the
-      // card at the same port it arrives at rather than being dropped.
+      // A call site is measured through the card that clips it: the body scrolls sideways and
+      // is capped in width, so a call on a long line can be laid out well outside the card.
+      // Left unclamped, its edge would start in the gutter, or far enough out to decide the
+      // callee lies to the left and take the long way round to its far side.
+      const c = boxOf(card)
+      // A call site the browser gives no box — laid out away, or inside a subtree that is not
+      // displayed — cannot say where on the card its edge starts, so the edge leaves the card
+      // at the same port it arrives at rather than being dropped.
       const anchor = site.getBoundingClientRect()
       const anchored = anchor.width > 0 || anchor.height > 0
-      const a = anchored ? anchor : card.getBoundingClientRect()
 
-      const left = (a.left - s.left) / scale
-      const right = (a.right - s.left) / scale
+      const left = ((anchored ? within(anchor.left, c.left, c.right) : c.right) - s.left) / scale
+      const right = ((anchored ? within(anchor.right, c.left, c.right) : c.right) - s.left) / scale
       const calleeLeft = (b.left - s.left) / scale
       const calleeRight = (b.right - s.left) / scale
       // An edge leaves towards the callee and arrives on the side it comes from, so a card
       // opened to the left of its caller is joined round the outside rather than through it.
       const rightward = calleeLeft > right
-      const x1 = anchored && !rightward ? left : right
+      const x1 = rightward ? right : left
       const y1 = anchored
-        ? (a.top - s.top) / scale + a.height / scale / 2
-        : (a.top - s.top) / scale + PORT_Y
+        ? (within(anchor.top + anchor.height / 2, c.top, c.bottom) - s.top) / scale
+        : (c.top - s.top) / scale + PORT_Y
       const x2 = rightward ? calleeLeft : calleeRight
       const y2 = (b.top - s.top) / scale + PORT_Y
       const mid = (x1 + x2) / 2
       const color = /^[0-7]$/.test(site.dataset.color || "") ? site.dataset.color : null
-      // The stroke is in stage units, so at the smallest zoom it would thin to under half a
-      // pixel and disappear; the presentation attribute backs up the stylesheet's rule.
+      // The path is drawn in stage units, which the zoom scales; `vector-effect` is what keeps
+      // its stroke 2 screen pixels instead of thinning to under half a one at MIN_SCALE.
       paths.push(
         `<path class="edge" vector-effect="non-scaling-stroke"` +
           (color === null ? "" : ` data-color="${color}" marker-end="url(#arrow-${color})"`) +
