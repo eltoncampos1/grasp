@@ -263,6 +263,10 @@ broadcasts the reload.
   and `color` indexes an eight-entry palette handed out in creation order, so a call site
   and the edge leaving it are painted alike. At most one edge joins a given pair, so mutual
   recursion reads as two.
+- `groups`: map of group id to `%{id, title}`, a card carrying the id of the one group it
+  belongs to (`nil` for none). A group is a name over cards and the section drawn round
+  them: it changes no edge, hides nothing, and a card is in one at a time. A group whose
+  last card leaves, or is closed, is deleted; group ids are never reused.
 - `focus`: the focused card id.
 - `annotations`: keyed by function id, each `%{id, author, body, line}` with author
   `"agent"` or `"human"` and a markdown body.
@@ -306,6 +310,16 @@ card is placed. Within a column, rows follow the callers — column 0 reads in i
 every later column is ordered by the mean row of its callers in the column immediately
 left, so edges cross as little as possible. A card whose callers all sit further left has
 no mean and sorts last, by id.
+
+Cards are laid out one section at a time, a section being a group's cards or, last, the
+cards in no group: `Forest.sections/1` runs the column algorithm over one section's cards
+at a time, seeing only the edges between them, so a member reached only from another
+section heads a column of its own and column indices count from the section's own left
+edge. Sections read in group-id order and stack down the stage, each a titled frame as
+wide as its own columns, with an `ungroup` button in its header that dissolves the group
+and leaves the cards. A group keeps its section while a collapse hides every member, so
+the frame does not blink out of the page; the untitled section appears only when a visible
+card is in no group.
 
 A card is as wide as its widest line up to a ceiling (`--card-max-width`, 60rem), rather
 than a fixed width, so a column of one-line helpers does not reserve the width of the
@@ -536,14 +550,23 @@ first reference. Results are JSON text content, so any MCP client can read them.
   the result says when it was hit.
 - Session tools: `get_session(name)`, `set_cards(name, cards)`, `open_card(name,
   function_id, parent_card_id?, highlight?)`, `close_card(name, card_id)`,
-  `focus_card(name, card_id)`, `highlight_card(name, card_id, highlight)`. Every session
+  `focus_card(name, card_id)`, `highlight_card(name, card_id, highlight)`,
+  `group_cards(name, title, card_ids)`, `ungroup_cards(name, card_ids)`. Every session
   tool returns the resulting graph as JSON — `focus`, `cards` (each with its id,
-  `function_id`, `collapsed`, `highlight` and the ids in `callers` and `callees`), `edges`
-  (`from`, `to`, the call `target` and the palette `color`) and `columns`, the ids in
-  layout order — so the agent can address cards it just created and see how they were laid
-  out.
+  `function_id`, `collapsed`, `highlight`, the `group` it is in and the ids in `callers`
+  and `callees`), `edges` (`from`, `to`, the call `target` and the palette `color`),
+  `groups` (`id`, `title` and the cards in each), `sections` (a group id or null, and its
+  columns) and `columns`, the ids in layout order — so the agent can address cards it just
+  created and see how they were laid out.
+- `group_cards` frames cards already open under a title, creating the group when nothing
+  carries that title yet, and `ungroup_cards` takes cards back out. A card belongs to one
+  group, so naming it in a second takes it out of the first, and a group left with no cards
+  is deleted. An unknown card id is a tool error naming it, and an empty title is refused,
+  so a group is never created with no name to draw.
 - `set_cards` replaces the graph. `cards` is a flat list of `{key, function_id,
-  parent_key?, highlight?}`; `key` is any string the caller picks, `parent_key` names
+  parent_key?, group?, highlight?}`; `group` is a title rather than an id, so entries
+  sharing one land in the same group and the groups are created in the order their titles
+  first appear — one `set_cards` call lays out several flows, each in its own frame; `key` is any string the caller picks, `parent_key` names
   another entry, and entries are applied in order so a caller precedes what it calls. Two
   entries naming the same function describe one card with an edge from each caller, so a
   helper listed under each of its callers is drawn once. Unknown function ids or dangling

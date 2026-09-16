@@ -94,8 +94,14 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 0; }
 .connectors .edge { fill: none; stroke: var(--edge-color, var(--border)); stroke-width: 2; }
 .connectors .arrow { fill: var(--edge-color, var(--border)); }
+/* One section per group, stacked down the stage, with the ungrouped cards last. A section
+   is only as wide as its own columns, so the frames do not stretch to the widest one. */
+.flows { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-xl); padding: var(--space-m); position: relative; z-index: 1; }
+.flow[data-grouped] { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-s) var(--space-m) var(--space-m); background: color-mix(in srgb, var(--bg-raised) 60%, transparent); }
+.flow__title { display: flex; align-items: baseline; gap: var(--space-s); margin: 0 0 var(--space-s); font-family: var(--sans); font-size: 13px; color: var(--fg-muted); }
+.flow__title h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--fg); }
 /* Callers to the left of what they call: one flex row of columns, each a stack of cards. */
-.columns { display: flex; align-items: flex-start; gap: var(--space-xl); padding: var(--space-m); position: relative; z-index: 1; }
+.columns { display: flex; align-items: flex-start; gap: var(--space-xl); }
 .column { display: flex; flex-direction: column; gap: var(--space-m); align-items: flex-start; }
 .node { translate: var(--dx, 0px) var(--dy, 0px); }
 

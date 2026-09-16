@@ -54,6 +54,19 @@ defmodule Grasp.MCP.CardsTest do
              Cards.prepare(index, [%{key: "root", function_id: @show}])
   end
 
+  test "a group title rides along with the card, and is nil when the entry names none", %{
+    index: index
+  } do
+    assert {:ok, [show, wrap]} =
+             Cards.prepare(index, [
+               %{key: "a", function_id: @show, group: "Request"},
+               %{key: "b", function_id: @wrap}
+             ])
+
+    assert show.group == "Request"
+    assert wrap.group == nil
+  end
+
   test "unknown functions and parents are one readable error", %{index: index} do
     cards = [
       %{key: "a", function_id: "Nope.f/0", parent_key: nil, highlight: nil},

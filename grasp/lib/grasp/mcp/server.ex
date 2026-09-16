@@ -29,4 +29,6 @@ defmodule Grasp.MCP.Server do
   component(Tools.FocusCard)
   component(Tools.HighlightCard)
   component(Tools.SetView)
+  component(Tools.GroupCards)
+  component(Tools.UngroupCards)
 end

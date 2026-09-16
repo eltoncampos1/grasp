@@ -8,8 +8,9 @@ defmodule Grasp.MCP.Tools.SetCards do
   card hangs under an earlier one by naming it in `parent_key`; a card with no `parent_key`
   starts at the left edge. A function named twice is one card with an edge from each caller,
   so a helper three functions call is read once rather than drawn three times. Each card may
-  point at one thing inside it — a call it makes, or a range of its lines. Nothing changes
-  unless every card is good.
+  point at one thing inside it — a call it makes, or a range of its lines. Cards sharing a
+  `group` title are framed together under it, which is how several flows are told apart on
+  one canvas. Nothing changes unless every card is good.
   """
 
   use Anubis.Server.Component, type: :tool
@@ -40,6 +41,11 @@ defmodule Grasp.MCP.Tools.SetCards do
       field(:parent_key, :string,
         description:
           "`key` of the card that calls this one; omit to start the card at the left edge"
+      )
+
+      field(:group, :string,
+        description:
+          "Title of the group this card belongs to; cards sharing a title are drawn together under it"
       )
 
       embeds_one :highlight, description: "What to point at inside the card; omit for nothing" do

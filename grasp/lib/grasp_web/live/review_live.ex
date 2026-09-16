@@ -166,6 +166,9 @@ defmodule GraspWeb.ReviewLive do
   def handle_event("reset_layout", _params, socket),
     do: mutate(socket, &Session.reset_offsets/1)
 
+  def handle_event("dissolve_group", %{"group" => group}, socket),
+    do: mutate(socket, &Session.dissolve_group(&1, int(group)))
+
   def handle_event("toggle_sidebar", _params, socket),
     do: {:noreply, update(socket, :sidebar_open?, &(not &1))}
 
@@ -367,6 +370,15 @@ defmodule GraspWeb.ReviewLive do
 
   defp base_label(_index), do: nil
 
+  # A section's cards are spread over its columns, and the count in its header speaks of the
+  # cards the reader can see rather than of the columns they happen to fall into.
+  defp card_count(%{columns: columns}) do
+    case Enum.sum_by(columns, &length/1) do
+      1 -> "1 card"
+      count -> "#{count} cards"
+    end
+  end
+
   # A card id that is not a number is nobody's card, and every session operation is a no-op
   # on an unknown id, so nil carries the garbage through to the same outcome.
   defp int(value) when is_binary(value) do
@@ -480,19 +492,40 @@ defmodule GraspWeb.ReviewLive do
             </defs>
             <g id="edges"></g>
           </svg>
-          <div class="columns">
-            <div :for={{ids, column} <- Enum.with_index(Forest.layout(@forest))} class="column">
-              <.card_node
-                :for={id <- ids}
-                forest={@forest}
-                index={@index}
-                card_id={id}
-                column={column}
-                open_calls={Map.get(@open_calls, id, %{})}
-                editor={@editor}
-                callers_open={@callers_open}
-              />
-            </div>
+          <div class="flows">
+            <section
+              :for={section <- Forest.sections(@forest)}
+              class="flow"
+              id={"flow-#{(section.group && section.group.id) || "none"}"}
+              data-grouped={section.group != nil}
+            >
+              <header :if={section.group} class="flow__title">
+                <h3>{section.group.title}</h3>
+                <span class="flow__count">{card_count(section)}</span>
+                <button
+                  type="button"
+                  phx-click="dissolve_group"
+                  phx-value-group={section.group.id}
+                  title="Ungroup"
+                >
+                  ungroup
+                </button>
+              </header>
+              <div class="columns">
+                <div :for={{ids, column} <- Enum.with_index(section.columns)} class="column">
+                  <.card_node
+                    :for={id <- ids}
+                    forest={@forest}
+                    index={@index}
+                    card_id={id}
+                    column={column}
+                    open_calls={Map.get(@open_calls, id, %{})}
+                    editor={@editor}
+                    callers_open={@callers_open}
+                  />
+                </div>
+              </div>
+            </section>
           </div>
         </div>
       </section>

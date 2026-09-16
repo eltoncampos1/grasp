@@ -75,6 +75,12 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
 - Arrow keys walk the graph, `x` closes the focused card, `Shift+x` closes it together
   with everything that had no other way to be reached, `c` collapses it, ⌘K opens the
   palette.
+- **A group of cards is drawn as a titled frame** of its own, laid out from its own left
+  edge, so two flows on one canvas are read apart rather than run together. The frame's
+  header carries the title, how many cards are in it, and `ungroup`, which takes the frame
+  away and leaves the cards where they were. Cards in no group make a last, untitled
+  section under the framed ones. Groups are made over MCP — an agent asked for several
+  flows gives each one its own.
 
 ## PR mode
 
@@ -149,9 +155,11 @@ Arranging the cards:
   focus. The ids it returns are what the other card tools address. Every session tool
   answers in this shape.
 - `set_cards(name, cards)` — replace the whole canvas with a graph described in one call.
-  Each card is `{key, function_id, parent_key?, highlight?}`; a card hangs under an earlier
-  one by naming its `key`, and two entries naming the same function are one card with an
-  edge from each. Nothing changes unless every card is good.
+  Each card is `{key, function_id, parent_key?, group?, highlight?}`; a card hangs under an
+  earlier one by naming its `key`, and two entries naming the same function are one card
+  with an edge from each. `group` is a title: cards sharing one are framed together under
+  it, which is how several flows land on one canvas without running together. Nothing
+  changes unless every card is good.
 - `open_card(name, function_id, parent_card_id?, highlight?)` — add one card, called by
   another or standing on its own. A function already on screen gains an edge instead of a
   second card.
@@ -159,6 +167,11 @@ Arranging the cards:
 - `focus_card(name, card_id)` — scroll a card into view, to say "look here".
 - `highlight_card(name, card_id, highlight)` — point at one call inside a card, or shade a
   range of its lines.
+- `group_cards(name, title, card_ids)` — frame cards already open under a title, creating
+  the group when nothing carries that title yet. A card belongs to one group, so naming it
+  here takes it out of the one it was in, and a group left with no cards is gone.
+- `ungroup_cards(name, card_ids)` — take cards out of their groups, back to the untitled
+  section.
 - `set_view(name, card_id, view)` — show a card as its `source` or as its `diff` against
   the base, to point at what the branch did to a function rather than at the function.
   Only a modified function has a diff; asking for one of anything else is an error.

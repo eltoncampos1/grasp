@@ -644,6 +644,51 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#group-changes[hidden]")
   end
 
+  test "a group is drawn as its own titled section, numbered from its own left edge", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.open_child(name, 1, @wrap)
+    Session.open_root(name, @perform)
+    Session.group_cards(name, "Greeting", [1, 2])
+
+    assert has_element?(view, "#flow-1[data-grouped] .flow__title h3", "Greeting")
+    assert has_element?(view, "#flow-1 .flow__count", "2 cards")
+
+    assert has_element?(
+             view,
+             "#flow-1 .flow__title button[phx-click='dissolve_group']",
+             "ungroup"
+           )
+
+    assert has_element?(view, "#flow-1 .columns .column:first-child #card-1[data-depth='0']")
+    assert has_element?(view, "#flow-1 .columns .column:nth-child(2) #card-2[data-depth='1']")
+
+    assert has_element?(view, "#flow-none .columns .column:first-child #card-3[data-depth='0']")
+    refute has_element?(view, "#flow-none .flow__title")
+    refute has_element?(view, "#flow-none[data-grouped]")
+  end
+
+  test "a section of one card counts it in the singular", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    Session.group_cards(name, "Greeting", [1])
+
+    assert has_element?(view, "#flow-1 .flow__count", "1 card")
+  end
+
+  test "ungrouping a section returns its cards to the untitled one", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    Session.open_child(name, 1, @wrap)
+    Session.group_cards(name, "Greeting", [1, 2])
+
+    view |> element("#flow-1 .flow__title button[phx-click='dissolve_group']") |> render_click()
+
+    refute has_element?(view, "#flow-1")
+    assert has_element?(view, "#flow-none .columns .column:first-child #card-1[data-depth='0']")
+    assert has_element?(view, "#flow-none .columns .column:nth-child(2) #card-2[data-depth='1']")
+  end
+
   test "the project line names the base the review is against", %{view: view} do
     assert has_element?(view, ".sidebar__project", "sample_app")
     assert has_element?(view, ".sidebar__base", "main…feature")

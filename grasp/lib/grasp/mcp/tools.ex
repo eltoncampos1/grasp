@@ -32,6 +32,27 @@ defmodule Grasp.MCP.Tools do
   end
 
   @doc """
+  Every card in `card_ids`, or the message naming the first id the session holds no card for.
+
+  A tool taking a list of ids answers for all of them before it changes anything, so a call
+  naming one card that has since closed leaves the graph as it was rather than half moved.
+  """
+  @spec fetch_cards(Session.name(), [Forest.id()]) ::
+          {:ok, [Forest.card()]} | {:error, String.t()}
+  def fetch_cards(session, card_ids) when is_list(card_ids) do
+    Enum.reduce_while(card_ids, {:ok, []}, fn id, {:ok, cards} ->
+      case fetch_card(session, id) do
+        {:ok, card} -> {:cont, {:ok, [card | cards]}}
+        {:error, _message} = error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, cards} -> {:ok, Enum.reverse(cards)}
+      {:error, _message} = error -> error
+    end
+  end
+
+  @doc """
   The record for the function id `id`, or the message a tool answers an unknown id with.
 
   Any arity a definition with default arguments answers to resolves to that definition, so

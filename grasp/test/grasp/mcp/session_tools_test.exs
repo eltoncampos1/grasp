@@ -73,6 +73,41 @@ defmodule Grasp.MCP.SessionToolsTest do
       refute Enum.any?(body["cards"], &Map.has_key?(&1, "parent_id"))
     end
 
+    test "cards carrying titles are drawn as one section each", %{session: session} do
+      response =
+        run(Tools.SetCards, %{
+          session: session,
+          cards: [
+            %{key: "a", function_id: @show, group: "Request"},
+            %{
+              key: "b",
+              function_id: "SampleApp.Greeter.greet/1",
+              parent_key: "a",
+              group: "Request"
+            },
+            %{key: "c", function_id: @mailer, group: "Background"},
+            %{key: "d", function_id: @shout}
+          ]
+        })
+
+      refute response.isError
+      body = json!(response)
+
+      assert body["groups"] == [
+               %{"id" => 1, "title" => "Request", "cards" => [1, 2]},
+               %{"id" => 2, "title" => "Background", "cards" => [3]}
+             ]
+
+      assert body["sections"] == [
+               %{"group" => 1, "columns" => [[1], [2]]},
+               %{"group" => 2, "columns" => [[3]]},
+               %{"group" => nil, "columns" => [[4]]}
+             ]
+
+      assert card(body, 2)["group"] == 1
+      assert card(body, 4)["group"] == nil
+    end
+
     test "the same function under two callers is one card with two edges", %{session: session} do
       response =
         run(Tools.SetCards, %{
@@ -314,6 +349,54 @@ defmodule Grasp.MCP.SessionToolsTest do
     end
   end
 
+  describe "group_cards and ungroup_cards" do
+    test "a title frames the cards named, and ungrouping returns them", %{session: session} do
+      run(Tools.OpenCard, %{session: session, function_id: @show})
+      run(Tools.OpenCard, %{session: session, function_id: @greet, parent_card_id: 1})
+      run(Tools.OpenCard, %{session: session, function_id: @mailer})
+
+      body = json!(run(Tools.GroupCards, %{session: session, title: "Request", card_ids: [1, 2]}))
+
+      assert body["groups"] == [%{"id" => 1, "title" => "Request", "cards" => [1, 2]}]
+
+      assert body["sections"] == [
+               %{"group" => 1, "columns" => [[1], [2]]},
+               %{"group" => nil, "columns" => [[3]]}
+             ]
+
+      body = json!(run(Tools.UngroupCards, %{session: session, card_ids: [1, 2]}))
+
+      assert body["groups"] == []
+      assert body["sections"] == [%{"group" => nil, "columns" => [[1, 3], [2]]}]
+      assert card(body, 1)["group"] == nil
+    end
+
+    test "an unknown card is an error and nothing moves", %{session: session} do
+      run(Tools.OpenCard, %{session: session, function_id: @show})
+      before = Session.get(session)
+
+      response = run(Tools.GroupCards, %{session: session, title: "Request", card_ids: [1, 7]})
+
+      assert response.isError
+      assert [%{"text" => "unknown card: 7"}] = response.content
+      assert Session.get(session) == before
+
+      response = run(Tools.UngroupCards, %{session: session, card_ids: [7]})
+
+      assert response.isError
+      assert [%{"text" => "unknown card: 7"}] = response.content
+    end
+
+    test "a blank title is an error", %{session: session} do
+      run(Tools.OpenCard, %{session: session, function_id: @show})
+
+      response = run(Tools.GroupCards, %{session: session, title: "   ", card_ids: [1]})
+
+      assert response.isError
+      assert [%{"text" => "title is required"}] = response.content
+    end
+  end
+
   describe "input schemas" do
     test "name the session, the cards and the required ids" do
       # Anubis leaves a field's default out of the JSON schema, so the description carries it
@@ -323,6 +406,8 @@ defmodule Grasp.MCP.SessionToolsTest do
       assert "card_id" in Tools.CloseCard.input_schema()["required"]
       assert "card_id" in Tools.SetView.input_schema()["required"]
       assert "view" in Tools.SetView.input_schema()["required"]
+      assert Tools.GroupCards.input_schema()["required"] == ["title", "card_ids"]
+      assert Tools.UngroupCards.input_schema()["required"] == ["card_ids"]
       refute Tools.GetSession.input_schema()["required"]
     end
   end

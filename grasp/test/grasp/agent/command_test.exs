@@ -60,6 +60,13 @@ defmodule Grasp.Agent.CommandTest do
     assert prompt =~ "set_cards"
   end
 
+  test "system_prompt/1 asks for a group per flow when several flows are wanted" do
+    prompt = Command.system_prompt("s1")
+
+    assert prompt =~ "When the user asks for several flows at once, give each flow its own group"
+    assert prompt =~ "`group` field"
+  end
+
   test "system_prompt/1 sends a question about a change through list_changes" do
     prompt = Command.system_prompt("s1")
 

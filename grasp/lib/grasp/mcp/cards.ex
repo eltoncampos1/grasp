@@ -27,6 +27,7 @@ defmodule Grasp.MCP.Cards do
           required(:key) => String.t(),
           required(:function_id) => String.t(),
           optional(:parent_key) => String.t() | nil,
+          optional(:group) => String.t() | nil,
           optional(:highlight) => highlight_input()
         }
   @typedoc "A highlight as the tool schema hands it over; an empty one marks nothing."
@@ -39,6 +40,9 @@ defmodule Grasp.MCP.Cards do
   Every `function_id` must be in the index and every `parent_key` must name an earlier
   card. Unknown functions are collected into one message so an agent fixes them in a
   single round trip rather than one per call.
+
+  A `group` is a title rather than an id, passed through untouched: cards carrying the same
+  title land in one group, which the canvas draws as a section of its own.
   """
   @spec prepare(Index.t(), [input()]) :: {:ok, [Forest.spec()]} | {:error, String.t()}
   def prepare(%Index{} = index, cards) when is_list(cards) do
@@ -102,6 +106,7 @@ defmodule Grasp.MCP.Cards do
          key: card.key,
          function_id: record["id"],
          parent_key: parent_key,
+         group: get(card, :group),
          opened_by: parent_id && opened_by(index, parent_id, record["id"]),
          highlight: highlight
        }}
