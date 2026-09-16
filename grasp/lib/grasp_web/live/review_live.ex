@@ -63,7 +63,8 @@ defmodule GraspWeb.ReviewLive do
 
   @impl true
   def handle_info({:session, name, %Forest{} = forest}, %{assigns: %{name: name}} = socket) do
-    {:noreply, socket |> assign(forest: forest) |> push_event("focus", %{id: forest.focus})}
+    socket = socket |> assign(forest: forest) |> prune_selection(forest)
+    {:noreply, push_event(socket, "focus", %{id: forest.focus})}
   end
 
   def handle_info({:agent, name, view}, %{assigns: %{name: name}} = socket),
@@ -108,7 +109,7 @@ defmodule GraspWeb.ReviewLive do
   end
 
   def handle_event("open_root", %{"id" => id}, socket) when is_binary(id),
-    do: mutate(socket, &Session.open_root(&1, canonical(socket, id)))
+    do: socket |> clear_selection() |> mutate(&Session.open_root(&1, canonical(socket, id)))
 
   def handle_event("open_call", %{"card" => card, "target" => target}, socket)
       when is_binary(target),
@@ -156,7 +157,7 @@ defmodule GraspWeb.ReviewLive do
   end
 
   def handle_event("clear_selection", _params, socket),
-    do: {:noreply, assign(socket, selected: MapSet.new())}
+    do: {:noreply, clear_selection(socket)}
 
   # The new frame has no title: naming it is a second decision, taken on the frame itself
   # once the reader can see what it holds. The selection has been spent, so it is dropped,
@@ -191,7 +192,7 @@ defmodule GraspWeb.ReviewLive do
   def handle_event("rename_group", %{"group" => group, "title" => title}, socket)
       when is_binary(title) do
     socket = assign(socket, renaming_group: nil)
-    mutate(socket, &Session.rename_group(&1, int(group), String.trim(title)))
+    mutate(socket, &Session.rename_group(&1, int(group), title))
   end
 
   def handle_event("cancel_rename", _params, socket),
@@ -207,8 +208,12 @@ defmodule GraspWeb.ReviewLive do
     mutate(forget_callers_menu(socket, id), &Session.close_chain(&1, id))
   end
 
+  # A plain click says which card is meant, and the selection is the other answer to that
+  # question, so picking a card up by clicking it lets the rest go. Shift+click never reaches
+  # here — the canvas hook takes it for `toggle_select` — so the additive gesture is still
+  # the only way to hold several cards at once.
   def handle_event("focus_card", %{"card" => card}, socket),
-    do: mutate(socket, &Session.focus(&1, int(card)))
+    do: socket |> clear_selection() |> mutate(&Session.focus(&1, int(card)))
 
   def handle_event("toggle_collapse", %{"card" => card}, socket),
     do: mutate(socket, &Session.toggle_collapse(&1, int(card)))
@@ -359,6 +364,17 @@ defmodule GraspWeb.ReviewLive do
   # closed together so that opening one is what closes the other.
   defp close_overlays(socket), do: assign(socket, callers_open: nil, renaming_group: nil)
 
+  defp clear_selection(socket), do: assign(socket, selected: MapSet.new())
+
+  # A card off the canvas is out of the selection however it left it: this tab's own close,
+  # another tab's, or an agent's over MCP. Ids are never reused, so nothing is ever put back
+  # in by accident.
+  defp prune_selection(socket, %Forest{} = forest) do
+    assign(socket,
+      selected: MapSet.filter(socket.assigns.selected, &Map.has_key?(forest.cards, &1))
+    )
+  end
+
   # The callers menu is addressed by the id of the card it hangs off, so one left open on a
   # card that is closing would have nothing to render against.
   defp forget_callers_menu(socket, id) do
@@ -409,6 +425,7 @@ defmodule GraspWeb.ReviewLive do
   defp child?(params), do: params["child"] in [true, "true"]
 
   defp open_from_palette(socket, id, child?) do
+    socket = clear_selection(socket)
     name = socket.assigns.name
     id = canonical(socket, id)
 
@@ -468,12 +485,9 @@ defmodule GraspWeb.ReviewLive do
   # The session broadcasts the new forest to every subscriber including this process, so
   # the returned forest is assigned here only to make the change visible before the
   # broadcast arrives (which matters in tests, where the view may not be connected).
-  # A card that closed is off the canvas and so out of the selection: left in, it would be
-  # the whole of what ⌘G frames while the reader sees nothing selected at all.
   defp mutate(socket, fun) do
     forest = fun.(socket.assigns.name)
-    selected = MapSet.filter(socket.assigns.selected, &Map.has_key?(forest.cards, &1))
-    {:noreply, assign(socket, forest: forest, selected: selected)}
+    {:noreply, socket |> assign(forest: forest) |> prune_selection(forest)}
   end
 
   # What a PR-mode review is against, as the two ends of the comparison. A detached head has

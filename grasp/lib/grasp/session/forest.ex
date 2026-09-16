@@ -319,11 +319,12 @@ defmodule Grasp.Session.Forest do
   ignored, and a group whose last member has left is deleted. A call naming no card the
   graph knows therefore leaves no group behind, though its id is spent: group ids are never
   reused. Addressing a group by title reaches only a titled one — an untitled group is
-  reached by its id, through `new_group/3`'s reply or `add_to_group/3`.
+  reached by its id, through `new_group/3`'s reply or `add_to_group/3` — so a blank title
+  here frames the cards under a group of their own, as `new_group/3` does.
   """
   @spec group_cards(t(), String.t(), [id()]) :: {t(), group_id()}
   def group_cards(%__MODULE__{} = forest, title, ids) when is_binary(title) and is_list(ids) do
-    {forest, group_id} = find_or_add_group(forest, title)
+    {forest, group_id} = find_or_add_group(forest, trimmed_title(title))
     {forest |> regroup(ids, group_id) |> prune_groups(), group_id}
   end
 
@@ -635,6 +636,10 @@ defmodule Grasp.Session.Forest do
     |> Enum.reverse()
   end
 
+  # There is no untitled group to find: a title is what `group_cards/3` addresses a group by,
+  # so a blank one asks for a frame rather than for a particular frame.
+  defp find_or_add_group(forest, nil), do: add_group(forest, nil)
+
   defp find_or_add_group(forest, title) do
     case Enum.find(forest.groups, fn {_id, group} -> group.title == title end) do
       {id, _group} -> {forest, id}
@@ -683,13 +688,18 @@ defmodule Grasp.Session.Forest do
     }
   end
 
-  # An entry naming no group says nothing about the card's group, the way an entry with no
-  # highlight leaves standing the one an earlier entry asked for.
-  defp join_group(forest, _id, nil), do: forest
-
+  # An entry naming no group, or naming one with nothing but spaces in it, says nothing about
+  # the card's group, the way an entry with no highlight leaves standing the one an earlier
+  # entry asked for.
   defp join_group(forest, id, title) do
-    {forest, _group_id} = group_cards(forest, title, [id])
-    forest
+    case trimmed_title(title) do
+      nil ->
+        forest
+
+      trimmed ->
+        {forest, _group_id} = group_cards(forest, trimmed, [id])
+        forest
+    end
   end
 
   defp open(forest, _keys, %{parent_key: nil} = spec) do

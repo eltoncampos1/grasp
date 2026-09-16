@@ -336,8 +336,16 @@ in the capture phase, before the card's own focus handler, and pushes `toggle_se
 button, a link, a call site or an "Also calls" entry inside the card keeps what it already
 does. The selection is a `MapSet` on the LiveView (`selected`) and nowhere else: it is a
 gesture half-finished rather than a fact about the session, so it is neither stored nor
-broadcast, and two tabs on one session pick cards out independently. A card that closes
-leaves the selection with it, and an index reload empties it.
+broadcast, and two tabs on one session pick cards out independently. The selection is pruned
+against every forest that arrives, this tab's own changes and the broadcasts alike, so a card
+closed by another tab or by an agent over MCP leaves the selection with it and what is
+outlined is always what ⌘G will act on; an index reload empties it outright.
+
+A plain click is the other answer to "which card do I mean", so `focus_card` lets the
+selection go, as do the sidebar and the palette, which focus the card they open. Shift+click
+never reaches those handlers — the hook takes it first — so it stays the one additive
+gesture, and the fallback to the focused card is then the same rule seen from the other end:
+the focus is a selection of one.
 
 ⌘G frames the selection through `Session.new_group/3` under no title, then clears the
 selection and focuses the frame's first card; ⇧⌘G calls `Session.ungroup_cards/2` over it and

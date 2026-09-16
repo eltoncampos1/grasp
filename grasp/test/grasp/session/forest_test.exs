@@ -463,6 +463,31 @@ defmodule Grasp.Session.ForestTest do
       assert forest.groups |> Map.keys() |> Enum.sort() == Enum.sort([flow, edges])
     end
 
+    test "a blank title is no title, whether cards are grouped or replaced" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, b} = Forest.open_child(forest, a, "B.g/0")
+
+      {forest, untitled} = Forest.group_cards(forest, "   ", [a])
+
+      assert Forest.group_of(forest, a) == %{id: untitled, title: nil}
+
+      # A second blank call asks for a frame rather than for that frame: there is no title
+      # to address the first one by.
+      {forest, second} = Forest.group_cards(forest, "", [b])
+
+      assert second != untitled
+      assert Forest.group_of(forest, b) == %{id: second, title: nil}
+      {forest, flow} = Forest.group_cards(forest, "  Flow  ", [a])
+
+      assert Forest.group_of(forest, a) == %{id: flow, title: "Flow"}
+      assert Map.keys(forest.groups) |> Enum.sort() == Enum.sort([second, flow])
+
+      # An entry whose group is nothing but spaces says nothing about the card's group.
+      assert {:ok, replaced} = Forest.replace([spec("a", "A.f/1", nil, "  ")])
+      assert replaced.groups == %{}
+      assert Forest.group_of(replaced, 1) == nil
+    end
+
     test "group_cards/3 ignores unknown ids and deletes a group left empty" do
       {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
       {forest, flow} = Forest.group_cards(forest, "Flow", [a, 999])

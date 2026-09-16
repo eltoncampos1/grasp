@@ -798,6 +798,49 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#flow-1 .flow__count", "1 card")
   end
 
+  test "a card closed from outside the tab leaves the selection with it", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.open_root(name, @perform)
+    Session.open_root(name, @show)
+
+    render_hook(view, "toggle_select", %{"card" => "1"})
+    render_hook(view, "toggle_select", %{"card" => "2"})
+
+    # An agent over MCP, or another tab on the same session: the forest arrives by broadcast
+    # rather than from anything this view was asked to do.
+    Session.close(name, 1)
+
+    refute has_element?(view, "#card-1")
+    assert has_element?(view, "#card-2.card--selected")
+    assert count(view, ".card--selected") == 1
+
+    render_hook(view, "group_selected", %{})
+
+    assert has_element?(view, "#flow-1 #card-2")
+    assert has_element?(view, "#flow-1 .flow__count", "1 card")
+  end
+
+  test "a plain click on a card lets the selection go", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    Session.open_root(name, @perform)
+    Session.open_root(name, @show)
+
+    render_hook(view, "toggle_select", %{"card" => "1"})
+    render_hook(view, "toggle_select", %{"card" => "2"})
+
+    view |> element("#card-3 .card__header") |> render_click()
+
+    refute has_element?(view, ".card--selected")
+
+    render_hook(view, "group_selected", %{})
+
+    assert has_element?(view, "#flow-1 #card-3")
+    assert has_element?(view, "#flow-1 .flow__count", "1 card")
+  end
+
   test "an untitled frame is named by clicking its placeholder", %{view: view, name: name} do
     Session.open_root(name, @greet)
     Session.new_group(name, nil, [1])

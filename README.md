@@ -84,12 +84,14 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
   carries its title, how many cards are in it, and `ungroup`, which takes the frame away and
   leaves the cards where they were. A title is a label rather than a requirement: a frame
   may stand with none. Cards in no group make a last, unframed section under the framed
-  ones. An agent asked for several flows gives each one its own
-  group over MCP, and you make and edit them by hand with the gestures below.
-- Shift+click a card to pick it out; Shift+click it again to put it back. Selected cards
-  wear a dashed outline, Escape lets them all go, and closing one takes it out of the
-  selection. The selection is this tab's own — another tab reading the same session sees
-  the frames you make, not the cards you are picking.
+  ones. An agent asked for several flows gives each one its own group over MCP, and you make
+  and edit them by hand with the gestures below.
+- Shift+click a card to pick it out; Shift+click it again to put it back. Selected cards wear
+  a dashed outline. A plain click says which card you mean instead, so it lets the selection
+  go — as do opening a card from the sidebar or the palette, and Escape. A card that closes
+  leaves the selection with it, whether you closed it, another tab did, or an agent did. The
+  selection is this tab's own: another tab reading the same session sees the frames you make,
+  not the cards you are picking.
 - ⌘G frames the selected cards, or the focused card when nothing is selected. The frame
   starts with no name. ⇧⌘G takes the selected cards back out of whatever frames they are
   in, leaving them selected, so they can go straight into another one.
