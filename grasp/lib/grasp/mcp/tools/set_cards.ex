@@ -1,13 +1,15 @@
 defmodule Grasp.MCP.Tools.SetCards do
   @moduledoc """
   Lay out a whole reading of the code at once: replace every card in a review session with
-  the tree you describe, so the reviewer sees the path you walked rather than the order you
+  the graph you describe, so the reviewer sees the path you walked rather than the order you
   walked it in.
 
-  Cards are given parents before children. `key` is your own name for a card, and a later
+  Callers are given before what they call. `key` is your own name for a card, and a later
   card hangs under an earlier one by naming it in `parent_key`; a card with no `parent_key`
-  starts a new tree. Each card may point at one thing inside it — a call it makes, or a
-  range of its lines. Nothing changes unless every card is good.
+  starts at the left edge. A function named twice is one card with an edge from each caller,
+  so a helper three functions call is read once rather than drawn three times. Each card may
+  point at one thing inside it — a call it makes, or a range of its lines. Nothing changes
+  unless every card is good.
   """
 
   use Anubis.Server.Component, type: :tool
@@ -23,10 +25,11 @@ defmodule Grasp.MCP.Tools.SetCards do
       description: "The review session to act on; default `default`, which the page at `/` shows"
     )
 
-    embeds_many :cards, required: true, description: "The cards to show, parents first" do
+    embeds_many :cards, required: true, description: "The cards to show, callers first" do
       field(:key, :string,
         required: true,
-        description: "Your name for this card, which later cards point at through `parent_key`"
+        description:
+          "Your name for this card, which later cards point at through `parent_key`. Two entries naming the same function are one card"
       )
 
       field(:function_id, :string,
@@ -35,7 +38,8 @@ defmodule Grasp.MCP.Tools.SetCards do
       )
 
       field(:parent_key, :string,
-        description: "`key` of the card this one hangs under; omit to start a new tree"
+        description:
+          "`key` of the card that calls this one; omit to start the card at the left edge"
       )
 
       embeds_one :highlight, description: "What to point at inside the card; omit for nothing" do

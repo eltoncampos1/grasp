@@ -1,7 +1,7 @@
 defmodule Grasp.MCP.Tools.FocusCard do
   @moduledoc """
   Focus a card, which is how the viewer scrolls it into view — use it to say "look here"
-  while walking someone through a tree of cards you have already opened.
+  while walking someone through a graph of cards you have already opened.
   """
 
   use Anubis.Server.Component, type: :tool

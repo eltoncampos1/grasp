@@ -1,7 +1,8 @@
 defmodule Grasp.MCP.Tools.CloseCard do
   @moduledoc """
-  Close a card and everything opened under it, so the reviewer is left with the branch that
-  matters. Focus moves to the card's parent.
+  Close one card and the edges touching it, so the reviewer is left with the part of the
+  graph that matters. What it called stays on screen, unattached; focus moves to the first
+  card that called it, or else to the first card it called.
   """
 
   use Anubis.Server.Component, type: :tool

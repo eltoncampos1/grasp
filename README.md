@@ -3,14 +3,17 @@
 Call-chain code review for Elixir.
 
 Grasp renders a function as a card. Click any call inside it and the callee opens as a
-child card to the right, so a deep call chain reads left to right instead of as a series
-of editor jumps. The cards sit on a canvas that pans, zooms and lets you drag a card
-anywhere you want it. A sidebar lists the codebase's entry points — Phoenix routes and
-LiveView routes, Oban workers, LiveView and LiveComponent callbacks, GenServer,
-supervisor, application and plug callbacks — so a review starts where the system starts,
-with the module list a group below. A card wears a badge for the entry point it is, a
-card's callers menu opens the other way up the chain, Cmd+K finds any function, and every
-card links its `file:line` into your editor.
+card to the right, joined to it by an edge that takes the call site's colour and arrows
+into the callee, so a deep call chain reads left to right instead of as a series of editor
+jumps. The canvas holds one card per function: a helper three functions call is drawn
+once, with an edge arriving from each of them, so reading it once is reading it for every
+caller. The cards sit on a canvas that pans, zooms and lets you drag a card anywhere you
+want it. A sidebar lists the codebase's entry points — Phoenix routes and LiveView routes,
+Oban workers, LiveView and LiveComponent callbacks, GenServer, supervisor, application and
+plug callbacks — so a review starts where the system starts, with the module list a group
+below. A card wears a badge for the entry point it is, a card's callers menu opens the
+chain the other way, Cmd+K finds any function, and every card links its `file:line` into
+your editor.
 
 A coding agent can drive the same canvas over MCP: it searches the index, traces the
 paths into a function, and lays the cards out for the human reviewer. The viewer can run
@@ -65,7 +68,10 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
   browsers also take ⌘0 for their own page zoom, and reset both.
 - ⌘M toggles the sidebar. On macOS the browser may take ⌘M for "minimise window", in
   which case use ⌘\\.
-- Arrow keys walk the tree, `x` closes the focused card, `c` collapses it, ⌘K opens the
+- A card's callers menu opens a caller to its left; open several and the card keeps one
+  edge from each of them.
+- Arrow keys walk the graph, `x` closes the focused card, `Shift+x` closes it together
+  with everything that had no other way to be reached, `c` collapses it, ⌘K opens the
   palette.
 
 ## MCP
@@ -101,14 +107,18 @@ Reading the code:
 
 Arranging the cards:
 
-- `get_session(name)` — every open card, its parent, what it points at, and which card has
-  focus. The ids it returns are what the other card tools address.
-- `set_cards(name, cards)` — replace the whole canvas with a tree described in one call.
+- `get_session(name)` — every open card with what it calls and is called by, the edges
+  between them, the columns they are laid out in, what each points at, and which card has
+  focus. The ids it returns are what the other card tools address. Every session tool
+  answers in this shape.
+- `set_cards(name, cards)` — replace the whole canvas with a graph described in one call.
   Each card is `{key, function_id, parent_key?, highlight?}`; a card hangs under an earlier
-  one by naming its `key`. Nothing changes unless every card is good.
-- `open_card(name, function_id, parent_card_id?, highlight?)` — add one card, under
-  another or as a new tree.
-- `close_card(name, card_id)` — close a card and everything under it.
+  one by naming its `key`, and two entries naming the same function are one card with an
+  edge from each. Nothing changes unless every card is good.
+- `open_card(name, function_id, parent_card_id?, highlight?)` — add one card, called by
+  another or standing on its own. A function already on screen gains an edge instead of a
+  second card.
+- `close_card(name, card_id)` — close one card and the edges touching it.
 - `focus_card(name, card_id)` — scroll a card into view, to say "look here".
 - `highlight_card(name, card_id, highlight)` — point at one call inside a card, or shade a
   range of its lines.
@@ -120,8 +130,9 @@ Arranging a flow, end to end. Asked "show me what happens when SampleApp accepts
 order", an agent calls `list_entry_points(query: "order")` to find the route,
 `find_paths(to: "SampleApp.Orders.insert_order/1")` to get the hops between the two, and
 then one `set_cards` with a card per hop — the route's action as the root, each callee
-under its caller, and a `highlight` on the call that writes the row. The browser redraws
-as the call lands, so the reviewer watches the chain assemble instead of clicking it out.
+under its caller, a single card wherever two hops meet on the same function, and a
+`highlight` on the call that writes the row. The browser redraws as the call lands, so the
+reviewer watches the chain assemble instead of clicking it out.
 
 ## Ask the agent
 
@@ -134,6 +145,12 @@ built-in tools are `Read`, `Grep` and `Glob`, so it reads the project's files an
 the index through Grasp's own tools, and it edits no file and runs no command. The
 transcript shows each tool call as it happens; Stop kills the run, and New conversation
 starts over.
+
+The panel's Model select picks which model the CLI runs: the four aliases `haiku`,
+`sonnet`, `opus` and `fable`, or `default` to leave the CLI on whatever `--agent-model` /
+`GRASP_AGENT_MODEL` set, or on its own default when neither did. A pick takes effect on
+the next prompt rather than interrupting a live run, and survives New conversation, so a
+chain mapped out on an expensive model can be followed up on a cheap one.
 
 One run at a time per session: a second prompt while one is in flight is refused rather
 than queued. A follow-up continues the same CLI conversation, so the agent remembers what

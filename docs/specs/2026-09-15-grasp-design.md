@@ -7,12 +7,13 @@ a call chain means jumping between files, and a unified diff shows changed lines
 sense of where they sit in the program's flow. As agents write more code than humans can
 read this way, review becomes the bottleneck.
 
-Grasp renders a function as a card. Clicking any call inside it opens the callee as a
-child card to the right, so a long chain reads left to right and several branches can be
-open at once. Cards show the function's diff against a base branch. The top level lists
-the codebase's entry points, and Cmd+K finds any function. An MCP server lets coding
-agents arrange cards, annotate them and author guided tours (next/back with a
-highlighted call) so the human reviews what the agent wants to explain.
+Grasp renders a function as a card. Clicking any call inside it opens the callee as a card
+to the right, joined to the call site by a coloured edge, so a long chain reads left to
+right and several branches can be open at once. One card stands for one function, so a
+helper several of them call is read once. Cards show the function's diff against a base
+branch. The top level lists the codebase's entry points, and Cmd+K finds any function. An
+MCP server lets coding agents arrange cards, annotate them and author guided tours
+(next/back with a highlighted call) so the human reviews what the agent wants to explain.
 
 ## Decisions
 
@@ -31,8 +32,9 @@ highlighted call) so the human reviews what the agent wants to explain.
   `anubis_mcp ~> 2.0`.
 - Sessions and tours persist as **JSON files** under `.grasp/sessions/` in the target
   repository, so agents can write them and they can travel with a PR.
-- Cards form a **tree**, not a strip: a card can have many children so multiple
-  branches are visible side by side.
+- Cards form a **graph**, not a strip: one card per function, with an edge from every
+  caller on screen, so several branches are visible side by side and a shared helper is
+  read once.
 - Highlighting by **Lumis** (tree-sitter) with the `github_light` theme; the whole UI
   uses the GitHub Light palette.
 - Entry points in v1: Phoenix routes (controller actions and LiveView routes), Oban
@@ -243,12 +245,16 @@ broadcasts the reload.
 
 `Grasp.Session` is a GenServer per named session, found through a Registry. State:
 
-- `roots`: ordered card ids in column zero.
-- `cards`: map of card id to `%{function_id, parent_id, children, opened_by,
-  highlight, view, collapsed, offset}` where `opened_by` is the call target that opened
-  the card, `highlight` is `nil`, `%{call: target_id}` or `%{lines: a..b}`, `view` is
-  `:source` or `:diff`, and `offset` is `{dx, dy}` in stage pixels from the card's
-  automatic position (`{0, 0}` when untouched).
+- `cards`: map of card id to `%{function_id, highlight, view, collapsed, offset}` where
+  `highlight` is `nil`, `%{call: target_id}` or `%{lines: a..b}`, `view` is `:source` or
+  `:diff`, and `offset` is `{dx, dy}` in stage pixels from the card's automatic position
+  (`{0, 0}` when untouched). One card per function: a function already on screen is never
+  opened twice.
+- `edges`: directed caller → callee, each `%{from, to, target, color}` where `target` is
+  the caller's own spelling of the call — which identifies the call site inside its body —
+  and `color` indexes an eight-entry palette handed out in creation order, so a call site
+  and the edge leaving it are painted alike. At most one edge joins a given pair, so mutual
+  recursion reads as two.
 - `focus`: the focused card id.
 - `annotations`: keyed by function id, each `%{id, author, body, line}` with author
   `"agent"` or `"human"` and a markdown body.
@@ -259,28 +265,45 @@ Every mutation broadcasts on `session:<name>` and debounce-writes
 `<project.root>/.grasp/sessions/<name>.json`. A session loads from disk if the file
 exists.
 
-### Card tree
+### Card graph
 
-- Clicking a call opens the callee as a child of that card. A card may have many
-  children, so several branches are visible at once.
-- Clicking a call whose child is already open focuses that child and scrolls to it. The
-  call span stays marked while its child is open.
-- Closing a card closes its subtree. Collapsing hides the subtree behind a count badge.
-- Opening a caller from a root card's callers menu re-parents: the caller becomes a new
-  root with the card as its child. From a non-root card, it opens a new root tree of
-  caller then function.
-- Palette and entry-point selection append a new root. Shift+Enter opens as a child of
-  the focused card instead.
-- MCP `set_cards` replaces the whole forest.
+- Clicking a call opens the callee to the right and adds an edge from the call site. A
+  card may call many others, so several branches are visible at once.
+- A function already on screen is focused and scrolled to rather than opened again, and
+  the click leaves an edge from the new caller behind it. A helper three cards call is one
+  card with three edges arriving, so reading it once is reading it for every caller.
+- The call span stays marked while the callee is open, in the colour its edge carries.
+- `x` closes one card: its edges go and what it called stays, unattached. `Shift+x` closes
+  it together with everything that had no other way to be reached — a card another visible
+  card also calls survives, and so does a card upstream of the closed one that a cycle also
+  puts downstream. Collapsing hides what only that card reaches, behind a count badge.
+- Opening a caller from the callers menu adds it to the left of the card and joins the
+  two; the card itself does not move and keeps every other edge. Several callers may be
+  open at once.
+- Palette and entry-point selection add a card with no caller. Shift+Enter opens it as a
+  callee of the focused card instead.
+- MCP `set_cards` replaces the whole graph.
 
 ### Layout
 
-A two-dimensional canvas that pans and zooms. A node renders as a horizontal flex of the
-card followed by a vertical stack of its child nodes, recursively, so the automatic layout
-is pure CSS. Cards have a fixed width (`--card-width`, 60rem) so every depth starts at the
-same x. Each subtree hangs from its parent's top edge and roots stack vertically in column
-zero. Arrow keys move focus to parent, child or sibling; `x` closes and `c` collapses the
-focused card.
+A two-dimensional canvas that pans and zooms. The automatic layout is columns: a flex row
+of columns, each a vertical stack of cards, so the placement stays pure CSS once the server
+has said which column a card belongs to. `Forest.layout/1` computes that. A card nothing
+on screen calls is a source and sits in column 0; every other card sits one column right of
+the caller that reaches it from furthest right, found by a depth-first walk from the
+sources. The walk refuses to re-enter a card already on its own stack, so a recursive or
+mutually recursive call names no column and cannot loop for ever; a group of cards that
+only call each other has no source at all, so its lowest id is promoted to one until every
+card is placed. Within a column, rows follow the callers — column 0 reads in id order, and
+every later column is ordered by the mean row of its callers in the column immediately
+left, so edges cross as little as possible. A card whose callers all sit further left has
+no mean and sorts last, by id.
+
+A card is as wide as its widest line up to a ceiling (`--card-max-width`, 60rem), rather
+than a fixed width, so a column of one-line helpers does not reserve the width of the
+widest function in the session. Arrow keys move focus to a caller, a callee or the
+neighbour in the same column; `x` closes the focused card, `Shift+x` closes it and
+everything that hung off it alone, `c` collapses it.
 
 The canvas pans by dragging empty background, by holding Space and dragging from anywhere
 (cards included), or with the wheel; Ctrl or Cmd with the wheel zooms about the cursor. A
@@ -293,15 +316,21 @@ element.
 
 Each card carries a persistent offset from its automatic position, set by dragging its
 header or by Ctrl-dragging anywhere on it. The drag shows an inline translate at once and
-pushes `move_card` on release; the offset is stored on the card in the session forest
-(`Forest.move/3`) and re-rendered as `--dx`/`--dy` on the node, so a dragged card takes its
-subtree with it. Re-parenting a card resets its offset, and "reset layout"
+pushes `move_card` on release; the offset is stored on the card (`Forest.move/3`) and
+re-rendered as `--dx`/`--dy` on the node. A drag moves that one card: with a card reachable
+from several callers there is no subtree to carry along. "Reset layout"
 (`Forest.reset_offsets/1`) clears every offset at once.
 
-Connectors are an SVG overlay, not CSS: the hook measures each parent and child card and
-draws a cubic path between their header ports, so a line follows a card that has been
-dragged. The overlay sits inside a `phx-update="ignore"` element — the server never renders
-a connector — and its strokes are non-scaling, so they stay visible at the smallest zoom.
+Edges are an SVG overlay, not CSS: the hook walks the open call sites, measures each one
+and the callee's card, and draws a cubic path between them, so a line follows a card that
+has been dragged. A path takes the call site's palette colour and ends in an arrowhead of
+the same colour at the callee, so a card with several callers says which of its edges comes
+from where. An edge leaves towards the callee and arrives on the side it comes from, so a
+caller opened to the right of the card it calls is joined round the outside rather than
+through it; a call site scrolled out of the card's clipped body has its start clamped to
+the card's border. The overlay sits inside a `phx-update="ignore"` element — the server
+renders only the arrowhead markers, which a path cannot carry inline — and its strokes are
+non-scaling, so they stay visible at the smallest zoom.
 
 ### Page
 
@@ -429,6 +458,23 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   which is enough to walk a chain, but it cannot leave a note on a card or author an
   ordered tour a reviewer steps through. Both are later milestones (6 and 7) and both add
   MCP tools rather than changing the ones here.
+- **An edge leaving a stub card is not drawn.** An edge is anchored to the call site in
+  the caller's rendered source, and a stub card — one standing for a function the index
+  does not hold — has no source, so there is nothing for an edge to leave from. A card
+  opened from a stub therefore arrives with no line joining it. Both cards are in the graph
+  and laid out in columns as usual; only the line is missing.
+- **The module is still named `Forest`.** `Grasp.Session.Forest` holds a graph, not a
+  forest of trees. The rename waits for milestone 8, where the session's persisted JSON is
+  versioned anyway.
+- **Dragging a card moves that card alone.** A card reachable from several callers has no
+  subtree of its own to carry along, and moving everything downstream of it would drag
+  cards that other, untouched callers also point at. So a hand-placed card leaves what it
+  calls where the automatic layout put it.
+- **Rows are not aligned with their callers' rows.** A column orders its cards by the mean
+  row of their callers, which keeps edges from crossing, but it cannot put a callee level
+  with the call site that opened it: cards have different heights, and the server lays out
+  the columns without knowing any of them. A heights-aware pass would have to run in the
+  browser, where the measurements are.
 - **`find_paths` is bounded three ways and says so only for one of them.** `max_depth`
   above 8 or `limit` above 20 is a schema violation the call is rejected for, not a value
   clamped down to the cap, so a client that asks for more gets an error to fix rather
@@ -457,15 +503,20 @@ first reference. Results are JSON text content, so any MCP client can read them.
 - Session tools: `get_session(name)`, `set_cards(name, cards)`, `open_card(name,
   function_id, parent_card_id?, highlight?)`, `close_card(name, card_id)`,
   `focus_card(name, card_id)`, `highlight_card(name, card_id, highlight)`. Every session
-  tool returns the resulting forest as JSON (`roots`, `cards` with ids, parents, children,
-  highlight, `focus`) so the agent can address cards it just created.
-- `set_cards` replaces the forest. `cards` is a flat list of `{key, function_id,
+  tool returns the resulting graph as JSON — `focus`, `cards` (each with its id,
+  `function_id`, `collapsed`, `highlight` and the ids in `callers` and `callees`), `edges`
+  (`from`, `to`, the call `target` and the palette `color`) and `columns`, the ids in
+  layout order — so the agent can address cards it just created and see how they were laid
+  out.
+- `set_cards` replaces the graph. `cards` is a flat list of `{key, function_id,
   parent_key?, highlight?}`; `key` is any string the caller picks, `parent_key` names
-  another entry, and entries are applied in order so a parent precedes its children.
-  Unknown function ids or dangling parent keys make the whole call a tool error that
-  names them, and the forest is left untouched. Cards from `set_cards` and `open_card` are
-  linked to their parent through the parent's call to them when such a call exists
-  (`opened_by`), so the connector and the marked call span render as if a human clicked.
+  another entry, and entries are applied in order so a caller precedes what it calls. Two
+  entries naming the same function describe one card with an edge from each caller, so a
+  helper listed under each of its callers is drawn once. Unknown function ids or dangling
+  parent keys make the whole call a tool error that names them, and the graph is left
+  untouched. An edge from `set_cards` or `open_card` carries the caller's own spelling of
+  the call when such a call exists, so the coloured edge and the marked call span render as
+  if a human clicked.
 - A highlight is `{call: target_id}` or `{lines: [first, last]}`. The card renders the
   highlighted call with a ring, or the highlighted lines with a tinted background, and the
   canvas reveals it when the card gains focus. A highlight stays until replaced or the
@@ -493,10 +544,18 @@ conversation.
   ".../mcp"}}}`), built-in tools limited to `Read Grep Glob`, and `mcp__grasp Read Grep
   Glob` pre-approved through `--allowedTools`, so it never edits files or runs commands.
   The appended system prompt names the viewer session and tells the agent to discover with
-  the read tools and answer with `set_cards`, starting roots at entry points. Follow-up
-  prompts pass `--resume <session_id>` (taken from the stream's `system/init` event), and
-  New conversation drops that id. The command is configurable (`:grasp, :agent_command`,
-  default `claude`) so tests substitute a script.
+  the read tools and answer with `set_cards`, starting at entry points and reusing one card
+  for a function two callers reach. Follow-up prompts pass `--resume <session_id>` (taken
+  from the stream's `system/init` event), and New conversation drops that id. The command
+  is configurable (`:grasp, :agent_command`, default `claude`) so tests substitute a
+  script.
+- The panel offers the model the CLI runs with: `Grasp.Agent.models/0` — `haiku`, `sonnet`,
+  `opus`, `fable` — plus a default entry that leaves the choice to `:agent_model`
+  (`--agent-model` / `GRASP_AGENT_MODEL`) or, failing that, to the CLI itself.
+  `Grasp.Agent.set_model/2` records the pick on the runner, which reads it when it builds
+  the next command, so a live run is not disturbed and New conversation keeps the pick while
+  dropping the transcript. A name the facade does not know is refused rather than passed to
+  the CLI; the select cannot offer one.
 - The runner parses the JSON stream line by line: `assistant` text blocks stream into the
   transcript, `tool_use` blocks become tool rows showing the tool name and its main
   argument, `tool_result` blocks mark the row done or failed, `system/init` records the
@@ -519,13 +578,13 @@ conversation.
   to range join, and the git base diff against a temporary git repository built in the
   test.
 - `grasp`: a committed fixture `index.json` generated from the sample app.
-  `Phoenix.LiveViewTest` covers: clicking a call opens a child card, clicking it again
-  focuses the existing child, closing a card removes its subtree, opening a caller from a
-  root re-parents, palette search and Enter, the diff toggle, tour next/back highlighting
-  the step's call, and annotation rendering. `Grasp.Session` has a persistence
-  round-trip test. MCP is tested as JSON-RPC over `/mcp` with `Phoenix.ConnTest`:
-  initialize, tools/list, then `set_cards` followed by an assertion that the LiveView
-  re-rendered.
+  `Phoenix.LiveViewTest` covers: clicking a call opens the callee to its right, clicking it
+  again focuses the card already there, the same function reached from two callers being one
+  card with two edges, closing a card and closing a chain, opening a caller to the left,
+  palette search and Enter, the diff toggle, tour next/back highlighting the step's call,
+  and annotation rendering. `Grasp.Session` has a persistence round-trip test. MCP is
+  tested as JSON-RPC over `/mcp` with `Phoenix.ConnTest`: initialize, tools/list, then
+  `set_cards` followed by an assertion that the LiveView re-rendered.
 - CI: GitHub Actions on Elixir 1.20 / OTP 29 for both packages: format check, compile
   with warnings as errors, tests.
 
@@ -533,7 +592,7 @@ conversation.
 
 1. Repo scaffold and `grasp_index` steps 1 to 3 and 6: definitions, calls, JSON. Run it
    on a real Phoenix project. Done.
-2. Viewer: load the index, card tree with click-to-open, highlighting, palette. Done.
+2. Viewer: load the index, card graph with click-to-open, highlighting, palette. Done.
    - Milestone 2.1 went back over the viewer: Lumis highlighting with the `github_light`
      theme, the GitHub Light palette and denser 60rem cards, per-card layout offsets in
      the session, and a canvas that pans, zooms, drags cards and draws its own

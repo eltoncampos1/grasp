@@ -9,6 +9,7 @@ defmodule Grasp.MCP.SessionToolsTest do
   @greet "SampleApp.Greeter.greet/2"
   @wrap "SampleApp.Formatter.wrap/1"
   @show "SampleAppWeb.GreetController.show/2"
+  @mailer "SampleApp.Workers.Mailer.perform/1"
 
   setup do
     %{session: "mcp-#{System.unique_integer([:positive])}"}
@@ -42,20 +43,52 @@ defmodule Grasp.MCP.SessionToolsTest do
       refute response.isError
       body = json!(response)
 
-      assert body["roots"] == [1]
       assert body["focus"] == 1
+      assert body["columns"] == [[1], [2]]
       assert card(body, 1)["function_id"] == @show
-      assert card(body, 1)["children"] == [2]
+      assert card(body, 1)["callees"] == [2]
 
       assert card(body, 2) == %{
                "id" => 2,
                "function_id" => @greet,
-               "parent_id" => 1,
-               "children" => [],
-               "opened_by" => "SampleApp.Greeter.greet/1",
+               "callers" => [1],
+               "callees" => [],
                "collapsed" => false,
                "highlight" => %{"call" => @wrap}
              }
+
+      assert body["edges"] == [
+               %{
+                 "from" => 1,
+                 "to" => 2,
+                 "target" => "SampleApp.Greeter.greet/1",
+                 "color" => 0
+               }
+             ]
+
+      refute Map.has_key?(body, "roots")
+      refute Enum.any?(body["cards"], &Map.has_key?(&1, "parent_id"))
+    end
+
+    test "the same function under two callers is one card with two edges", %{session: session} do
+      response =
+        run(Tools.SetCards, %{
+          session: session,
+          cards: [
+            %{key: "a", function_id: @show},
+            %{key: "b", function_id: "SampleApp.Greeter.greet/1", parent_key: "a"},
+            %{key: "c", function_id: @mailer},
+            %{key: "d", function_id: "SampleApp.Greeter.greet/1", parent_key: "c"}
+          ]
+        })
+
+      refute response.isError
+      body = json!(response)
+
+      assert Enum.map(body["cards"], & &1["function_id"]) == [@show, @greet, @mailer]
+      assert card(body, 2)["callers"] == [1, 3]
+      assert Enum.map(body["edges"], &{&1["from"], &1["to"]}) == [{1, 2}, {3, 2}]
+      assert body["columns"] == [[1, 3], [2]]
     end
 
     test "an unknown function is an error and leaves the forest alone", %{session: session} do
@@ -92,7 +125,8 @@ defmodule Grasp.MCP.SessionToolsTest do
       body = json!(run(Tools.OpenCard, %{session: session, function_id: @show}))
 
       assert body["card_id"] == 1
-      assert body["roots"] == [1]
+      assert body["columns"] == [[1]]
+      assert card(body, 1)["callers"] == []
 
       body =
         json!(
@@ -105,9 +139,18 @@ defmodule Grasp.MCP.SessionToolsTest do
         )
 
       assert body["card_id"] == 2
-      assert card(body, 2)["opened_by"] == "SampleApp.Greeter.greet/1"
+      assert card(body, 2)["callers"] == [1]
       assert card(body, 2)["highlight"] == %{"call" => @wrap}
       assert body["focus"] == 2
+
+      assert body["edges"] == [
+               %{
+                 "from" => 1,
+                 "to" => 2,
+                 "target" => "SampleApp.Greeter.greet/1",
+                 "color" => 0
+               }
+             ]
     end
 
     test "opening a child twice focuses the one already there", %{session: session} do
@@ -124,7 +167,8 @@ defmodule Grasp.MCP.SessionToolsTest do
       assert second["card_id"] == first["card_id"]
       assert second["focus"] == first["card_id"]
       assert length(second["cards"]) == 2
-      assert card(second, 1)["children"] == [first["card_id"]]
+      assert card(second, 1)["callees"] == [first["card_id"]]
+      assert length(second["edges"]) == 1
     end
 
     test "an unknown parent card is an error", %{session: session} do
@@ -197,14 +241,15 @@ defmodule Grasp.MCP.SessionToolsTest do
 
       body = json!(run(Tools.CloseCard, %{session: session, card_id: 2}))
       assert card(body, 2) == nil
-      assert card(body, 1)["children"] == []
+      assert card(body, 1)["callees"] == []
+      assert body["edges"] == []
     end
 
     test "get_session answers an empty forest for a session nobody has opened", %{
       session: session
     } do
       assert json!(run(Tools.GetSession, %{session: session})) ==
-               %{"roots" => [], "focus" => nil, "cards" => []}
+               %{"focus" => nil, "cards" => [], "edges" => [], "columns" => []}
     end
 
     test "an unknown card is an error for both", %{session: session} do

@@ -1,11 +1,11 @@
 defmodule Grasp.MCP.Tools.OpenCard do
   @moduledoc """
-  Open one function as a card and focus it. With `parent_card_id` the card hangs under that
-  card, and the call it was opened from is marked in the parent, exactly as a click in the
-  viewer would; without one it starts a new tree. Opening a function that is already a child
-  of that card focuses the existing card instead of duplicating it.
+  Open one function as a card and focus it. With `parent_card_id` an edge runs from that
+  card, and the call it was opened from is marked in the caller, exactly as a click in the
+  viewer would; without one the card starts at the left edge. A function already on screen
+  is never drawn twice: the existing card is focused and gains an edge from the new caller.
 
-  Replies with the whole session plus `card_id`, the id of the card that is now focused.
+  Replies with the whole graph plus `card_id`, the id of the card that is now focused.
   """
 
   use Anubis.Server.Component, type: :tool
@@ -27,7 +27,7 @@ defmodule Grasp.MCP.Tools.OpenCard do
     )
 
     field(:parent_card_id, :integer,
-      description: "Card to open this one under; omit to start a new tree"
+      description: "Card that calls this one; omit to start the card at the left edge"
     )
 
     embeds_one :highlight, description: "What to point at inside the card; omit for nothing" do

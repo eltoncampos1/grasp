@@ -10,7 +10,9 @@ defmodule Grasp.Agent.Command do
 
   The system prompt names the viewer session the agent is driving; every grasp card tool
   takes that session, so an agent that forgets it would arrange cards on a canvas nobody is
-  looking at.
+  looking at. It also tells the agent that the canvas is a graph: a function reached from
+  two callers is one card with an edge from each, so the same key is reused rather than the
+  function being described twice.
   """
 
   alias Grasp.IndexStore
@@ -72,7 +74,7 @@ defmodule Grasp.Agent.Command do
 
     Work like this:
     1. Discover with the grasp read tools: search_functions, get_function, get_callers, get_callees, list_entry_points, find_paths (with only `to` it walks callers back to entry points such as controller actions, LiveView callbacks and Oban workers).
-    2. Answer with set_cards: one call that lays out the whole flow as a tree, roots at the entry points, each callee a child of the function that calls it, in call order. Add a highlight on a card when one call or line range is the point of interest.
+    2. Answer with set_cards: one call that lays out the whole flow, roots at the entry points, each callee under the function that calls it, in call order. The same function reached from two callers is one card with two edges — reuse the key. Add a highlight on a card when one call or line range is the point of interest.
     3. Reply in a few sentences: what the flow does and where to look first. The cards are the answer; do not paste source code.
 
     Do not edit files or run commands. If a function is not in the index, say so.
