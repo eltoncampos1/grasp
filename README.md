@@ -92,7 +92,9 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
   leaves it as it was. The group keeps its id and its cards, so a tour or an agent holding
   that id still finds it.
 - Drag a card into another group's frame to move it there. Dropping it anywhere else — the
-  untitled section, the bare canvas, its own frame — moves the card and nothing more.
+  untitled section, the bare canvas, its own frame — moves the card and nothing more. A card
+  that changes group keeps the offset the drag gave it and so lands beside its place in the
+  new frame rather than on it; "reset layout" puts every card back on the grid.
 
 ## PR mode
 

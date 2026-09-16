@@ -331,7 +331,9 @@ dragged into another group's frame: the drag hook finds the frame under the rele
 `elementFromPoint`, having taken the dragged node out of hit testing for the lookup, and
 sends its group id along with the move. A drop anywhere else — the untitled section, the
 bare canvas, the frame the card is already in — is a move and nothing more, so a card never
-changes group by being put down near one.
+changes group by being put down near one. A card that does change group keeps the offset the
+drag gave it, which was measured against where it sat in its old section, so it is drawn
+displaced by that much from its place in the new one until the layout is reset.
 
 A card is as wide as its widest line up to a ceiling (`--card-max-width`, 60rem), rather
 than a fixed width, so a column of one-line helpers does not reserve the width of the
@@ -425,9 +427,11 @@ otherwise to a new root, then focuses it with the step's highlight.
   Source/Diff toggle, callers menu, group menu, collapse, close.
 - The group menu lists every group on the canvas, the card's own marked `aria-current`, so
   joining one is picking it by name rather than by id; under them a form makes a new group
-  around this card from a title, and a card already in a group can leave it. Which card's
-  menu is open is server state (`group_menu_open`), as the callers menu is, so the two
-  cannot both be open and a patch cannot drop either.
+  around this card from a title, and a card already in a group can leave it. A stub carries
+  the same menu as a function card, since a stub dragged into a frame is in that group like
+  any other card and would otherwise have no way out of it. Which card's menu is open is
+  server state (`group_menu_open`), as the callers menu is; opening either menu, or a frame
+  rename, closes the other two, so one panel stands at a time and a patch cannot drop it.
 - Body: Lumis-highlighted source. Every resolved call is wrapped in a clickable span.
   The highlighted call gets a ring and is scrolled into view. Calls with an open child
   are marked. Calls to functions outside the index (deps, stdlib) render muted and open
@@ -610,9 +614,13 @@ first reference. Results are JSON text content, so any MCP client can read them.
 - `rename_group` names a group by its id and changes only its title: the cards stay put and
   the id stands, so a `group` or `sections` entry already quoted still names the same group.
   An unknown group id is a tool error naming it and an empty title is refused, the way
-  `group_cards` refuses one. The forest carries the pair this is built on — `rename_group/3`
-  and `add_to_group/3`, which joins cards to a group by id rather than by title and creates
-  none — and the viewer's manual grouping drives the same two.
+  `group_cards` refuses one; the title is stored trimmed, since `group_cards` matches one
+  exactly. Titles are not unique — a rename may give two groups the same one, and
+  `group_cards` and `set_cards`, which address a group by title, then reach whichever was
+  made first — so the id is the only handle that names one group for certain. The forest
+  carries the pair this is built on — `rename_group/3` and `add_to_group/3`, which joins
+  cards to a group by id rather than by title and creates none — and the viewer's manual
+  grouping drives the same two.
 - `set_cards` replaces the graph. `cards` is a flat list of `{key, function_id,
   parent_key?, group?, highlight?}`; `group` is a title rather than an id, so entries
   sharing one land in the same group and the groups are created in the order their titles

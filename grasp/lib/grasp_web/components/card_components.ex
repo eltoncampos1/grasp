@@ -98,6 +98,59 @@ defmodule GraspWeb.CardComponents do
     """
   end
 
+  attr :card, :map, required: true
+  attr :groups, :list, required: true
+  attr :group_menu_open, :integer, default: nil
+
+  @doc """
+  The card header's group control: the toggle, and the menu it opens.
+
+  Every group on the canvas is offered, so a card joins one without the reader having to
+  remember what it is called; the form under them is how a group that does not exist yet is
+  made, from the card that is to be its first member. A stub carries the same control as a
+  function card, because a stub dropped into a frame is in that group like any other card
+  and needs the way back out.
+  """
+  def group_menu(assigns) do
+    ~H"""
+    <div class="card__group">
+      <button
+        class="card__group-toggle"
+        phx-click="toggle_group_menu"
+        phx-value-card={@card.id}
+        aria-expanded={to_string(@group_menu_open == @card.id)}
+        title="Put this card in a group"
+      >
+        group
+      </button>
+      <ul :if={@group_menu_open == @card.id} class="card__group-menu">
+        <li :for={group <- @groups}>
+          <button
+            class="group-option"
+            phx-click="join_group"
+            phx-value-card={@card.id}
+            phx-value-group={group.id}
+            aria-current={@card.group == group.id && "true"}
+          >
+            {group.title}
+          </button>
+        </li>
+        <li>
+          <form class="group-new" phx-submit="new_group">
+            <input type="hidden" name="card" value={@card.id} />
+            <input type="text" name="title" placeholder="New group…" autocomplete="off" />
+          </form>
+        </li>
+        <li :if={@card.group}>
+          <button class="group-leave" phx-click="leave_group" phx-value-card={@card.id}>
+            leave group
+          </button>
+        </li>
+      </ul>
+    </div>
+    """
+  end
+
   defp function_card(assigns) do
     %{forest: forest, index: index, card: card, record: record} = assigns
 
@@ -211,44 +264,7 @@ defmodule GraspWeb.CardComponents do
               </li>
             </ul>
           </div>
-          <%!-- Every group on the canvas is offered, so a card joins one without the reader
-          having to remember what it is called; the form under them is the way a group that
-          does not exist yet is made, from the card that is to be its first member. --%>
-          <div class="card__group">
-            <button
-              class="card__group-toggle"
-              phx-click="toggle_group_menu"
-              phx-value-card={@card.id}
-              aria-expanded={to_string(@group_menu_open == @card.id)}
-              title="Put this card in a group"
-            >
-              group
-            </button>
-            <ul :if={@group_menu_open == @card.id} class="card__group-menu">
-              <li :for={group <- @groups}>
-                <button
-                  class="group-option"
-                  phx-click="join_group"
-                  phx-value-card={@card.id}
-                  phx-value-group={group.id}
-                  aria-current={@card.group == group.id && "true"}
-                >
-                  {group.title}
-                </button>
-              </li>
-              <li>
-                <form class="group-new" phx-submit="new_group">
-                  <input type="hidden" name="card" value={@card.id} />
-                  <input type="text" name="title" placeholder="New group…" autocomplete="off" />
-                </form>
-              </li>
-              <li :if={@card.group}>
-                <button class="group-leave" phx-click="leave_group" phx-value-card={@card.id}>
-                  leave group
-                </button>
-              </li>
-            </ul>
-          </div>
+          <.group_menu card={@card} groups={@groups} group_menu_open={@group_menu_open} />
           <button
             :if={@diffable?}
             id={"view-#{@card.id}"}
@@ -346,7 +362,10 @@ defmodule GraspWeb.CardComponents do
     >
       <header class="card__header" phx-click="focus_card" phx-value-card={@card.id}>
         <h2 class="card__title">{@card.function_id}</h2>
-        <button class="card__close" phx-click="close_card" phx-value-card={@card.id}>×</button>
+        <div class="card__tools">
+          <.group_menu card={@card} groups={@groups} group_menu_open={@group_menu_open} />
+          <button class="card__close" phx-click="close_card" phx-value-card={@card.id}>×</button>
+        </div>
       </header>
       <p class="card__signature lumis" title={@card.function_id}>{@card.function_id}</p>
       <p :if={@stale?} class="stub__text">

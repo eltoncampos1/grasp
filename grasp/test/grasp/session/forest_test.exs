@@ -479,6 +479,9 @@ defmodule Grasp.Session.ForestTest do
       assert Forest.group_of(renamed, a) == %{id: flow, title: "Deposits"}
       assert Forest.group(renamed, 999) == nil
 
+      assert Forest.group(Forest.rename_group(forest, flow, "  Deposits  "), flow).title ==
+               "Deposits"
+
       assert Forest.rename_group(forest, 999, "Deposits") == forest
       assert Forest.rename_group(forest, flow, "   ") == forest
       assert Forest.rename_group(forest, flow, "") == forest

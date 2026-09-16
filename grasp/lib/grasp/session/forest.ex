@@ -312,7 +312,9 @@ defmodule Grasp.Session.Forest do
   Retitles `group_id`, keeping its id and every card in it.
 
   An unknown group and a blank title both leave the graph as it was, so a frame is never
-  left standing with no name to draw. Renaming is what changes a title: naming the same
+  left standing with no name to draw. The title is stored trimmed, since `group_cards/3`
+  finds a group by an exact title match and a padded one could never be found again.
+  Renaming is what changes a title: naming the same
   cards in `group_cards/3` under another one builds a different group, and any id held
   elsewhere then points at a group that has gone.
   """
@@ -325,8 +327,8 @@ defmodule Grasp.Session.Forest do
       {_group, ""} ->
         forest
 
-      {group, _trimmed} ->
-        %{forest | groups: Map.put(forest.groups, group_id, %{group | title: title})}
+      {group, trimmed} ->
+        %{forest | groups: Map.put(forest.groups, group_id, %{group | title: trimmed})}
     end
   end
 

@@ -111,30 +111,36 @@ defmodule GraspWeb.ReviewLive do
 
   def handle_event("open_caller", %{"card" => card, "caller" => caller}, socket)
       when is_binary(caller) do
-    socket = assign(socket, callers_open: nil)
+    socket = close_overlays(socket)
     id = int(card)
     caller_id = canonical(socket, caller)
     target = call_target(socket, caller_id, function_id(socket, id))
     mutate(socket, &Session.open_caller(&1, id, caller_id, target))
   end
 
+  # The two card menus and the frame rename are one another's alternatives: each is opened
+  # by a click that means "not the other one", and two panels absolutely positioned off
+  # adjacent wrappers in the same header would otherwise overlap on a card wide enough.
   def handle_event("toggle_callers", %{"card" => card}, socket) do
     id = int(card)
     open = if socket.assigns.callers_open == id, do: nil, else: id
 
-    {:noreply, assign(socket, callers_open: open, forest: Session.focus(socket.assigns.name, id))}
+    {:noreply,
+     socket
+     |> close_overlays()
+     |> assign(callers_open: open, forest: Session.focus(socket.assigns.name, id))}
   end
 
   def handle_event("toggle_group_menu", %{"card" => card}, socket) do
     id = int(card)
     open = if socket.assigns.group_menu_open == id, do: nil, else: id
-    {:noreply, assign(socket, group_menu_open: open, callers_open: nil)}
+    {:noreply, socket |> close_overlays() |> assign(group_menu_open: open)}
   end
 
   # Every pick in the menu is the last thing it is asked, so each of them closes it rather
   # than leaving it open over a card that has just moved to another frame.
   def handle_event("join_group", %{"card" => card, "group" => group}, socket) do
-    socket = assign(socket, group_menu_open: nil)
+    socket = close_overlays(socket)
     mutate(socket, &Session.add_to_group(&1, int(group), [int(card)]))
   end
 
@@ -142,7 +148,7 @@ defmodule GraspWeb.ReviewLive do
   # answered by closing the menu: an unnamed frame is not a group anybody asked for.
   def handle_event("new_group", %{"card" => card, "title" => title}, socket)
       when is_binary(title) do
-    socket = assign(socket, group_menu_open: nil)
+    socket = close_overlays(socket)
 
     case String.trim(title) do
       "" -> {:noreply, socket}
@@ -151,12 +157,12 @@ defmodule GraspWeb.ReviewLive do
   end
 
   def handle_event("leave_group", %{"card" => card}, socket) do
-    socket = assign(socket, group_menu_open: nil)
+    socket = close_overlays(socket)
     mutate(socket, &Session.ungroup_cards(&1, [int(card)]))
   end
 
   def handle_event("edit_group_title", %{"group" => group}, socket),
-    do: {:noreply, assign(socket, renaming_group: int(group))}
+    do: {:noreply, socket |> close_overlays() |> assign(renaming_group: int(group))}
 
   def handle_event("rename_group", %{"group" => group, "title" => title}, socket)
       when is_binary(title) do
@@ -273,14 +279,7 @@ defmodule GraspWeb.ReviewLive do
   end
 
   def handle_event("palette_show", _params, socket),
-    do:
-      {:noreply,
-       assign(socket,
-         palette_open?: true,
-         palette_selected: 0,
-         callers_open: nil,
-         group_menu_open: nil
-       )}
+    do: {:noreply, socket |> close_overlays() |> assign(palette_open?: true, palette_selected: 0)}
 
   def handle_event("palette_hide", _params, socket), do: {:noreply, reset_palette(socket)}
 
@@ -327,6 +326,11 @@ defmodule GraspWeb.ReviewLive do
   end
 
   defp refresh_agent(socket), do: assign(socket, agent: Grasp.Agent.get(socket.assigns.name))
+
+  # Whatever the last click opened stands alone: the callers menu, the group menu and the
+  # rename form are closed together so that opening one is what closes the others.
+  defp close_overlays(socket),
+    do: assign(socket, callers_open: nil, group_menu_open: nil, renaming_group: nil)
 
   # A menu is addressed by the id of the card it hangs off, so one left open on a card that
   # is closing would have nothing to render against.

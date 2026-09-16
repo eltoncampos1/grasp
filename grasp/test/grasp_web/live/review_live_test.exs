@@ -828,6 +828,60 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#flow-1 #card-2[data-dx='20'][data-dy='6']")
   end
 
+  test "opening one card menu closes the other and any rename under way", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.group_cards(name, "Greeting", [1])
+
+    view |> element("#card-1 .card__callers-toggle") |> render_click()
+
+    assert has_element?(view, "#card-1 .card__callers ul")
+
+    view |> element("#card-1 .card__group-toggle") |> render_click()
+
+    refute has_element?(view, "#card-1 .card__callers ul")
+    assert has_element?(view, "#card-1 .card__group-menu")
+
+    view |> element("#card-1 .card__callers-toggle") |> render_click()
+
+    refute has_element?(view, "#card-1 .card__group-menu")
+    assert has_element?(view, "#card-1 .card__callers ul")
+
+    view |> element("#flow-1 .flow__title h3") |> render_click()
+
+    assert has_element?(view, "#flow-1 form.flow__rename")
+    refute has_element?(view, "#card-1 .card__callers ul")
+
+    view |> element("#card-1 .card__group-toggle") |> render_click()
+
+    refute has_element?(view, "#flow-1 form.flow__rename")
+  end
+
+  test "a stub dropped into a frame leaves it from its own group menu", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet_all)
+
+    view
+    |> element("#card-1 span.call[data-target='Enum.map/2'][data-external='true']")
+    |> render_click()
+
+    Session.group_cards(name, "Greeting", [1])
+
+    render_hook(view, "move_card", %{"card" => 2, "dx" => 0, "dy" => 0, "group" => 1})
+
+    assert has_element?(view, "#flow-1 #card-2.stub")
+
+    view |> element("#card-2 .card__tools .card__group-toggle") |> render_click()
+
+    view |> element("#card-2 .card__group-menu button[phx-click='leave_group']") |> render_click()
+
+    assert has_element?(view, "#flow-none #card-2.stub")
+  end
+
   test "the project line names the base the review is against", %{view: view} do
     assert has_element?(view, ".sidebar__project", "sample_app")
     assert has_element?(view, ".sidebar__base", "main…feature")
