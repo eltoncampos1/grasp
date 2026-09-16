@@ -55,7 +55,7 @@ defmodule Grasp.Highlight do
     last_line = first_line + length(String.split(source, "\n")) - 1
 
     html =
-      Enum.map_join(first_line..last_line, "\n", fn line ->
+      Enum.map_join(first_line..last_line, "", fn line ->
         body =
           by_line
           |> Map.get(line, [])

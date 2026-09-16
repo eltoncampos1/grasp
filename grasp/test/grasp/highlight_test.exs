@@ -139,6 +139,17 @@ defmodule Grasp.HighlightTest do
     assert LazyHTML.query(html, "span.line[data-line='12']") |> LazyHTML.text() == "12"
   end
 
+  test "emits nothing between line spans, since a newline inside the <pre> would render as an empty line" do
+    record = %{
+      "id" => "S.tight/0",
+      "span" => %{"start_line" => 1, "end_line" => 2},
+      "source" => "def f do\nend",
+      "calls" => []
+    }
+
+    refute render_string(record, []) =~ ~r{</span>\s+<span class="line"}
+  end
+
   test "renders a real indexed record with the indexer's own columns" do
     {:ok, index} = Grasp.Index.load(@fixture)
     {:ok, record} = Grasp.Index.fetch_function(index, "SampleApp.Formatter.shout/1")
