@@ -144,9 +144,10 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 /* The agent's pointer is a shadow, not an outline: a call that is both open and pointed at
    has only one outline box, and it belongs to the edge leaving the call. */
 .call[data-highlight="true"] { box-shadow: 0 0 0 2px var(--accent); border-radius: 2px; }
-.line[data-highlight="true"] { background: var(--accent-soft); }
 .line[data-op="ins"] { background: var(--diff-ins-bg); }
 .line[data-op="del"] { background: var(--diff-del-bg); }
+/* The agent's pointer outranks the diff tint: a highlighted inserted line reads as pointed at. */
+.line[data-highlight="true"], .line[data-op][data-highlight="true"] { background: var(--accent-soft); }
 .op { display: inline-block; width: 1ch; margin-inline-end: var(--space-xs); color: var(--fg-faint); }
 .line[data-op="ins"] .op { color: var(--diff-ins-fg); }
 .line[data-op="del"] .op { color: var(--diff-del-fg); }

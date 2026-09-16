@@ -265,6 +265,24 @@ defmodule Grasp.HighlightTest do
       assert LazyHTML.query(del, ".op") |> LazyHTML.text() == "\u2212"
     end
 
+    test "a deleted line is drawn from its own base line, not from its position in the diff" do
+      record = %{
+        "id" => "Sample.shrunk/0",
+        "span" => %{"start_line" => 1, "end_line" => 2},
+        "source" => "alpha = 1\ngamma = 3",
+        "base_source" => "alpha = 1\nbeta = 2\ngamma = 3",
+        "calls" => []
+      }
+
+      html = record |> render_diff() |> LazyHTML.from_fragment()
+      [del] = html |> LazyHTML.query(".line[data-op='del']") |> Enum.to_list()
+
+      assert LazyHTML.text(del) |> String.replace("\u2212", "") |> String.trim() == "beta = 2"
+
+      assert html |> LazyHTML.query(".line[data-op='eq']") |> LazyHTML.attribute("data-line") ==
+               ~w(1 2)
+    end
+
     test "an inserted line is numbered from the span start" do
       html = @diff_record |> render_diff() |> LazyHTML.from_fragment()
       [ins] = html |> LazyHTML.query(".line[data-op='ins']") |> Enum.to_list()
