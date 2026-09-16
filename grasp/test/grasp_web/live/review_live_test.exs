@@ -135,6 +135,7 @@ defmodule GraspWeb.ReviewLiveTest do
     Session.open_root(name, @whisper)
 
     assert has_element?(view, "#card-1 .card__signature", ~S|def greet(name, loud? \\ false)|)
+    assert has_element?(view, "#card-1 .card__signature .l-keyword-function", "def")
     assert has_element?(view, "#card-2 .card__signature", "def whisper(text)")
   end
 

@@ -26,6 +26,9 @@ defmodule Grasp.Highlight do
   A card's `highlight` — the call to outline or the range of lines to shade — is applied
   as the HTML is built, after the cache, and so is never part of what is memoised.
 
+  `signature/1` renders a single line — the function's head, which is all a far-out card
+  shows — from the same cached pieces, without the gutter and without the call spans.
+
   `render_diff/2` renders the same lines against the record's `base_source`, interleaving
   the lines the branch deleted. The base side is a second parse memoised under the function
   id suffixed `@base`, so a card switched between its source and its diff parses each side
@@ -35,6 +38,16 @@ defmodule Grasp.Highlight do
   require Logger
 
   @cache :grasp_highlight_cache
+
+  @definition_prefixes [
+    "def ",
+    "defp ",
+    "defmacro ",
+    "defmacrop ",
+    "defguard ",
+    "defguardp ",
+    "defdelegate "
+  ]
 
   @typedoc """
   The call sites a card has already opened, keyed by the raw target the source writes:
@@ -151,6 +164,97 @@ defmodule Grasp.Highlight do
       |> wrap_calls(ranges, card_id, open, external?, highlighted_call)
     end
   end
+
+  @doc """
+  The function's head as highlighted HTML: the tokens of its definition line, with no
+  gutter, no line wrapper and no clickable call spans.
+
+  This is what a card shows instead of its body once the canvas is zoomed too far out for
+  code to be read, where a call site is too small to aim at and an outline around one would
+  only be noise. The tokens come from the same memoised parse the body is built from, so a
+  card that has rendered its body once pays nothing for its head. A record whose source
+  defines nothing falls back to its `Mod.fun/arity`.
+  """
+  @spec signature(map()) :: Phoenix.HTML.safe()
+  def signature(record) do
+    {source, first_line, id} = signature_source(record)
+
+    case signature_line(record) do
+      nil ->
+        {:safe, "<span>" <> escape(record["id"] || "") <> "</span>"}
+
+      {line, _text} ->
+        html =
+          source
+          |> pieces(first_line, id)
+          |> Enum.filter(&(&1.line == line))
+          |> trim_signature()
+          |> Enum.map_join(&token_html/1)
+
+        {:safe, html}
+    end
+  end
+
+  @doc """
+  The line that defines the function, as `{line number in the file, text}`, or nil when the
+  source defines nothing.
+
+  The definition is the first line whose trimmed text opens with `def`, `defp`, `defmacro`,
+  `defmacrop`, `defguard`, `defguardp` or `defdelegate`, so the `@doc` and `@spec` a record
+  carries above its head are passed over. The text is trimmed of the indentation the line
+  was written at and of the `do` that opens the body, which belong to the body rather than
+  to the head.
+  """
+  @spec signature_line(map()) :: {pos_integer(), String.t()} | nil
+  def signature_line(record) do
+    {source, first_line, _id} = signature_source(record)
+
+    source
+    |> String.split("\n")
+    |> Enum.with_index(first_line)
+    |> Enum.find_value(fn {text, line} ->
+      trimmed = String.trim(text)
+
+      if String.starts_with?(trimmed, @definition_prefixes) do
+        {line, String.trim_trailing(trimmed, " do")}
+      end
+    end)
+  end
+
+  # Which text the head is read from, how its lines are numbered and under which key its
+  # parse is memoised. A function the branch removed may carry no source of its own; its base
+  # text is then numbered from 1 and cached under the same key `render_diff/2` uses for it,
+  # so the two never disagree about what line 1 holds.
+  defp signature_source(record) do
+    case record["source"] do
+      nil -> {record["base_source"] || "", 1, to_string(record["id"]) <> "@base"}
+      source -> {source, record["span"]["start_line"] || 1, record["id"]}
+    end
+  end
+
+  # The indentation the definition was written at and the `do` opening its body frame the
+  # head without being part of it, and both go, along with the whitespace that separated
+  # them. A run left empty by the trim would render as a span around nothing.
+  defp trim_signature(pieces) do
+    pieces
+    |> Enum.reverse()
+    |> drop_trailing_do()
+    |> Enum.reverse()
+    |> case do
+      [first | rest] -> [%{first | text: String.trim_leading(first.text)} | rest]
+      [] -> []
+    end
+    |> Enum.reject(&(&1.text == ""))
+  end
+
+  defp drop_trailing_do(reversed_pieces) do
+    case Enum.drop_while(reversed_pieces, &blank_piece?/1) do
+      [%{text: "do"} | rest] -> Enum.drop_while(rest, &blank_piece?/1)
+      _kept -> reversed_pieces
+    end
+  end
+
+  defp blank_piece?(piece), do: String.trim(piece.text) == ""
 
   @doc """
   Creates the highlight cache unless it exists; the calling process owns it.

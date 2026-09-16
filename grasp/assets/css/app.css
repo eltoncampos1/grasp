@@ -173,19 +173,25 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .stub__docs { color: var(--accent); }
 
 /* Semantic zoom. Under FAR_SCALE the canvas hook puts `grasp-far` on <body> and a card is
-   reduced to the one line that names it: the code is a grey smear at that size, and a head
-   held at a legible size says more than a whole body rendered too small to read. The
-   counter-scaling divides by --zoom, which the hook writes on #stage beside the transform,
-   so each of these rules has to match inside the stage to see it. */
-body.grasp-far #stage .card__body, body.grasp-far #stage .card__also, body.grasp-far #stage .card__tools, body.grasp-far #stage .card__title, body.grasp-far #stage .card__stats, body.grasp-far #stage .badge, body.grasp-far #stage .stub__text, body.grasp-far #stage .stub__docs, body.grasp-far #stage .card__close { display: none; }
+   reduced to its header and the one line that names it: the code is a grey smear at that
+   size, and a head held at a legible size says more than a whole body rendered too small to
+   read. The counter-scaling divides by --zoom, which the hook writes on #stage beside the
+   transform, so each of these rules has to match inside the stage to see it. */
+body.grasp-far #stage .card__body, body.grasp-far #stage .card__also, body.grasp-far #stage .stub__text, body.grasp-far #stage .stub__docs { display: none; }
 body.grasp-far #stage .card__signature { display: block; font-size: calc(var(--far-size) / var(--zoom, 1)); padding: calc(var(--space-s) / var(--zoom, 1)) calc(var(--space-m) / var(--zoom, 1)); }
-/* Nothing inside the card asks for width any more, so the ceiling and the floor both go and
-   the card is exactly as wide as its signature. */
+/* Only the header and the signature ask for width now, so the card's ceiling and floor both
+   go and it is exactly as wide as the wider of the two. */
 body.grasp-far #stage .card { min-width: 0; max-width: none; }
-/* The header is emptied rather than hidden: its tint is what marks a removed function. Its
-   buttons go with the rest — a stub's close sits in the header rather than in .card__tools,
-   so it is named here to keep every card one line and no card half-interactive. */
-body.grasp-far #stage .card__header { padding-block: calc(var(--space-xs) / var(--zoom, 1)); }
+/* The header is counter-scaled beside the signature rather than emptied: its badges, its
+   stats and its tint are what tell one far-out card from another, and its buttons stay
+   clickable, so a card can be closed or collapsed without zooming back in to it. Everything
+   inside takes the header's size instead of its own: a file path rendered at 3px beside a
+   legible title is no more use than the body that was dropped. */
+body.grasp-far #stage .card__header { font-size: calc(var(--far-size) / var(--zoom, 1)); gap: calc(var(--space-s) / var(--zoom, 1)); padding: calc(var(--space-xs) / var(--zoom, 1)) calc(var(--space-m) / var(--zoom, 1)); }
+body.grasp-far #stage .card__title, body.grasp-far #stage .card__kind, body.grasp-far #stage .badge, body.grasp-far #stage .card__stats, body.grasp-far #stage .card__tools, body.grasp-far #stage .card__tools button { font-size: inherit; }
+body.grasp-far #stage .card__kind { margin-inline-start: calc(var(--space-s) / var(--zoom, 1)); }
+body.grasp-far #stage .card__tools { gap: calc(var(--space-s) / var(--zoom, 1)); }
+body.grasp-far #stage .badge { padding: 0 calc(var(--space-s) / var(--zoom, 1)); }
 /* The whole section header holds its size, not only the heading: a legible title beside a
    3px card count and a 3px ungroup button would be the same unreadability one step along. */
 body.grasp-far #stage .flow__title, body.grasp-far #stage .flow__title h3 { font-size: calc(var(--far-size) / var(--zoom, 1)); }

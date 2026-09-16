@@ -363,4 +363,69 @@ defmodule Grasp.HighlightTest do
                ["String.upcase/1"]
     end
   end
+
+  describe "signature/1" do
+    test "renders the head's tokens, without its indentation and without its trailing do" do
+      html = fixture_signature("SampleApp.Greeter.greet/2")
+      doc = LazyHTML.from_fragment(html)
+
+      assert LazyHTML.text(doc) == ~S|def greet(name, loud? \\ false)|
+      assert LazyHTML.query(doc, "span.l-keyword-function") |> LazyHTML.text() == "def"
+      assert LazyHTML.query(doc, "span.l-function") |> LazyHTML.text() == "greet"
+      assert LazyHTML.query(doc, ".ln") |> Enum.count() == 0
+    end
+
+    test "a call in the head is highlighted like any other token, and is not clickable" do
+      html = fixture_signature("SampleApp.Greeter.greet_all/1")
+      doc = LazyHTML.from_fragment(html)
+
+      assert LazyHTML.text(doc) == "def greet_all(names), do: Enum.map(names, &greet/1)"
+      assert LazyHTML.query(doc, "span.l-module") |> LazyHTML.text() == "Enum"
+      assert LazyHTML.query(doc, "span.call") |> Enum.count() == 0
+      refute html =~ "phx-click"
+    end
+
+    test "falls back to the escaped function id when nothing in the source defines anything" do
+      record = %{
+        "id" => "Sample.<b>/1",
+        "span" => %{"start_line" => 3},
+        "source" => "  # nothing to see\n  :ok"
+      }
+
+      assert record |> Highlight.signature() |> Phoenix.HTML.safe_to_string() ==
+               "<span>Sample.&lt;b&gt;/1</span>"
+    end
+
+    test "reads the base commit's text when the record carries no source of its own" do
+      record = %{
+        "id" => "Sample.vanished/1",
+        "removed" => true,
+        "base_source" => "  defp vanished(text) do\n    text\n  end"
+      }
+
+      doc = record |> Highlight.signature() |> Phoenix.HTML.safe_to_string()
+
+      assert doc |> LazyHTML.from_fragment() |> LazyHTML.text() == "defp vanished(text)"
+    end
+  end
+
+  describe "signature_line/1" do
+    test "numbers the head as the file numbers it, past the docs above it" do
+      {:ok, index} = Grasp.Index.load(@fixture)
+      {:ok, record} = Grasp.Index.fetch_function(index, "SampleApp.Greeter.greet/2")
+
+      assert Highlight.signature_line(record) == {8, ~S|def greet(name, loud? \\ false)|}
+    end
+
+    test "is nil when no line defines anything" do
+      assert Highlight.signature_line(%{"id" => "M.f/1", "source" => "  :ok"}) == nil
+    end
+  end
+
+  defp fixture_signature(function_id) do
+    {:ok, index} = Grasp.Index.load(@fixture)
+    {:ok, record} = Grasp.Index.fetch_function(index, function_id)
+
+    record |> Highlight.signature() |> Phoenix.HTML.safe_to_string()
+  end
 end

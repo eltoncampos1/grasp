@@ -21,6 +21,14 @@ defmodule GraspWeb.CardComponentsTest do
       assert html =~ "lib/sample_app/formatter.ex:4"
     end
 
+    test "the signature is syntax-highlighted, so a far-out card still reads as code" do
+      html = render_card(@wrap)
+
+      assert html =~ ~s|<p class="card__signature lumis"|
+      assert html =~ ~s|<span class="l-keyword-function">def</span>|
+      assert html =~ ~s|<span class="l-function">wrap</span>|
+    end
+
     test "a removed function's file is plain text, since the line is the base commit's" do
       html = render_card(@whisper)
 

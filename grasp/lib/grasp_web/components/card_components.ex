@@ -24,15 +24,6 @@ defmodule GraspWeb.CardComponents do
     "genserver" => "GenServer"
   }
   @function_id ~r/^([A-Z][\w.]*)\.([^.\/]+)\/(\d+)$/
-  @definition_prefixes [
-    "def ",
-    "defp ",
-    "defmacro ",
-    "defmacrop ",
-    "defguard ",
-    "defguardp ",
-    "defdelegate "
-  ]
 
   attr :forest, Forest, required: true
   attr :index, Index, required: true
@@ -135,6 +126,7 @@ defmodule GraspWeb.CardComponents do
         callers: Index.callers(index, record["id"]),
         entries: Index.entry_points_for(index, record["id"]),
         signature: signature(record),
+        signature_html: Grasp.Highlight.signature(record),
         callees: Forest.callees(forest, card.id),
         hidden_count: Forest.hidden_count(forest, card.id),
         view: view,
@@ -242,7 +234,7 @@ defmodule GraspWeb.CardComponents do
           </button>
         </div>
       </header>
-      <p class="card__signature" title={@record["id"]}>{@signature}</p>
+      <p class="card__signature lumis" title={@signature}>{@signature_html}</p>
       <pre class="card__body lumis">{@body}</pre>
       <footer :if={@record["hidden_calls"] != []} class="card__also">
         <span class="card__also-label">Also calls</span>
@@ -312,7 +304,7 @@ defmodule GraspWeb.CardComponents do
         <h2 class="card__title">{@card.function_id}</h2>
         <button class="card__close" phx-click="close_card" phx-value-card={@card.id}>×</button>
       </header>
-      <p class="card__signature" title={@card.function_id}>{@card.function_id}</p>
+      <p class="card__signature lumis" title={@card.function_id}>{@card.function_id}</p>
       <p :if={@stale?} class="stub__text">
         No longer in the index — renamed or removed since it was written.
       </p>
@@ -325,28 +317,18 @@ defmodule GraspWeb.CardComponents do
   end
 
   @doc """
-  The one line that heads a function: its definition, without the indentation it was written
-  at and without a trailing `do`.
+  The one line that heads a function as plain text: its definition, without the indentation
+  it was written at and without a trailing `do`.
 
-  A card shows this instead of its body once the canvas is zoomed too far out for code to be
-  legible, so what is wanted is the line that names the function rather than the first line
-  of the record, which is as often an `@doc` or a `@spec`. The base commit's text answers
-  for a record that carries none of its own, and a record with no definition line anywhere
-  falls back to `Mod.fun/arity`.
+  The card renders the head highlighted, and carries this beside it as the title a pointer
+  reads — an attribute holds text, not markup. A record with no definition line anywhere
+  falls back to `Mod.fun/arity`, which is what a stub shows.
   """
   @spec signature(map()) :: String.t()
   def signature(record) do
-    source = record["source"] || record["base_source"] || ""
-    line = source |> String.split("\n") |> Enum.find_value(&definition_line/1)
-
-    line || record["id"] || ""
-  end
-
-  defp definition_line(line) do
-    trimmed = String.trim(line)
-
-    if String.starts_with?(trimmed, @definition_prefixes) do
-      String.trim_trailing(trimmed, " do")
+    case Grasp.Highlight.signature_line(record) do
+      {_line, text} -> text
+      nil -> record["id"] || ""
     end
   end
 

@@ -337,18 +337,24 @@ scroll itself — a code body scrolled sideways, an open callers menu — is lef
 element.
 
 Zoom out past 0.6 and the canvas reads semantically rather than optically: the hook puts
-`grasp-far` on `<body>`, and every card drops its body, its "Also calls" footer, its title,
-its badges, its stats, its tools and, on a stub, its prose and its hexdocs link, keeping one
-line — the function's head, which `CardComponents.signature/1` takes from the record's source
-(the first line opening with any of `def`, `defp`, `defmacro`, `defmacrop`, `defguard`,
-`defguardp` or `defdelegate`, past whatever `@doc` and `@spec` sit above it, without its
-trailing `do`), falling back to `Mod.fun/arity` for a stub or a record with no definition in
-it. That line and a section's header are sized as `--far-size / --zoom` — 14px divided by the
-scale the hook writes on the stage beside the transform — so they measure 14px on screen at
-every zoom while everything around them shrinks. The card's width floor and ceiling go with
-the body, leaving each card exactly as wide as its signature; the header stays, emptied,
-because its tint is what marks a removed function. Nothing in a far-out card is clickable:
-the close button goes with the tools, so acting on a card means zooming back in to it.
+`grasp-far` on `<body>`, and every card drops its body, its "Also calls" footer and, on a
+stub, its prose and its hexdocs link, keeping its header and one line — the function's head.
+`Grasp.Highlight.signature/1` renders that head from the same memoised token pieces the body
+is built from, so it reads as code rather than as a plain-text label; it carries no gutter
+and no call spans, because a call site at that scale is too small to aim at.
+`Highlight.signature_line/1` finds the line — the first opening with any of `def`, `defp`,
+`defmacro`, `defmacrop`, `defguard`, `defguardp` or `defdelegate`, past whatever `@doc` and
+`@spec` sit above it, without the indentation it was written at and without its trailing
+`do` — and `CardComponents.signature/1` takes its text for the title a pointer reads. A stub,
+or a record with no definition in it, falls back to `Mod.fun/arity`. The header, that line
+and a section's header are sized as `--far-size / --zoom` — 14px divided by the scale the
+hook writes on the stage beside the transform — so they measure 14px on screen at every zoom
+while everything around them shrinks; everything inside the header takes the header's size,
+rather than each element keeping a size the zoom has already shrunk past reading. The card's
+width floor and ceiling go with the body, leaving each card as wide as the wider of its
+header and its signature. The header keeps its badges, its stats and its tint, which is what
+marks a removed function, and its buttons stay live, so a far-out card can be closed or
+collapsed without zooming back in to it.
 
 Because the class decides how big the cards are, "fit" fits in two passes: the first applies
 a scale and so lays out the canvas the second measures. Two passes that land on opposite
