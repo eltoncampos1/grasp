@@ -2,6 +2,8 @@ defmodule GraspWeb.MCPTest do
   use GraspWeb.ConnCase, async: true
 
   @greet "SampleApp.Greeter.greet/2"
+  @wrap "SampleApp.Formatter.wrap/1"
+  @show "SampleAppWeb.GreetController.show/2"
 
   test "initialize, list tools, call one", %{conn: conn} do
     {conn, session} = initialize(conn)
@@ -10,7 +12,9 @@ defmodule GraspWeb.MCPTest do
     names = result["tools"] |> Enum.map(& &1["name"]) |> Enum.sort()
 
     assert names ==
-             ~w(find_paths get_callees get_callers get_function list_entry_points list_modules list_sessions search_functions)
+             ~w(close_card find_paths focus_card get_callees get_callers get_function get_session
+                highlight_card list_entry_points list_modules list_sessions open_card
+                search_functions set_cards)
 
     assert Enum.all?(result["tools"], &(&1["description"] not in [nil, ""]))
 
@@ -23,6 +27,36 @@ defmodule GraspWeb.MCPTest do
     assert [%{"type" => "text", "text" => text}] = result["content"]
     assert %{"callees" => callees} = Jason.decode!(text)
     assert "SampleApp.Formatter.wrap/1" in callees
+  end
+
+  test "cards set over MCP are what the review page renders", %{conn: conn} do
+    {conn, session} = initialize(conn)
+    name = "http-#{System.unique_integer([:positive])}"
+
+    result =
+      rpc(conn, session, "tools/call", %{
+        "name" => "set_cards",
+        "arguments" => %{
+          "session" => name,
+          "cards" => [
+            %{"key" => "a", "function_id" => @show},
+            %{
+              "key" => "b",
+              "function_id" => "SampleApp.Greeter.greet/1",
+              "parent_key" => "a",
+              "highlight" => %{"call" => @wrap}
+            }
+          ]
+        }
+      })
+
+    refute result["isError"]
+
+    {:ok, view, _html} = live(Phoenix.ConnTest.build_conn(), "/s/#{name}")
+
+    assert has_element?(view, "#card-1[data-function-id='#{@show}']")
+    assert has_element?(view, "#card-2[data-function-id='#{@greet}']")
+    assert has_element?(view, "#card-2 .call[data-highlight='true'][data-target='#{@wrap}']")
   end
 
   test "a request addressed to another host is refused", %{conn: conn} do

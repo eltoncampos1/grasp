@@ -21,4 +21,10 @@ defmodule Grasp.MCP.Server do
   component(Tools.ListEntryPoints)
   component(Tools.ListModules)
   component(Tools.ListSessions)
+  component(Tools.GetSession)
+  component(Tools.SetCards)
+  component(Tools.OpenCard)
+  component(Tools.CloseCard)
+  component(Tools.FocusCard)
+  component(Tools.HighlightCard)
 end
