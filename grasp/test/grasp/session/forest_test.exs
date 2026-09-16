@@ -146,6 +146,17 @@ defmodule Grasp.Session.ForestTest do
     assert Map.keys(forest.cards) == [a]
   end
 
+  test "close_chain/2 keeps a card the closed one calls back into" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+    {forest, ^a} = Forest.open_child(forest, b, "A.f/1")
+
+    forest = Forest.close_chain(forest, b)
+
+    assert Map.keys(forest.cards) == [a]
+    assert forest.edges == []
+  end
+
   test "collapse hides what is reachable only through the card" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_child(forest, a, "B.g/0")
@@ -169,6 +180,49 @@ defmodule Grasp.Session.ForestTest do
     assert Forest.depth(alone, b) == 1
     assert Forest.edges(alone) == [%{from: a, to: b, target: "B.g/0", color: 0}]
     assert Forest.toggle_collapse(alone, b) |> Forest.hidden() == MapSet.new()
+  end
+
+  test "a collapse hides a card on both ends of its edges" do
+    %{forest: forest, hidden: hidden, callee: callee} = collapsed_detour()
+
+    assert Forest.hidden(forest) == MapSet.new([hidden])
+    assert Forest.callers(forest, callee) |> Enum.member?(hidden)
+    assert Enum.all?(Forest.edges(forest), &(&1.from != hidden and &1.to != hidden))
+  end
+
+  test "move_focus/2 skips a caller a collapse has hidden" do
+    %{forest: forest, source: source, callee: callee} = collapsed_detour()
+
+    assert forest |> Forest.focus(callee) |> Forest.move_focus(:parent) |> Map.fetch!(:focus) ==
+             source
+  end
+
+  test "hidden_count/2 does not count what a collapse further down already hides" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+    {forest, c} = Forest.open_child(forest, b, "C.h/2")
+    {forest, d} = Forest.open_child(forest, c, "D.i/0")
+
+    forest = forest |> Forest.toggle_collapse(b) |> Forest.toggle_collapse(c)
+
+    assert Forest.hidden(forest) == MapSet.new([c, d])
+    # B hides C, and D is already C's to hide; C, hidden itself, hides nothing on screen
+    assert Forest.hidden_count(forest, b) == 1
+    assert Forest.hidden_count(forest, c) == 0
+    assert forest |> Forest.toggle_collapse(c) |> Forest.hidden_count(b) == 2
+  end
+
+  test "columns_of/1 reads every visible card's column" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+    {forest, c} = Forest.open_child(forest, b, "C.h/2")
+
+    assert Forest.columns_of(forest) == %{a => 0, b => 1, c => 2}
+    assert Forest.depth(forest, c) == 2
+
+    collapsed = Forest.toggle_collapse(forest, b)
+
+    assert Forest.columns_of(collapsed) == %{a => 0, b => 1}
   end
 
   test "layout/1 ignores back-edges" do
@@ -319,5 +373,22 @@ defmodule Grasp.Session.ForestTest do
              "edges" => [%{"from" => a, "to" => b, "target" => "B.g/0", "color" => 0}],
              "columns" => [[a], [b]]
            }
+  end
+
+  # S calls X and C; X calls H, which also calls C. Collapsing X hides H alone: C keeps its
+  # other way in, so an edge from a hidden card and a hidden caller both stay in the data.
+  defp collapsed_detour do
+    {forest, source} = Forest.open_root(Forest.new(), "S.f/0")
+    {forest, detour} = Forest.open_child(forest, source, "X.f/0")
+    {forest, hidden} = Forest.open_child(forest, detour, "H.f/0")
+    {forest, callee} = Forest.open_child(forest, hidden, "C.f/0")
+    {forest, ^callee} = Forest.open_child(forest, source, "C.f/0")
+
+    %{
+      forest: Forest.toggle_collapse(forest, detour),
+      source: source,
+      hidden: hidden,
+      callee: callee
+    }
   end
 end

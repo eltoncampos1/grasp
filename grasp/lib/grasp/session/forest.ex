@@ -8,7 +8,8 @@ defmodule Grasp.Session.Forest do
   directed caller → callee. Each carries the raw call `target` the caller's source wrote —
   the spelling that identifies the call site inside the caller's body — and a `color` taken
   from an eight-entry palette in creation order, so a call site and the edge leaving it can
-  be painted alike. At most one edge joins a given pair, whichever way the pair was opened.
+  be painted alike. At most one edge runs from one card to another, whichever call opened it,
+  so mutual recursion is visibly two edges.
   Focus is a single card id; `offset` is a card's displacement in stage pixels from where
   the layout puts it, so a card dragged by hand keeps its place; `highlight` marks what to
   point at inside a card.
@@ -34,7 +35,8 @@ defmodule Grasp.Session.Forest do
   disappears — which is why `hidden_count/2` is a subtraction rather than a subtree size.
   `close/2` removes one card and the edges touching it, leaving its callees behind as new
   sources; `close_chain/2` is the sweeping version, taking with it everything that had no
-  other way to be reached.
+  other way to be reached. A card that can reach the closed one is an ancestor rather than
+  something it reached, and stays even when a cycle puts it downstream as well.
   """
 
   defstruct cards: %{}, edges: [], focus: nil, next_id: 1, next_color: 0
@@ -81,6 +83,12 @@ defmodule Grasp.Session.Forest do
           next_color: non_neg_integer()
         }
   @type direction :: :parent | :child | :next | :prev
+  @typedoc "A card as `to_map/1` writes it: its own fields, plus the ids at the far end of its edges."
+  @type card_map :: %{String.t() => id() | String.t() | boolean() | highlight() | [id()]}
+  @typedoc "An edge as `to_map/1` writes it: its ends, the call target and the palette index."
+  @type edge_map :: %{String.t() => id() | String.t() | non_neg_integer()}
+  @typedoc "The whole graph as `to_map/1` writes it: focus, cards, edges and columns."
+  @type graph_map :: %{String.t() => id() | nil | [card_map()] | [edge_map()] | [[id()]]}
 
   @doc "An empty graph."
   @spec new() :: t()
@@ -93,9 +101,7 @@ defmodule Grasp.Session.Forest do
   @doc "The id of the card showing `function_id`, or nil when no card shows it."
   @spec find(t(), String.t()) :: id() | nil
   def find(%__MODULE__{} = forest, function_id) do
-    forest.cards
-    |> Enum.sort_by(fn {id, _card} -> id end)
-    |> Enum.find_value(fn {id, card} -> card.function_id == function_id && id end)
+    Enum.find_value(forest.cards, fn {id, card} -> card.function_id == function_id && id end)
   end
 
   @doc """
@@ -179,7 +185,16 @@ defmodule Grasp.Session.Forest do
 
       _card ->
         ids = id_set(forest)
-        downstream = forest |> reach(ids, callees(forest, id), false) |> MapSet.delete(id)
+
+        # A card that can reach `id` is upstream of it, however many edges a cycle also
+        # carries the other way, so the card opened first is never swept up by closing
+        # something it called.
+        downstream =
+          forest
+          |> reach(ids, callees(forest, id), false)
+          |> MapSet.delete(id)
+          |> MapSet.difference(ancestors(forest, ids, id))
+
         remaining = drop(forest, [id])
         left = id_set(remaining)
         # What `id` reached is kept only if something outside that reach still leads to it.
@@ -264,20 +279,30 @@ defmodule Grasp.Session.Forest do
       |> Enum.reduce(%{}, &column(forest, visible, &1, 0, MapSet.new(), &2))
       |> Enum.group_by(fn {_id, column} -> column end, fn {id, _column} -> id end)
 
-    case map_size(columns) do
-      0 ->
-        []
+    columns
+    |> Map.keys()
+    |> Enum.sort()
+    |> Enum.reduce([], &order(forest, columns, &1, &2))
+    |> Enum.reverse()
+  end
 
-      count ->
-        0..(count - 1) |> Enum.reduce([], &order(forest, columns, &1, &2)) |> Enum.reverse()
-    end
+  @doc """
+  Every visible card's column index, for a caller that would otherwise ask `depth/2` once
+  per card and lay the whole graph out again each time.
+  """
+  @spec columns_of(t()) :: %{id() => non_neg_integer()}
+  def columns_of(%__MODULE__{} = forest) do
+    forest
+    |> layout()
+    |> Enum.with_index()
+    |> Enum.reduce(%{}, fn {ids, index}, columns ->
+      Enum.reduce(ids, columns, &Map.put(&2, &1, index))
+    end)
   end
 
   @doc "The column `id` is laid out in; 0 when it is hidden or unknown."
   @spec depth(t(), id()) :: non_neg_integer()
-  def depth(%__MODULE__{} = forest, id) do
-    forest |> layout() |> Enum.find_index(&(id in &1)) || 0
-  end
+  def depth(%__MODULE__{} = forest, id), do: Map.get(columns_of(forest), id, 0)
 
   @doc "Sets a card's layout offset in stage pixels; no-op on an unknown id."
   @spec move(t(), id(), {integer(), integer()}) :: t()
@@ -309,8 +334,8 @@ defmodule Grasp.Session.Forest do
   def move_focus(%__MODULE__{} = forest, direction) do
     target =
       case direction do
-        :parent -> forest |> callers(forest.focus) |> List.first()
-        :child -> forest |> visible_callees(forest.focus) |> List.first()
+        :parent -> forest |> visible(callers(forest, forest.focus)) |> List.first()
+        :child -> forest |> visible(callees(forest, forest.focus)) |> List.first()
         :next -> neighbour(forest, 1)
         :prev -> neighbour(forest, -1)
       end
@@ -362,7 +387,7 @@ defmodule Grasp.Session.Forest do
   `columns` describe only what is visible, so a collapsed card's hidden part is absent from
   both.
   """
-  @spec to_map(t()) :: map()
+  @spec to_map(t()) :: graph_map()
   def to_map(%__MODULE__{} = forest) do
     cards =
       forest.cards
@@ -484,11 +509,18 @@ defmodule Grasp.Session.Forest do
     end
   end
 
-  defp reach(forest, ids, starts, collapse?) do
-    Enum.reduce(starts, MapSet.new(), &visit(forest, ids, &1, collapse?, &2))
+  defp reach(forest, ids, starts, collapse?),
+    do: walk(forest, ids, starts, &callees/2, collapse?)
+
+  # The same walk with the edges read backwards: everything that can reach `id`.
+  defp ancestors(forest, ids, id),
+    do: forest |> walk(ids, callers(forest, id), &callers/2, false) |> MapSet.delete(id)
+
+  defp walk(forest, ids, starts, next, collapse?) do
+    Enum.reduce(starts, MapSet.new(), &visit(forest, ids, &1, next, collapse?, &2))
   end
 
-  defp visit(forest, ids, id, collapse?, seen) do
+  defp visit(forest, ids, id, next, collapse?, seen) do
     cond do
       MapSet.member?(seen, id) or not MapSet.member?(ids, id) ->
         seen
@@ -498,7 +530,7 @@ defmodule Grasp.Session.Forest do
 
       true ->
         seen = MapSet.put(seen, id)
-        Enum.reduce(callees(forest, id), seen, &visit(forest, ids, &1, collapse?, &2))
+        Enum.reduce(next.(forest, id), seen, &visit(forest, ids, &1, next, collapse?, &2))
     end
   end
 
@@ -539,9 +571,9 @@ defmodule Grasp.Session.Forest do
   defp mean([]), do: :infinity
   defp mean(rows), do: Enum.sum(rows) / length(rows)
 
-  defp visible_callees(forest, id) do
+  defp visible(forest, ids) do
     hidden = hidden(forest)
-    forest |> callees(id) |> Enum.reject(&MapSet.member?(hidden, &1))
+    Enum.reject(ids, &MapSet.member?(hidden, &1))
   end
 
   defp neighbour(forest, step) do
