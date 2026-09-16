@@ -14,24 +14,28 @@ defmodule GraspWeb.Plugs.LocalOnly do
 
   import Plug.Conn
 
-  @local ["127.0.0.1", "localhost", "::1"]
+  # Bandit reports an IPv6 literal with its brackets; `URI.parse/1` strips them.
+  @local ["127.0.0.1", "localhost", "::1", "[::1]"]
 
   @impl true
   def init(opts), do: opts
 
   @impl true
   def call(%Plug.Conn{} = conn, _opts) do
-    if conn.host in @local and origin_local?(conn) do
+    if local?(conn.host) and origin_local?(conn) do
       conn
     else
-      conn |> send_resp(403, "forbidden") |> halt()
+      conn |> put_resp_content_type("text/plain") |> send_resp(403, "forbidden") |> halt()
     end
   end
 
   defp origin_local?(%Plug.Conn{} = conn) do
     case get_req_header(conn, "origin") do
       [] -> true
-      [origin | _] -> URI.parse(origin).host in @local
+      [origin | _] -> local?(URI.parse(origin).host)
     end
   end
+
+  defp local?(host) when is_binary(host), do: String.downcase(host) in @local
+  defp local?(_host), do: false
 end

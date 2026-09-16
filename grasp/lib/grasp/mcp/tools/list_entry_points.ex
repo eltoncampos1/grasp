@@ -11,9 +11,7 @@ defmodule Grasp.MCP.Tools.ListEntryPoints do
   alias Grasp.MCP.Tools
 
   schema do
-    field(:kind, :string,
-      description: "Keep only this kind, lowercase, e.g. `route` or `oban_worker`"
-    )
+    field(:kind, :string, description: "Keep only this kind, e.g. `route` or `oban_worker`")
 
     field(:query, :string, description: "Case-insensitive substring of the label or the target")
 
