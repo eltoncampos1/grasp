@@ -49,20 +49,6 @@ defmodule GraspWeb.CardComponents do
         editor={@editor}
         callers_open={@callers_open}
       />
-      <div
-        :if={@card.children != [] and not @card.collapsed}
-        class="node__children"
-        id={"card-#{@card.id}-children"}
-      >
-        <.card_node
-          :for={child <- @card.children}
-          forest={@forest}
-          index={@index}
-          card_id={child}
-          editor={@editor}
-          callers_open={@callers_open}
-        />
-      </div>
     </div>
     """
   end
@@ -85,7 +71,7 @@ defmodule GraspWeb.CardComponents do
     %{forest: forest, index: index, card: card, record: record} = assigns
 
     open_targets =
-      for child <- card.children,
+      for child <- Forest.callees(forest, card.id),
           c = Forest.card(forest, child),
           alias_id <- arity_aliases(index, c.function_id),
           do: alias_id
@@ -101,7 +87,8 @@ defmodule GraspWeb.CardComponents do
         dy: dy,
         callers: Index.callers(index, record["id"]),
         entries: Index.entry_points_for(index, record["id"]),
-        subtree: Forest.subtree_size(forest, card.id),
+        callees: Forest.callees(forest, card.id),
+        hidden_count: Forest.hidden_count(forest, card.id),
         body:
           Grasp.Highlight.render(record,
             card_id: card.id,
@@ -173,13 +160,13 @@ defmodule GraspWeb.CardComponents do
             </ul>
           </div>
           <button
-            :if={@card.children != []}
+            :if={@callees != []}
             class="card__collapse"
             phx-click="toggle_collapse"
             phx-value-card={@card.id}
             title="Collapse subtree"
           >
-            {if @card.collapsed, do: "▸ #{@subtree}", else: "▾"}
+            {if @card.collapsed, do: "▸ #{@hidden_count}", else: "▾"}
           </button>
           <button
             class="card__close"

@@ -1,19 +1,45 @@
 defmodule Grasp.Session.Forest do
   @moduledoc """
-  The tree of cards a review session shows, as pure data with pure operations.
+  The graph of cards a review session shows, as pure data with pure operations.
 
-  A card shows one function. Cards form a forest: `roots` are the entry cards in column
-  zero, and each card lists its `children` — callees opened from it. `opened_by` records
-  which call target opened a card, so the parent can mark that call while the child is
-  open. Focus is a single card id. Closing a card removes its subtree; collapsing hides
-  it. Opening a caller from a root re-parents the root under the caller; from a non-root
-  card it starts a new root tree so the original branch is left intact. `offset` is a
-  card's displacement in stage pixels from where the automatic layout puts it, so a card
-  dragged by hand keeps its place as the tree around it grows. `highlight` marks what to
-  point at inside a card — a call to outline or a range of lines to shade.
+  One card per function. Opening a function already on screen focuses the card that shows
+  it rather than cloning it, so a helper called from three places is one card with three
+  edges arriving at it, and reading it once is reading it for every caller. `edges` are
+  directed caller → callee. Each carries the raw call `target` the caller's source wrote —
+  the spelling that identifies the call site inside the caller's body — and a `color` taken
+  from an eight-entry palette in creation order, so a call site and the edge leaving it can
+  be painted alike. At most one edge joins a given pair, whichever way the pair was opened.
+  Focus is a single card id; `offset` is a card's displacement in stage pixels from where
+  the layout puts it, so a card dragged by hand keeps its place; `highlight` marks what to
+  point at inside a card.
+
+  ## Layout
+
+  `layout/1` puts the cards in columns, callers to the left of what they call. Sources —
+  cards nothing on screen calls — are column 0, and a card sits one column right of the
+  furthest-right caller that reaches it. The columns are computed by a depth-first walk
+  from the sources that refuses to re-enter a card already on its own stack: that edge is a
+  back-edge, a recursive or mutually recursive call, and following it would never end. A
+  graph made only of cycles has no source at all, so the lowest-id card no walk has reached
+  is promoted to a source until every card is placed. Within a column, rows follow the
+  callers: column 0 reads in id order, and every later column is ordered by the mean row of
+  its callers in the column immediately left, so an edge crosses as little as possible. A
+  card whose callers all sit further left has no mean and sorts last, by id.
+
+  ## Collapse
+
+  Collapsing a card hides what only that card reaches. `hidden/1` walks from the sources
+  but does not leave a collapsed card, so a callee that another visible card also calls
+  stays on screen and only the part of the graph that hung off the collapsed card
+  disappears — which is why `hidden_count/2` is a subtraction rather than a subtree size.
+  `close/2` removes one card and the edges touching it, leaving its callees behind as new
+  sources; `close_chain/2` is the sweeping version, taking with it everything that had no
+  other way to be reached.
   """
 
-  defstruct roots: [], cards: %{}, focus: nil, next_id: 1
+  defstruct cards: %{}, edges: [], focus: nil, next_id: 1, next_color: 0
+
+  @palette_size 8
 
   @type id :: pos_integer()
   @typedoc """
@@ -24,17 +50,21 @@ defmodule Grasp.Session.Forest do
   @type card :: %{
           id: id(),
           function_id: String.t(),
-          parent_id: id() | nil,
-          children: [id()],
-          opened_by: String.t() | nil,
           collapsed: boolean(),
           offset: {integer(), integer()},
           highlight: highlight()
         }
   @typedoc """
-  One card in a flat forest description. `key` names the entry so a later entry can point
-  at it through `parent_key`; the keys are the caller's own and mean nothing to the forest
-  beyond that linking.
+  A call from one card to another: `target` is the caller's own spelling of the call, and
+  `color` indexes the eight-colour palette the renderer paints the edge and its call site
+  with.
+  """
+  @type edge :: %{from: id(), to: id(), target: String.t(), color: 0..7}
+  @typedoc """
+  One card in a flat graph description. `key` names the entry so a later entry can point at
+  it through `parent_key`; the keys are the caller's own and mean nothing to the graph
+  beyond that linking. Two entries naming the same function describe one card with two
+  edges.
   """
   @type spec :: %{
           key: String.t(),
@@ -44,14 +74,15 @@ defmodule Grasp.Session.Forest do
           highlight: highlight()
         }
   @type t :: %__MODULE__{
-          roots: [id()],
           cards: %{id() => card()},
+          edges: [edge()],
           focus: id() | nil,
-          next_id: id()
+          next_id: id(),
+          next_color: non_neg_integer()
         }
   @type direction :: :parent | :child | :next | :prev
 
-  @doc "An empty forest."
+  @doc "An empty graph."
   @spec new() :: t()
   def new, do: %__MODULE__{}
 
@@ -59,117 +90,105 @@ defmodule Grasp.Session.Forest do
   @spec card(t(), id()) :: card() | nil
   def card(%__MODULE__{} = forest, id), do: Map.get(forest.cards, id)
 
-  @doc "Whether `id` is a root card."
-  @spec root?(t(), id()) :: boolean()
-  def root?(%__MODULE__{} = forest, id), do: id in forest.roots
-
-  @doc "Number of ancestors of `id`."
-  @spec depth(t(), id()) :: non_neg_integer()
-  def depth(%__MODULE__{} = forest, id) do
-    case card(forest, id) do
-      %{parent_id: nil} -> 0
-      %{parent_id: parent} -> 1 + depth(forest, parent)
-      nil -> 0
-    end
-  end
-
-  @doc "Number of descendants of `id`."
-  @spec subtree_size(t(), id()) :: non_neg_integer()
-  def subtree_size(%__MODULE__{} = forest, id) do
-    case card(forest, id) do
-      nil ->
-        0
-
-      %{children: children} ->
-        length(children) + Enum.sum(Enum.map(children, &subtree_size(forest, &1)))
-    end
-  end
-
-  @doc "Appends a new root showing `function_id` and focuses it."
-  @spec open_root(t(), String.t()) :: {t(), id()}
-  def open_root(%__MODULE__{} = forest, function_id) do
-    {forest, id} = add_card(forest, function_id, nil, nil)
-    {%{forest | roots: forest.roots ++ [id], focus: id}, id}
+  @doc "The id of the card showing `function_id`, or nil when no card shows it."
+  @spec find(t(), String.t()) :: id() | nil
+  def find(%__MODULE__{} = forest, function_id) do
+    forest.cards
+    |> Enum.sort_by(fn {id, _card} -> id end)
+    |> Enum.find_value(fn {id, card} -> card.function_id == function_id && id end)
   end
 
   @doc """
-  Opens `function_id` as a child of `parent_id`, or focuses the existing child that shows
-  it. Returns the child id, or nil if `parent_id` is unknown.
+  Opens `function_id` with no caller, or focuses the card already showing it. Returns the
+  card id.
+  """
+  @spec open_root(t(), String.t()) :: {t(), id()}
+  def open_root(%__MODULE__{} = forest, function_id) do
+    {forest, id} = find_or_add(forest, function_id)
+    {%{forest | focus: id}, id}
+  end
 
-  `opened_by` is the call target the click named, which differs from `function_id` when
-  the call went through a default-argument arity alias.
+  @doc """
+  Opens `function_id` as a callee of `parent_id` and focuses it, reusing the card that
+  already shows it. Returns the callee's id, or nil if `parent_id` is unknown.
+
+  `opened_by` is the call target the click named, which differs from `function_id` when the
+  call went through a default-argument arity alias. A second call from the same parent to
+  the same card adds no second edge: the first one already marks that call site.
   """
   @spec open_child(t(), id(), String.t(), String.t() | nil) :: {t(), id() | nil}
   def open_child(%__MODULE__{} = forest, parent_id, function_id, opened_by \\ nil) do
-    parent = card(forest, parent_id)
-
-    existing =
-      parent && Enum.find(parent.children, &(card(forest, &1).function_id == function_id))
-
-    cond do
-      is_nil(parent) ->
+    case card(forest, parent_id) do
+      nil ->
         {forest, nil}
 
-      existing ->
-        {%{forest | focus: existing}, existing}
-
-      true ->
-        add_child(forest, parent_id, function_id, opened_by || function_id)
+      _parent ->
+        {forest, id} = find_or_add(forest, function_id)
+        forest = add_edge(forest, parent_id, id, opened_by || function_id)
+        {%{forest | focus: id}, id}
     end
   end
 
   @doc """
-  Opens `caller_id` as the caller of `card_id`. On a root, the caller becomes the new root
-  with the card as its child and its offset is cleared, the automatic position it was
-  measured against having changed; otherwise a new root tree `caller → function` is
-  opened. Returns the new root id, or nil if `card_id` is unknown.
+  Opens `caller_function_id` as a caller of `card_id` and focuses it, reusing the card that
+  already shows it. Returns the caller's id, or nil if `card_id` is unknown.
+
+  `target` is the raw call target the caller writes for the call; it defaults to the card's
+  own function id, which is what the caller writes whenever no arity alias is involved. The
+  card itself does not move: it gains a caller to its left and keeps every other edge it
+  had.
   """
-  @spec open_caller(t(), id(), String.t()) :: {t(), id() | nil}
-  def open_caller(%__MODULE__{} = forest, card_id, caller_id) do
+  @spec open_caller(t(), id(), String.t(), String.t() | nil) :: {t(), id() | nil}
+  def open_caller(%__MODULE__{} = forest, card_id, caller_function_id, target \\ nil) do
     case card(forest, card_id) do
       nil ->
         {forest, nil}
 
       card ->
-        if root?(forest, card_id) do
-          {forest, new_root} = add_card(forest, caller_id, nil, nil)
-          caller = %{Map.fetch!(forest.cards, new_root) | children: [card_id]}
-          # The card stops being a root and is laid out under its caller instead, so an
-          # offset measured against its old automatic position no longer means anything.
-          card = %{card | parent_id: new_root, opened_by: card.function_id, offset: {0, 0}}
-          roots = Enum.map(forest.roots, &if(&1 == card_id, do: new_root, else: &1))
-          cards = forest.cards |> Map.put(new_root, caller) |> Map.put(card_id, card)
-          {%{forest | roots: roots, cards: cards, focus: new_root}, new_root}
-        else
-          {forest, new_root} = open_root(forest, caller_id)
-          {forest, _copy} = open_child(forest, new_root, card.function_id)
-          {%{forest | focus: new_root}, new_root}
-        end
+        {forest, caller} = find_or_add(forest, caller_function_id)
+        forest = add_edge(forest, caller, card_id, target || card.function_id)
+        {%{forest | focus: caller}, caller}
     end
   end
 
-  @doc "Removes `id` and its subtree; focus moves to the parent (or nil for a root)."
+  @doc """
+  Removes `id` and every edge touching it; its callees stay and become sources.
+
+  Focus moves to the closed card's first caller, then its first callee, then nowhere.
+  """
   @spec close(t(), id()) :: t()
   def close(%__MODULE__{} = forest, id) do
+    case card(forest, id) do
+      nil -> forest
+      _card -> forest |> drop([id]) |> refocus_after(forest, id)
+    end
+  end
+
+  @doc """
+  Removes `id` together with every card that had no other way to be reached.
+
+  A callee another visible card also calls stays; one that hung off `id` alone goes, and so
+  does a cycle whose only way in was through `id`. Focus moves as it does for `close/2`,
+  among the cards that survive.
+  """
+  @spec close_chain(t(), id()) :: t()
+  def close_chain(%__MODULE__{} = forest, id) do
     case card(forest, id) do
       nil ->
         forest
 
-      card ->
-        removed = [id | descendants(forest, id)]
-        cards = Map.drop(forest.cards, removed)
+      _card ->
+        ids = id_set(forest)
+        downstream = forest |> reach(ids, callees(forest, id), false) |> MapSet.delete(id)
+        remaining = drop(forest, [id])
+        left = id_set(remaining)
+        # What `id` reached is kept only if something outside that reach still leads to it.
+        # The walk starts outside and runs into the reach rather than the other way round,
+        # so a card losing its last caller goes even though it now looks like a source.
+        kept = reach(remaining, left, MapSet.difference(left, downstream), false)
+        orphans = MapSet.intersection(downstream, MapSet.difference(left, kept))
 
-        cards =
-          case card.parent_id do
-            nil ->
-              cards
-
-            parent_id ->
-              Map.update!(cards, parent_id, &%{&1 | children: List.delete(&1.children, id)})
-          end
-
-        focus = if forest.focus in removed, do: card.parent_id, else: forest.focus
-        %{forest | roots: List.delete(forest.roots, id), cards: cards, focus: focus}
+        forest |> drop([id | MapSet.to_list(orphans)]) |> refocus_after(forest, id)
     end
   end
 
@@ -178,16 +197,86 @@ defmodule Grasp.Session.Forest do
   def focus(%__MODULE__{} = forest, id),
     do: if(Map.has_key?(forest.cards, id), do: %{forest | focus: id}, else: forest)
 
-  @doc "Shows or hides the subtree of `id`."
+  @doc "Collapses or expands `id`, hiding or showing what only it reaches."
   @spec toggle_collapse(t(), id()) :: t()
   def toggle_collapse(%__MODULE__{} = forest, id) do
     case card(forest, id) do
-      nil ->
-        forest
-
-      card ->
-        %{forest | cards: Map.put(forest.cards, id, %{card | collapsed: not card.collapsed})}
+      nil -> forest
+      card -> put_card(forest, %{card | collapsed: not card.collapsed})
     end
+  end
+
+  @doc """
+  The cards no collapsed card lets through: those reachable only by leaving a collapsed
+  card.
+  """
+  @spec hidden(t()) :: MapSet.t(id())
+  def hidden(%__MODULE__{} = forest) do
+    ids = id_set(forest)
+    MapSet.difference(ids, reach(forest, ids, sources(forest, ids), true))
+  end
+
+  @doc """
+  How many cards collapsing `id` hides; 0 when `id` is not collapsed or not known.
+
+  Measured by expanding `id` alone and comparing, so cards another collapsed card hides too
+  are not counted twice.
+  """
+  @spec hidden_count(t(), id()) :: non_neg_integer()
+  def hidden_count(%__MODULE__{} = forest, id) do
+    case card(forest, id) do
+      %{collapsed: true} = card ->
+        expanded = put_card(forest, %{card | collapsed: false})
+        MapSet.size(hidden(forest)) - MapSet.size(hidden(expanded))
+
+      _not_collapsed ->
+        0
+    end
+  end
+
+  @doc "The cards calling `id`, in the order their edges were opened."
+  @spec callers(t(), id()) :: [id()]
+  def callers(%__MODULE__{} = forest, id),
+    do: for(%{from: from, to: ^id} <- forest.edges, do: from)
+
+  @doc "The cards `id` calls, in the order their edges were opened."
+  @spec callees(t(), id()) :: [id()]
+  def callees(%__MODULE__{} = forest, id), do: for(%{from: ^id, to: to} <- forest.edges, do: to)
+
+  @doc "The edges joining two visible cards, in the order they were opened."
+  @spec edges(t()) :: [edge()]
+  def edges(%__MODULE__{} = forest) do
+    hidden = hidden(forest)
+    Enum.reject(forest.edges, &(MapSet.member?(hidden, &1.from) or MapSet.member?(hidden, &1.to)))
+  end
+
+  @doc """
+  The visible cards in columns, callers left of what they call and each column in row
+  order.
+  """
+  @spec layout(t()) :: [[id()]]
+  def layout(%__MODULE__{} = forest) do
+    visible = MapSet.difference(id_set(forest), hidden(forest))
+
+    columns =
+      forest
+      |> sources(visible)
+      |> Enum.reduce(%{}, &column(forest, visible, &1, 0, MapSet.new(), &2))
+      |> Enum.group_by(fn {_id, column} -> column end, fn {id, _column} -> id end)
+
+    case map_size(columns) do
+      0 ->
+        []
+
+      count ->
+        0..(count - 1) |> Enum.reduce([], &order(forest, columns, &1, &2)) |> Enum.reverse()
+    end
+  end
+
+  @doc "The column `id` is laid out in; 0 when it is hidden or unknown."
+  @spec depth(t(), id()) :: non_neg_integer()
+  def depth(%__MODULE__{} = forest, id) do
+    forest |> layout() |> Enum.find_index(&(id in &1)) || 0
   end
 
   @doc "Sets a card's layout offset in stage pixels; no-op on an unknown id."
@@ -195,32 +284,35 @@ defmodule Grasp.Session.Forest do
   def move(%__MODULE__{} = forest, id, {dx, dy}) when is_integer(dx) and is_integer(dy) do
     case card(forest, id) do
       nil -> forest
-      card -> %{forest | cards: Map.put(forest.cards, id, %{card | offset: {dx, dy}})}
+      card -> put_card(forest, %{card | offset: {dx, dy}})
     end
   end
 
-  @doc "Clears every card's offset so the tree returns to its automatic layout."
+  @doc "Clears every card's offset so the graph returns to its automatic layout."
   @spec reset_offsets(t()) :: t()
   def reset_offsets(%__MODULE__{} = forest) do
     %{forest | cards: Map.new(forest.cards, fn {id, card} -> {id, %{card | offset: {0, 0}}} end)}
   end
 
-  @doc "Moves focus to the parent, first visible child, next or previous sibling."
+  @doc """
+  Moves focus to the first caller, the first visible callee, or the neighbour in the same
+  column. Focus stays put when there is nowhere to go.
+  """
   @spec move_focus(t(), direction()) :: t()
-  def move_focus(%__MODULE__{focus: nil, roots: [first | _]} = forest, _dir),
-    do: %{forest | focus: first}
+  def move_focus(%__MODULE__{focus: nil} = forest, _direction) do
+    case layout(forest) do
+      [[first | _] | _] -> %{forest | focus: first}
+      _empty -> forest
+    end
+  end
 
-  def move_focus(%__MODULE__{focus: nil} = forest, _dir), do: forest
-
-  def move_focus(%__MODULE__{} = forest, dir) do
-    card = Map.fetch!(forest.cards, forest.focus)
-
+  def move_focus(%__MODULE__{} = forest, direction) do
     target =
-      case dir do
-        :parent -> card.parent_id
-        :child -> if card.collapsed, do: nil, else: List.first(card.children)
-        :next -> neighbour(siblings(forest, card), card.id, 1)
-        :prev -> neighbour(siblings(forest, card), card.id, -1)
+      case direction do
+        :parent -> forest |> callers(forest.focus) |> List.first()
+        :child -> forest |> visible_callees(forest.focus) |> List.first()
+        :next -> neighbour(forest, 1)
+        :prev -> neighbour(forest, -1)
       end
 
     if target, do: %{forest | focus: target}, else: forest
@@ -231,43 +323,45 @@ defmodule Grasp.Session.Forest do
   def set_highlight(%__MODULE__{} = forest, id, highlight) do
     case card(forest, id) do
       nil -> forest
-      card -> %{forest | cards: Map.put(forest.cards, id, %{card | highlight: highlight})}
+      card -> put_card(forest, %{card | highlight: highlight})
     end
   end
 
   @doc """
-  Builds a forest from an ordered flat spec. A `parent_key` names an earlier entry; the
-  first entry with no parent becomes the focus. A child is always added, so a spec may
-  repeat a function under one parent.
+  Builds a graph from an ordered flat spec. A `parent_key` names an earlier entry, and the
+  first entry's card takes the focus.
+
+  Entries naming the same function describe one card, so a spec listing a helper under each
+  of its callers draws one card with an edge from each, and the card keeps the highlight of
+  whichever entry asked for one.
   """
   @spec replace([spec()]) :: {:ok, t()} | {:error, {:unknown_parent, String.t()}}
   def replace(specs) when is_list(specs) do
-    Enum.reduce_while(specs, {:ok, new(), %{}}, fn spec, {:ok, forest, keys} ->
-      case spec.parent_key do
-        nil ->
-          {forest, id} = open_root(forest, spec.function_id)
-          {:cont, {:ok, highlight(forest, id, spec), Map.put(keys, spec.key, id)}}
+    Enum.reduce_while(specs, {:ok, new(), %{}, nil}, fn spec, {:ok, forest, keys, first} ->
+      case open(forest, keys, spec) do
+        {:ok, forest, id} ->
+          # A later entry for the same function marks nothing of its own, so the highlight
+          # an earlier entry asked for survives the card being named again.
+          forest = if spec.highlight, do: set_highlight(forest, id, spec.highlight), else: forest
+          {:cont, {:ok, forest, Map.put(keys, spec.key, id), first || id}}
 
-        parent_key ->
-          case Map.fetch(keys, parent_key) do
-            {:ok, parent_id} ->
-              {forest, id} =
-                add_child(forest, parent_id, spec.function_id, spec.opened_by || spec.function_id)
-
-              {:cont, {:ok, highlight(forest, id, spec), Map.put(keys, spec.key, id)}}
-
-            :error ->
-              {:halt, {:error, {:unknown_parent, parent_key}}}
-          end
+        {:error, _reason} = error ->
+          {:halt, error}
       end
     end)
     |> case do
-      {:ok, forest, _keys} -> {:ok, %{forest | focus: List.first(forest.roots)}}
+      {:ok, forest, _keys, first} -> {:ok, %{forest | focus: first}}
       {:error, _reason} = error -> error
     end
   end
 
-  @doc "The forest as plain maps with string keys, the shape the MCP tools return."
+  @doc """
+  The graph as plain maps with string keys, the shape the MCP tools return.
+
+  Cards read in id order and carry the ids they call and are called by; `edges` and
+  `columns` describe only what is visible, so a collapsed card's hidden part is absent from
+  both.
+  """
   @spec to_map(t()) :: map()
   def to_map(%__MODULE__{} = forest) do
     cards =
@@ -278,52 +372,185 @@ defmodule Grasp.Session.Forest do
         %{
           "id" => card.id,
           "function_id" => card.function_id,
-          "parent_id" => card.parent_id,
-          "children" => card.children,
-          "opened_by" => card.opened_by,
           "collapsed" => card.collapsed,
-          "highlight" => card.highlight
+          "highlight" => card.highlight,
+          "callers" => callers(forest, card.id),
+          "callees" => callees(forest, card.id)
         }
       end)
 
-    %{"roots" => forest.roots, "focus" => forest.focus, "cards" => cards}
+    edges =
+      Enum.map(edges(forest), fn edge ->
+        %{"from" => edge.from, "to" => edge.to, "target" => edge.target, "color" => edge.color}
+      end)
+
+    %{"focus" => forest.focus, "cards" => cards, "edges" => edges, "columns" => layout(forest)}
   end
 
-  defp highlight(forest, id, spec), do: set_highlight(forest, id, spec.highlight)
-
-  defp add_child(forest, parent_id, function_id, opened_by) do
-    {forest, id} = add_card(forest, function_id, parent_id, opened_by)
-    cards = Map.update!(forest.cards, parent_id, &%{&1 | children: &1.children ++ [id]})
-    {%{forest | cards: cards, focus: id}, id}
+  defp open(forest, _keys, %{parent_key: nil} = spec) do
+    {forest, id} = open_root(forest, spec.function_id)
+    {:ok, forest, id}
   end
 
-  defp siblings(forest, %{parent_id: nil}), do: forest.roots
-  defp siblings(forest, %{parent_id: parent_id}), do: Map.fetch!(forest.cards, parent_id).children
+  defp open(forest, keys, spec) do
+    case Map.fetch(keys, spec.parent_key) do
+      {:ok, parent_id} ->
+        {forest, id} = open_child(forest, parent_id, spec.function_id, spec.opened_by)
+        {:ok, forest, id}
 
-  defp neighbour(list, id, offset) do
-    index = Enum.find_index(list, &(&1 == id)) + offset
-    if index >= 0, do: Enum.at(list, index)
+      :error ->
+        {:error, {:unknown_parent, spec.parent_key}}
+    end
   end
 
-  defp descendants(forest, id) do
-    children = card(forest, id).children
-    children ++ Enum.flat_map(children, &descendants(forest, &1))
+  defp find_or_add(forest, function_id) do
+    case find(forest, function_id) do
+      nil -> add_card(forest, function_id)
+      id -> {forest, id}
+    end
   end
 
-  defp add_card(forest, function_id, parent_id, opened_by) do
+  defp add_card(forest, function_id) do
     id = forest.next_id
 
     card = %{
       id: id,
       function_id: function_id,
-      parent_id: parent_id,
-      children: [],
-      opened_by: opened_by,
       collapsed: false,
       offset: {0, 0},
       highlight: nil
     }
 
     {%{forest | cards: Map.put(forest.cards, id, card), next_id: id + 1}, id}
+  end
+
+  defp add_edge(forest, from, to, target) do
+    if Enum.any?(forest.edges, &(&1.from == from and &1.to == to)) do
+      forest
+    else
+      edge = %{from: from, to: to, target: target, color: forest.next_color}
+
+      %{
+        forest
+        | edges: forest.edges ++ [edge],
+          next_color: rem(forest.next_color + 1, @palette_size)
+      }
+    end
+  end
+
+  defp put_card(forest, card), do: %{forest | cards: Map.put(forest.cards, card.id, card)}
+
+  defp drop(forest, ids) do
+    dropped = MapSet.new(ids)
+
+    %{
+      forest
+      | cards: Map.drop(forest.cards, ids),
+        edges:
+          Enum.reject(
+            forest.edges,
+            &(MapSet.member?(dropped, &1.from) or MapSet.member?(dropped, &1.to))
+          )
+    }
+  end
+
+  defp refocus_after(forest, before, id) do
+    focus =
+      Enum.find(callers(before, id) ++ callees(before, id), &Map.has_key?(forest.cards, &1))
+
+    %{forest | focus: focus}
+  end
+
+  defp id_set(forest), do: forest.cards |> Map.keys() |> MapSet.new()
+
+  defp callerless(forest, ids) do
+    ids
+    |> Enum.filter(fn id ->
+      forest |> callers(id) |> Enum.all?(&(not MapSet.member?(ids, &1)))
+    end)
+    |> Enum.sort()
+  end
+
+  # Every card has to land in a column, so a group of cards that only call each other — no
+  # card in it is called from outside — elects its lowest id as the way in.
+  defp sources(forest, ids) do
+    forest |> callerless(ids) |> grow(forest, ids)
+  end
+
+  defp grow(sources, forest, ids) do
+    case ids |> MapSet.difference(reach(forest, ids, sources, false)) |> Enum.sort() do
+      [] -> sources
+      [id | _rest] -> [id | sources] |> Enum.sort() |> grow(forest, ids)
+    end
+  end
+
+  defp reach(forest, ids, starts, collapse?) do
+    Enum.reduce(starts, MapSet.new(), &visit(forest, ids, &1, collapse?, &2))
+  end
+
+  defp visit(forest, ids, id, collapse?, seen) do
+    cond do
+      MapSet.member?(seen, id) or not MapSet.member?(ids, id) ->
+        seen
+
+      collapse? and card(forest, id).collapsed ->
+        MapSet.put(seen, id)
+
+      true ->
+        seen = MapSet.put(seen, id)
+        Enum.reduce(callees(forest, id), seen, &visit(forest, ids, &1, collapse?, &2))
+    end
+  end
+
+  # A card already placed further right stays there: its column is one past the caller that
+  # reaches it from furthest right, and an edge back into the walk's own stack is a
+  # recursive call, which names no column at all.
+  defp column(forest, visible, id, column, stack, columns) do
+    if Map.get(columns, id, -1) >= column do
+      columns
+    else
+      columns = Map.put(columns, id, column)
+      stack = MapSet.put(stack, id)
+
+      forest
+      |> callees(id)
+      |> Enum.filter(&(MapSet.member?(visible, &1) and not MapSet.member?(stack, &1)))
+      |> Enum.reduce(columns, &column(forest, visible, &1, column + 1, stack, &2))
+    end
+  end
+
+  defp order(_forest, columns, 0, _ordered), do: [columns |> Map.get(0, []) |> Enum.sort()]
+
+  defp order(forest, columns, index, [previous | _rest] = ordered) do
+    rows = previous |> Enum.with_index() |> Map.new()
+
+    column =
+      columns
+      |> Map.get(index, [])
+      |> Enum.sort_by(fn id ->
+        {forest |> callers(id) |> Enum.flat_map(&List.wrap(Map.get(rows, &1))) |> mean(), id}
+      end)
+
+    [column | ordered]
+  end
+
+  # A card reached only by a skip-level edge has no row to follow and sorts after the cards
+  # that do.
+  defp mean([]), do: :infinity
+  defp mean(rows), do: Enum.sum(rows) / length(rows)
+
+  defp visible_callees(forest, id) do
+    hidden = hidden(forest)
+    forest |> callees(id) |> Enum.reject(&MapSet.member?(hidden, &1))
+  end
+
+  defp neighbour(forest, step) do
+    column = forest |> layout() |> Enum.find([], &(forest.focus in &1))
+
+    case Enum.find_index(column, &(&1 == forest.focus)) do
+      nil -> nil
+      index when index + step < 0 -> nil
+      index -> Enum.at(column, index + step)
+    end
   end
 end

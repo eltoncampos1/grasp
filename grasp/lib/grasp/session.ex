@@ -40,32 +40,39 @@ defmodule Grasp.Session do
   @spec get(name()) :: Forest.t()
   def get(name), do: GenServer.call(via(name), :get)
 
-  @doc "Opens a new root card."
+  @doc "Opens `function_id` with no caller, or focuses the card already showing it."
   @spec open_root(name(), String.t()) :: Forest.t()
   def open_root(name, function_id), do: mutate(name, &Forest.open_root(&1, function_id))
 
   @doc """
-  Opens (or focuses) `function_id` as a child of `card_id`; `opened_by` records the call
+  Opens (or focuses) `function_id` as a callee of `card_id`; `opened_by` records the call
   target that was clicked when it differs from the function's canonical id.
   """
   @spec open_child(name(), Forest.id(), String.t(), String.t() | nil) :: Forest.t()
   def open_child(name, card_id, function_id, opened_by \\ nil),
     do: mutate(name, &Forest.open_child(&1, card_id, function_id, opened_by))
 
-  @doc "Opens `caller_id` as the caller of `card_id`."
-  @spec open_caller(name(), Forest.id(), String.t()) :: Forest.t()
-  def open_caller(name, card_id, caller_id),
-    do: mutate(name, &Forest.open_caller(&1, card_id, caller_id))
+  @doc """
+  Opens (or focuses) `caller_id` as a caller of `card_id`; `target` records the call target
+  the caller writes when it differs from the card's canonical id.
+  """
+  @spec open_caller(name(), Forest.id(), String.t(), String.t() | nil) :: Forest.t()
+  def open_caller(name, card_id, caller_id, target \\ nil),
+    do: mutate(name, &Forest.open_caller(&1, card_id, caller_id, target))
 
-  @doc "Closes `card_id` and its subtree."
+  @doc "Closes `card_id` alone, leaving the cards it called behind."
   @spec close(name(), Forest.id()) :: Forest.t()
   def close(name, card_id), do: mutate(name, &Forest.close(&1, card_id))
+
+  @doc "Closes `card_id` and every card that had no other way to be reached."
+  @spec close_chain(name(), Forest.id()) :: Forest.t()
+  def close_chain(name, card_id), do: mutate(name, &Forest.close_chain(&1, card_id))
 
   @doc "Focuses `card_id`."
   @spec focus(name(), Forest.id()) :: Forest.t()
   def focus(name, card_id), do: mutate(name, &Forest.focus(&1, card_id))
 
-  @doc "Collapses or expands `card_id`."
+  @doc "Collapses or expands `card_id`, hiding or showing what only it reaches."
   @spec toggle_collapse(name(), Forest.id()) :: Forest.t()
   def toggle_collapse(name, card_id), do: mutate(name, &Forest.toggle_collapse(&1, card_id))
 
@@ -73,7 +80,7 @@ defmodule Grasp.Session do
   @spec move(name(), Forest.id(), {integer(), integer()}) :: Forest.t()
   def move(name, card_id, {dx, dy}), do: mutate(name, &Forest.move(&1, card_id, {dx, dy}))
 
-  @doc "Clears every card's offset, returning the tree to its automatic layout."
+  @doc "Clears every card's offset, returning the cards to their automatic layout."
   @spec reset_offsets(name()) :: Forest.t()
   def reset_offsets(name), do: mutate(name, &Forest.reset_offsets/1)
 
@@ -82,7 +89,7 @@ defmodule Grasp.Session do
   def move_focus(name, direction), do: mutate(name, &Forest.move_focus(&1, direction))
 
   @doc """
-  Replaces the whole forest with the cards `specs` describes. The session keeps its current
+  Replaces the whole graph with the cards `specs` describes. The session keeps its current
   forest, and nothing is broadcast, when the spec does not build.
   """
   @spec set_cards(name(), [Forest.spec()]) :: {:ok, Forest.t()} | {:error, term()}

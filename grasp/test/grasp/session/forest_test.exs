@@ -3,123 +3,218 @@ defmodule Grasp.Session.ForestTest do
 
   alias Grasp.Session.Forest
 
-  test "open_root/2 appends a focused root" do
+  test "open_root/2 finds the existing card instead of adding a second" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_root(forest, "B.g/0")
+    {forest, a_again} = Forest.open_root(forest, "A.f/1")
 
-    assert forest.roots == [a, b]
-    assert forest.focus == b
+    assert a_again == a
+    assert map_size(forest.cards) == 2
+    assert forest.focus == a
+    assert Forest.find(forest, "B.g/0") == b
+    assert Forest.find(forest, "Z.z/0") == nil
 
-    assert %{function_id: "B.g/0", parent_id: nil, children: [], opened_by: nil, collapsed: false} =
+    assert %{id: ^b, function_id: "B.g/0", collapsed: false, offset: {0, 0}, highlight: nil} =
              Forest.card(forest, b)
   end
 
-  test "open_child/3 nests under the parent and focuses the child; reopening focuses the existing child" do
+  test "open_child/4 links parent to child with a coloured edge and reuses the child card" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_child(forest, a, "B.g/0")
     {forest, c} = Forest.open_child(forest, a, "C.h/2")
+
+    assert forest.edges == [
+             %{from: a, to: b, target: "B.g/0", color: 0},
+             %{from: a, to: c, target: "C.h/2", color: 1}
+           ]
+
+    assert forest.focus == c
+
     {forest, b_again} = Forest.open_child(forest, a, "B.g/0")
 
     assert b_again == b
-    assert Forest.card(forest, a).children == [b, c]
-    assert Forest.card(forest, b).parent_id == a
-    assert Forest.card(forest, b).opened_by == "B.g/0"
+    assert length(forest.edges) == 2
     assert forest.focus == b
-    assert Forest.depth(forest, b) == 1
+    assert Forest.callees(forest, a) == [b, c]
   end
 
-  test "close/2 removes the subtree and moves focus to the parent" do
+  test "open_child/4 records the call target the click named" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/2", "B.g/1")
+
+    assert [%{from: ^a, to: ^b, target: "B.g/1"}] = forest.edges
+  end
+
+  test "open_child/4 and open_caller/4 are no-ops on an unknown card id" do
+    {forest, _a} = Forest.open_root(Forest.new(), "A.f/1")
+
+    assert {^forest, nil} = Forest.open_child(forest, 999, "B.g/0")
+    assert {^forest, nil} = Forest.open_caller(forest, 999, "C.h/2")
+  end
+
+  test "edge colours cycle through the palette" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+
+    forest =
+      Enum.reduce(1..9, forest, fn n, forest ->
+        {forest, _id} = Forest.open_child(forest, a, "C#{n}.f/0")
+        forest
+      end)
+
+    assert Enum.map(forest.edges, & &1.color) == [0, 1, 2, 3, 4, 5, 6, 7, 0]
+  end
+
+  test "open_caller/4 adds a caller card to the left with an edge into the card" do
+    {forest, x} = Forest.open_root(Forest.new(), "X.f/1")
+    {forest, c} = Forest.open_caller(forest, x, "C.h/0", "X.f/1")
+
+    assert forest.edges == [%{from: c, to: x, target: "X.f/1", color: 0}]
+    assert forest.focus == c
+    assert Forest.layout(forest) == [[c], [x]]
+
+    {forest, d} = Forest.open_caller(forest, x, "D.i/0")
+
+    assert Forest.layout(forest) == [[c, d], [x]]
+    assert Forest.callers(forest, x) == [c, d]
+    assert map_size(forest.cards) == 3
+    assert Enum.at(forest.edges, 1).target == "X.f/1"
+  end
+
+  test "a function opened under two parents is one card with two edges" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, d} = Forest.open_root(forest, "D.i/0")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+    {forest, b_again} = Forest.open_child(forest, d, "B.g/0")
+
+    assert b_again == b
+    assert Forest.find(forest, "B.g/0") == b
+    assert Forest.callers(forest, b) == [a, d]
+    assert length(forest.edges) == 2
+    assert Forest.layout(forest) == [[a, d], [b]]
+  end
+
+  test "close/2 removes one card and its edges, the chain stays" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_child(forest, a, "B.g/0")
     {forest, c} = Forest.open_child(forest, b, "C.h/2")
 
     forest = Forest.close(forest, b)
 
-    assert Forest.card(forest, b) == nil
-    assert Forest.card(forest, c) == nil
-    assert Forest.card(forest, a).children == []
+    assert forest.cards |> Map.keys() |> Enum.sort() == [a, c]
+    assert forest.edges == []
+    assert Forest.layout(forest) == [[a, c]]
     assert forest.focus == a
   end
 
-  test "closing a root drops it from roots and clears focus when nothing is left" do
-    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
-    forest = Forest.close(forest, a)
-    assert forest.roots == []
-    assert forest.focus == nil
-  end
-
-  test "toggle_collapse/2 flips the flag and subtree_size/2 counts descendants" do
+  test "close/2 falls back to a callee, then to nothing, and ignores unknown ids" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_child(forest, a, "B.g/0")
-    {forest, _c} = Forest.open_child(forest, b, "C.h/2")
 
-    assert Forest.subtree_size(forest, a) == 2
-    assert Forest.toggle_collapse(forest, a) |> Forest.card(a) |> Map.fetch!(:collapsed)
+    assert Forest.close(forest, a).focus == b
+    assert forest |> Forest.close(a) |> Forest.close(b) |> Map.fetch!(:focus) == nil
+    assert Forest.close(forest, 999) == forest
   end
 
-  test "open_caller/3 on a root re-parents: the caller becomes the root" do
-    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
-    {forest, _b} = Forest.open_root(forest, "B.g/0")
-    {forest, caller} = Forest.open_caller(forest, a, "Web.Controller.show/2")
-
-    assert forest.roots |> Enum.at(0) == caller
-    assert Forest.card(forest, caller).children == [a]
-    assert Forest.card(forest, a).parent_id == caller
-    assert Forest.card(forest, a).opened_by == "A.f/1"
-    assert forest.focus == caller
-    assert Forest.root?(forest, caller)
-    refute Forest.root?(forest, a)
-  end
-
-  test "open_caller/3 on a root clears the moved card's offset" do
-    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
-    forest = Forest.move(forest, a, {40, -12})
-    {forest, caller} = Forest.open_caller(forest, a, "Web.Controller.show/2")
-
-    assert Forest.card(forest, a).offset == {0, 0}
-    assert Forest.card(forest, caller).offset == {0, 0}
-  end
-
-  test "open_caller/3 on a non-root opens a new root tree caller → function" do
+  test "close_chain/2 removes what only the card reached" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_child(forest, a, "B.g/0")
-    {forest, caller} = Forest.open_caller(forest, b, "Other.k/0")
+    {forest, c} = Forest.open_child(forest, b, "C.h/2")
+    {forest, d} = Forest.open_root(forest, "D.i/0")
+    {shared, ^c} = Forest.open_child(forest, d, "C.h/2")
 
-    assert forest.roots == [a, caller]
-    [copy] = Forest.card(forest, caller).children
-    assert Forest.card(forest, copy).function_id == "B.g/0"
-    assert Forest.card(forest, a).children == [b]
-    assert forest.focus == caller
+    shared = Forest.close_chain(shared, b)
+
+    assert shared.cards |> Map.keys() |> Enum.sort() == [a, c, d]
+    assert Forest.callers(shared, c) == [d]
+
+    alone = Forest.close_chain(forest, b)
+
+    assert alone.cards |> Map.keys() |> Enum.sort() == [a, d]
+    assert alone.edges == []
+    assert alone.focus == a
   end
 
-  test "move_focus/2 walks parent, child and siblings; collapsed subtrees are skipped" do
+  test "close_chain/2 takes a cycle that hangs off the closed card with it" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+    {forest, c} = Forest.open_child(forest, b, "C.h/2")
+    {forest, d} = Forest.open_child(forest, c, "D.i/0")
+    {forest, ^c} = Forest.open_child(forest, d, "C.h/2")
+
+    forest = Forest.close_chain(forest, b)
+
+    assert Map.keys(forest.cards) == [a]
+  end
+
+  test "collapse hides what is reachable only through the card" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+    {forest, c} = Forest.open_child(forest, b, "C.h/2")
+    {forest, d} = Forest.open_root(forest, "D.i/0")
+    {shared, ^c} = Forest.open_child(forest, d, "C.h/2")
+
+    shared = Forest.toggle_collapse(shared, b)
+
+    assert Forest.hidden(shared) == MapSet.new()
+    assert Forest.hidden_count(shared, b) == 0
+
+    alone = Forest.toggle_collapse(forest, b)
+
+    assert Forest.hidden(alone) == MapSet.new([c])
+    assert Forest.hidden_count(alone, b) == 1
+    assert Forest.hidden_count(alone, a) == 0
+    assert Forest.card(alone, b).collapsed
+    assert Forest.layout(alone) == [[a, d], [b]]
+    assert Forest.depth(alone, c) == 0
+    assert Forest.depth(alone, b) == 1
+    assert Forest.edges(alone) == [%{from: a, to: b, target: "B.g/0", color: 0}]
+    assert Forest.toggle_collapse(alone, b) |> Forest.hidden() == MapSet.new()
+  end
+
+  test "layout/1 ignores back-edges" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+    {forest, ^a} = Forest.open_child(forest, b, "A.f/1")
+
+    assert Forest.layout(forest) == [[a], [b]]
+    assert Forest.layout(Forest.new()) == []
+  end
+
+  test "layout/1 orders a column by where its callers sit" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, d} = Forest.open_root(forest, "D.i/0")
+    {forest, c} = Forest.open_child(forest, a, "C.h/2")
+    {forest, b} = Forest.open_child(forest, d, "B.g/0")
+
+    assert Forest.layout(forest) == [[a, d], [c, b]]
+
+    {crossed, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {crossed, d} = Forest.open_root(crossed, "D.i/0")
+    {crossed, c} = Forest.open_child(crossed, d, "C.h/2")
+    {crossed, b} = Forest.open_child(crossed, a, "B.g/0")
+
+    assert Forest.layout(crossed) == [[a, d], [b, c]]
+  end
+
+  test "move_focus/2 walks callers, callees and the column" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_child(forest, a, "B.g/0")
     {forest, c} = Forest.open_child(forest, a, "C.h/2")
-    {forest, d} = Forest.open_root(forest, "D.i/0")
 
     forest = Forest.focus(forest, b)
-    assert Forest.move_focus(forest, :next).focus == c
 
-    assert forest |> Forest.move_focus(:next) |> Forest.move_focus(:prev) |> Map.fetch!(:focus) ==
-             b
-
-    # b is the first sibling, so :prev has nowhere to go and leaves focus where it is
-    assert Forest.move_focus(forest, :prev).focus == b
-    # c is the last sibling, and d the last root
-    assert forest |> Forest.focus(c) |> Forest.move_focus(:next) |> Map.fetch!(:focus) == c
-    assert forest |> Forest.focus(d) |> Forest.move_focus(:next) |> Map.fetch!(:focus) == d
     assert Forest.move_focus(forest, :parent).focus == a
     assert forest |> Forest.focus(a) |> Forest.move_focus(:child) |> Map.fetch!(:focus) == b
-    assert forest |> Forest.focus(a) |> Forest.move_focus(:next) |> Map.fetch!(:focus) == d
+    assert Forest.move_focus(forest, :next).focus == c
+    assert forest |> Forest.focus(c) |> Forest.move_focus(:prev) |> Map.fetch!(:focus) == b
 
-    assert forest
-           |> Forest.focus(a)
-           |> Forest.toggle_collapse(a)
-           |> Forest.move_focus(:child)
-           |> Map.fetch!(:focus) == a
+    # the ends of a column and a card with no caller leave focus where it is
+    assert forest |> Forest.focus(c) |> Forest.move_focus(:next) |> Map.fetch!(:focus) == c
+    assert Forest.move_focus(forest, :prev).focus == b
+    assert forest |> Forest.focus(a) |> Forest.move_focus(:parent) |> Map.fetch!(:focus) == a
 
     assert Forest.move_focus(%{forest | focus: nil}, :next).focus == a
+    assert Forest.move_focus(Forest.new(), :next) == Forest.new()
   end
 
   test "move/3 sets a card's offset and reset_offsets/1 clears every offset" do
@@ -133,14 +228,6 @@ defmodule Grasp.Session.ForestTest do
 
     forest = Forest.reset_offsets(forest)
     assert Forest.card(forest, b).offset == {0, 0}
-  end
-
-  test "open_child/3 and open_caller/3 are no-ops on an unknown card id" do
-    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
-
-    assert {^forest, nil} = Forest.open_child(forest, 999, "B.g/0")
-    assert {^forest, nil} = Forest.open_caller(forest, 999, "Other.k/0")
-    assert forest.roots == [a]
   end
 
   describe "highlights" do
@@ -160,29 +247,24 @@ defmodule Grasp.Session.ForestTest do
   end
 
   describe "replace/1" do
-    test "builds the forest in order, linking children to parents by key" do
+    test "builds one card per function, linking entries by key" do
       spec = [
         %{key: "a", function_id: "A.f/1", parent_key: nil, opened_by: nil, highlight: nil},
         %{
           key: "b",
           function_id: "B.g/0",
           parent_key: "a",
-          opened_by: "B.g/0",
+          opened_by: "B.g/1",
           highlight: %{"lines" => [1, 2]}
         },
-        %{key: "c", function_id: "C.h/0", parent_key: "a", opened_by: nil, highlight: nil},
-        %{key: "d", function_id: "D.i/0", parent_key: nil, opened_by: nil, highlight: nil}
+        %{key: "c", function_id: "B.g/0", parent_key: nil, opened_by: nil, highlight: nil}
       ]
 
       assert {:ok, forest} = Forest.replace(spec)
-      assert forest.roots == [1, 4]
+      assert map_size(forest.cards) == 2
+      assert forest.edges == [%{from: 1, to: 2, target: "B.g/1", color: 0}]
       assert forest.focus == 1
-      assert Forest.card(forest, 1).children == [2, 3]
-      assert Forest.card(forest, 2).parent_id == 1
-      assert Forest.card(forest, 2).opened_by == "B.g/0"
       assert Forest.card(forest, 2).highlight == %{"lines" => [1, 2]}
-      assert Forest.card(forest, 3).opened_by == "C.h/0"
-      assert Forest.card(forest, 4).parent_id == nil
     end
 
     test "an unknown parent key is an error" do
@@ -193,18 +275,6 @@ defmodule Grasp.Session.ForestTest do
       assert Forest.replace(spec) == {:error, {:unknown_parent, "zzz"}}
     end
 
-    test "repeats a function under one parent instead of reusing the sibling" do
-      spec = [
-        %{key: "a", function_id: "A.f/1", parent_key: nil, opened_by: nil, highlight: nil},
-        %{key: "b1", function_id: "B.g/0", parent_key: "a", opened_by: nil, highlight: nil},
-        %{key: "b2", function_id: "B.g/0", parent_key: "a", opened_by: nil, highlight: nil}
-      ]
-
-      assert {:ok, forest} = Forest.replace(spec)
-      assert Forest.card(forest, 1).children == [2, 3]
-      assert Forest.card(forest, 3).function_id == "B.g/0"
-    end
-
     test "a repeated key points at its last entry" do
       spec = [
         %{key: "a", function_id: "A.f/1", parent_key: nil, opened_by: nil, highlight: nil},
@@ -213,11 +283,11 @@ defmodule Grasp.Session.ForestTest do
       ]
 
       assert {:ok, forest} = Forest.replace(spec)
-      assert Forest.card(forest, 3).parent_id == 2
+      assert Forest.callers(forest, 3) == [2]
     end
 
     test "an empty spec is an empty forest" do
-      assert {:ok, %Forest{roots: [], cards: %{}, focus: nil}} = Forest.replace([])
+      assert {:ok, %Forest{cards: %{}, edges: [], focus: nil}} = Forest.replace([])
     end
   end
 
@@ -227,28 +297,27 @@ defmodule Grasp.Session.ForestTest do
     forest = Forest.set_highlight(forest, b, %{"call" => "C.h/0"})
 
     assert Forest.to_map(forest) == %{
-             "roots" => [a],
              "focus" => b,
              "cards" => [
                %{
                  "id" => a,
                  "function_id" => "A.f/1",
-                 "parent_id" => nil,
-                 "children" => [b],
-                 "opened_by" => nil,
                  "collapsed" => false,
-                 "highlight" => nil
+                 "highlight" => nil,
+                 "callers" => [],
+                 "callees" => [b]
                },
                %{
                  "id" => b,
                  "function_id" => "B.g/0",
-                 "parent_id" => a,
-                 "children" => [],
-                 "opened_by" => "B.g/0",
                  "collapsed" => false,
-                 "highlight" => %{"call" => "C.h/0"}
+                 "highlight" => %{"call" => "C.h/0"},
+                 "callers" => [a],
+                 "callees" => []
                }
-             ]
+             ],
+             "edges" => [%{"from" => a, "to" => b, "target" => "B.g/0", "color" => 0}],
+             "columns" => [[a], [b]]
            }
   end
 end

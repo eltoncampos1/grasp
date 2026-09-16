@@ -349,7 +349,7 @@ defmodule GraspWeb.ReviewLive do
             reset layout
           </button>
         </div>
-        <p :if={@forest.roots == []} class="empty">
+        <p :if={@forest.cards == %{}} class="empty">
           Pick a function from the sidebar or press <kbd>⌘K</kbd>.
         </p>
         <.chat_panel open?={@chat_open?} agent={@agent} error={@chat_error} />
@@ -357,7 +357,7 @@ defmodule GraspWeb.ReviewLive do
           <svg id="connectors" class="connectors" phx-update="ignore" aria-hidden="true"></svg>
           <div class="roots">
             <.card_node
-              :for={root <- @forest.roots}
+              :for={root <- Enum.concat(Forest.layout(@forest))}
               forest={@forest}
               index={@index}
               card_id={root}

@@ -15,6 +15,7 @@ defmodule Grasp.MCP.Cards do
   """
 
   alias Grasp.Index
+  alias Grasp.Links
   alias Grasp.Paths
   alias Grasp.Session.Forest
 
@@ -70,15 +71,8 @@ defmodule Grasp.MCP.Cards do
   card shows, and it is the raw spelling that marks the call as open in the parent.
   """
   @spec opened_by(Index.t(), String.t(), String.t()) :: String.t()
-  def opened_by(%Index{} = index, parent_id, child_id) do
-    with {:ok, parent} <- Index.fetch_function(index, parent_id),
-         %{"target" => target} <-
-           Enum.find(calls(parent), &(Paths.canonical(index, &1["target"]) == child_id)) do
-      target
-    else
-      _no_such_call -> child_id
-    end
-  end
+  def opened_by(%Index{} = index, parent_id, child_id),
+    do: Links.call_target(index, parent_id, child_id) || child_id
 
   # `opened` maps each key seen so far to the function its card shows, which is both the
   # check that a `parent_key` names an earlier card and the record `opened_by` is read from.
