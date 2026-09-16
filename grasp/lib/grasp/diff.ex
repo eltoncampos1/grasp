@@ -43,6 +43,23 @@ defmodule Grasp.Diff do
     end)
   end
 
+  @doc """
+  Whether a function record has two sides to compare.
+
+  A record is diffable when the branch modified it *and* it carries the base source it was
+  compared against: the two agree in an index `mix grasp.index` wrote, and requiring both
+  keeps a hand-made document from asking for a diff against nothing.
+
+      iex> Grasp.Diff.diffable?(%{"change" => "modified", "base_source" => "a"})
+      true
+
+      iex> Grasp.Diff.diffable?(%{"change" => "added", "base_source" => nil})
+      false
+  """
+  @spec diffable?(map()) :: boolean()
+  def diffable?(%{"change" => "modified", "base_source" => base}) when is_binary(base), do: true
+  def diffable?(%{}), do: false
+
   defp split(""), do: []
   defp split(source), do: String.split(source, "\n")
 end

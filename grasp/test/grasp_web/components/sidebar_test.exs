@@ -19,7 +19,7 @@ defmodule GraspWeb.SidebarTest do
   end
 
   test "an index with no entry points at all still offers the module list" do
-    html = [] |> index(without: @entry_kinds) |> render_sidebar()
+    html = [] |> index(without: @entry_kinds, unchanged: true) |> render_sidebar()
 
     assert html =~ ~s|data-kind="modules"|
     refute html =~ ~s|class="entry"|
@@ -59,7 +59,7 @@ defmodule GraspWeb.SidebarTest do
   end
 
   test "a project whose routes read as a list opens them" do
-    assert Sidebar.default_expanded(index([])) == MapSet.new(["routes"])
+    assert [] |> index(unchanged: true) |> Sidebar.default_expanded() == MapSet.new(["routes"])
   end
 
   test "a project with more routes than anyone scans opens nothing" do
@@ -73,16 +73,52 @@ defmodule GraspWeb.SidebarTest do
         }
       end
 
-    assert routes |> index(without: ["route"]) |> Sidebar.default_expanded() == MapSet.new()
+    assert routes |> index(without: ["route"], unchanged: true) |> Sidebar.default_expanded() ==
+             MapSet.new()
   end
 
   test "a project with no entry points opens the module list" do
-    assert [] |> index(without: @entry_kinds) |> Sidebar.default_expanded() ==
+    assert [] |> index(without: @entry_kinds, unchanged: true) |> Sidebar.default_expanded() ==
              MapSet.new(["modules"])
   end
 
   test "no index at all expands nothing" do
     assert Sidebar.default_expanded(nil) == MapSet.new()
+  end
+
+  test "the functions a branch changed lead the sidebar, grouped by module and badged" do
+    html = [] |> index() |> render_sidebar(MapSet.new(["changes"]))
+
+    assert html =~ ~s|data-kind="changes"|
+    assert before?(html, ~s|data-kind="changes"|, ~s|data-kind="routes"|)
+    assert html =~ ~s|Changes<span class="group__count">3</span>|
+
+    assert before?(html, "SampleApp.Formatter", "SampleApp.Greeter.Nested")
+    assert html =~ ~s|data-change="modified"|
+    assert html =~ ~s|data-change="removed"|
+    assert html =~ ~s|data-change="added"|
+    assert html =~ ~s|phx-value-id="SampleApp.Greeter.Nested.hello/0"|
+    assert html =~ "hello/0"
+  end
+
+  test "a project the base ref matches has no Changes group" do
+    html = [] |> index(unchanged: true) |> render_sidebar(MapSet.new(["changes"]))
+
+    refute html =~ ~s|data-kind="changes"|
+    assert html =~ ~s|data-kind="routes"|
+  end
+
+  test "the Changes group is one the sidebar can toggle" do
+    assert "changes" in Sidebar.group_kinds()
+  end
+
+  test "a review with changes opens them alongside whatever else opens" do
+    expanded = Sidebar.default_expanded(index([]))
+
+    assert MapSet.member?(expanded, "changes")
+    assert MapSet.member?(expanded, "routes")
+
+    refute [] |> index(unchanged: true) |> Sidebar.default_expanded() |> MapSet.member?("changes")
   end
 
   # The fixture is the only index with entry points of every kind, so kinds are removed
@@ -97,9 +133,20 @@ defmodule GraspWeb.SidebarTest do
       |> Map.update!("entry_points", fn entries ->
         Enum.reject(entries, &(&1["kind"] in without)) ++ extra
       end)
+      |> then(&if(opts[:unchanged], do: unchanged(&1), else: &1))
 
     {:ok, index} = Index.from_document(document)
     index
+  end
+
+  # A review run without `--base` compares nothing: every function is unchanged and no
+  # function the base alone had is carried over.
+  defp unchanged(document) do
+    Map.update!(document, "functions", fn records ->
+      records
+      |> Enum.reject(& &1["removed"])
+      |> Enum.map(&Map.put(&1, "change", "unchanged"))
+    end)
   end
 
   defp render_sidebar(index, expanded \\ MapSet.new(["routes"])) do

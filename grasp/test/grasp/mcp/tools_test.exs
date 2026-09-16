@@ -9,6 +9,9 @@ defmodule Grasp.MCP.ToolsTest do
   @greet_all "SampleApp.Greeter.greet_all/1"
   @wrap "SampleApp.Formatter.wrap/1"
   @show "SampleAppWeb.GreetController.show/2"
+  @shout "SampleApp.Formatter.shout/1"
+  @whisper "SampleApp.Formatter.whisper/1"
+  @nested "SampleApp.Greeter.Nested.hello/0"
 
   defp json!(%Response{content: [%{"type" => "text", "text" => text}]}), do: Jason.decode!(text)
 
@@ -168,6 +171,29 @@ defmodule Grasp.MCP.ToolsTest do
     end
   end
 
+  describe "list_changes" do
+    test "lists what the branch did, sorted by id, with the ref it was compared against" do
+      {:reply, resp, _} = Tools.ListChanges.execute(%{}, %Frame{})
+
+      refute resp.isError
+      body = json!(resp)
+
+      assert body["total"] == 3
+      assert body["base_ref"] == "main"
+      assert Enum.map(body["changes"], & &1["id"]) == [@shout, @whisper, @nested]
+
+      assert hd(body["changes"]) == %{
+               "id" => @shout,
+               "change" => "modified",
+               "file" => "lib/sample_app/formatter.ex",
+               "line" => 8,
+               "module" => "SampleApp.Formatter"
+             }
+
+      assert Enum.map(body["changes"], & &1["change"]) == ~w(modified removed added)
+    end
+  end
+
   describe "the card lookup" do
     test "answers the card, or the message a tool replies with when there is none" do
       name = "t-#{System.unique_integer([:positive])}"
@@ -199,6 +225,7 @@ defmodule Grasp.MCP.ToolsTest do
       assert "to" in Tools.FindPaths.input_schema()["required"]
       refute "from" in (Tools.FindPaths.input_schema()["required"] || [])
       refute Tools.ListEntryPoints.input_schema()["required"]
+      refute Tools.ListChanges.input_schema()["required"]
     end
 
     test "state each bounded field's default and maximum" do

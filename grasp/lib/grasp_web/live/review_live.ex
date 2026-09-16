@@ -278,7 +278,7 @@ defmodule GraspWeb.ReviewLive do
     with %Index{} = index <- socket.assigns.index,
          %{function_id: function_id} <- Forest.card(socket.assigns.forest, card_id),
          {:ok, record} <- Index.fetch_function(index, function_id) do
-      record["change"] == "modified" and is_binary(record["base_source"])
+      Grasp.Diff.diffable?(record)
     else
       _no_diff -> false
     end
@@ -352,6 +352,14 @@ defmodule GraspWeb.ReviewLive do
     {:noreply, assign(socket, forest: fun.(socket.assigns.name))}
   end
 
+  # What a PR-mode review is against, as the two ends of the comparison. A detached head has
+  # no branch name to put on the right of it, and an index built without `--base` has no
+  # comparison to name at all.
+  defp base_label(%Index{git: %{"base_ref" => base_ref}} = index) when is_binary(base_ref),
+    do: base_ref <> "…" <> (index.git["branch"] || "HEAD")
+
+  defp base_label(_index), do: nil
+
   # A card id that is not a number is nobody's card, and every session operation is a no-op
   # on an unknown id, so nil carries the garbage through to the same outcome.
   defp int(value) when is_binary(value) do
@@ -389,7 +397,7 @@ defmodule GraspWeb.ReviewLive do
       |> Enum.group_by(& &1.from, &{&1.target, %{to: &1.to, color: &1.color}})
       |> Map.new(fn {from, calls} -> {from, Map.new(calls)} end)
 
-    assigns = assign(assigns, open_calls: open_calls)
+    assigns = assign(assigns, open_calls: open_calls, base: base_label(assigns.index))
 
     ~H"""
     <main
@@ -400,7 +408,9 @@ defmodule GraspWeb.ReviewLive do
     >
       <aside :if={@sidebar_open?} class="sidebar">
         <h1 class="brand">Grasp</h1>
-        <p class="sidebar__project">{@index.project["app"]}</p>
+        <p class="sidebar__project">
+          {@index.project["app"]}<span :if={@base} class="sidebar__base">{@base}</span>
+        </p>
         <.entry_groups
           index={@index}
           expanded={@expanded_groups}

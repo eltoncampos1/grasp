@@ -8,9 +8,14 @@ defmodule GraspWeb.Palette do
   never renders, and the next patch would strip it, closing the palette as the user types.
   The hook therefore only reports intent (`palette_show`, `palette_hide`, `palette_move`,
   `palette_choose`) and the backdrop is an ordinary sibling element rather than `::backdrop`.
+
+  A result the branch added, modified or removed carries the same change badge the card and
+  the sidebar wear, so searching in PR mode says which hits are part of the review.
   """
 
   use GraspWeb, :html
+
+  import GraspWeb.CardComponents, only: [change_badge: 1]
 
   attr :open?, :boolean, required: true
   attr :query, :string, required: true
@@ -55,6 +60,7 @@ defmodule GraspWeb.Palette do
             phx-value-child="false"
           >
             <span class="palette__id">{fun["id"]}</span>
+            <.change_badge change={fun["change"]} />
             <span class="palette__meta">{fun["kind"]} · {fun["file"]}</span>
           </button>
         </li>

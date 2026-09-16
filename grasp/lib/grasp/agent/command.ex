@@ -12,7 +12,8 @@ defmodule Grasp.Agent.Command do
   takes that session, so an agent that forgets it would arrange cards on a canvas nobody is
   looking at. It also tells the agent that the canvas is a graph: a function reached from
   two callers is one card with an edge from each, so the same key is reused rather than the
-  function being described twice.
+  function being described twice, and that a question about a change starts from the list
+  of changed functions rather than from a search.
   """
 
   alias Grasp.IndexStore
@@ -73,7 +74,7 @@ defmodule Grasp.Agent.Command do
     The Grasp viewer session you control is "#{session}". Pass session: "#{session}" to every grasp card tool.
 
     Work like this:
-    1. Discover with the grasp read tools: search_functions, get_function, get_callers, get_callees, list_entry_points, find_paths (with only `to` it walks callers back to entry points such as controller actions, LiveView callbacks and Oban workers).
+    1. Discover with the grasp read tools: search_functions, get_function, get_callers, get_callees, list_entry_points, find_paths (with only `to` it walks callers back to entry points such as controller actions, LiveView callbacks and Oban workers). For questions about what a change does, start from list_changes and trace each changed function to its entry points with find_paths.
     2. Answer with set_cards: one call that lays out the whole flow, roots at the entry points, each callee under the function that calls it, in call order. The same function reached from two callers is one card with two edges — reuse the key. Add a highlight on a card when one call or line range is the point of interest.
     3. Reply in a few sentences: what the flow does and where to look first. The cards are the answer; do not paste source code.
 

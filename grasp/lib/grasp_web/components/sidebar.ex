@@ -15,13 +15,21 @@ defmodule GraspWeb.Sidebar do
   row's `title`. Routes are headed by their router — a forwarded router is a section of the
   URL space, and its rows keep their `VERB /path` label, ordered by path.
 
+  A review against a base ref leads with what the branch did: a Changes group above the
+  entry points, listing every added, modified and removed function under its module with
+  the badge naming which it is. It is the table of contents of a pull request, so it opens
+  on arrival whenever there is one, and is absent entirely from a review with no base.
+
   Which group opens on arrival is decided once, at mount, by `default_expanded/1`: the
-  routes when there are few enough to read as a list, the module list when there are no
-  entry points at all, and nothing otherwise. Every group's body is rendered either way and
-  hidden when collapsed, so the `aria-controls` on its title always names an element.
+  changes whenever there are any, the routes when there are few enough to read as a list,
+  the module list when there are no entry points at all. Every group's body is rendered
+  either way and hidden when collapsed, so the `aria-controls` on its title always names an
+  element.
   """
 
   use GraspWeb, :html
+
+  import GraspWeb.CardComponents, only: [change_badge: 1]
 
   alias Grasp.Index
 
@@ -39,7 +47,8 @@ defmodule GraspWeb.Sidebar do
   ]
 
   @known_kinds Enum.flat_map(@groups, fn {_kind, _title, kinds} -> kinds end)
-  @group_kinds Enum.map(@groups, fn {kind, _title, _kinds} -> kind end) ++ ~w(other modules)
+  @group_kinds ["changes"] ++
+                 Enum.map(@groups, fn {kind, _title, _kinds} -> kind end) ++ ~w(other modules)
 
   # Past this many routes the list is a wall rather than a table of contents, and the
   # reader is better served by the search palette.
@@ -52,9 +61,10 @@ defmodule GraspWeb.Sidebar do
   @doc """
   The groups a review of `index` opens with.
 
-  The routes are the table of contents of a web app, so they open while they still read as
-  one; a project with no entry points at all is a library, where the module list is the
-  only way in.
+  What the branch changed is why a reviewer is here at all, so it opens whenever there is
+  any. The routes are the table of contents of a web app, so they open while they still
+  read as one; a project with no entry points at all is a library, where the module list is
+  the only way in.
   """
   @spec default_expanded(Index.t() | nil) :: MapSet.t(String.t())
   def default_expanded(nil), do: MapSet.new()
@@ -63,10 +73,16 @@ defmodule GraspWeb.Sidebar do
     groups = groups(index)
     routes = Enum.find(groups, &(&1.kind == "routes"))
 
-    cond do
-      routes && routes.count <= @routes_open_max -> MapSet.new(["routes"])
-      groups == [] -> MapSet.new(["modules"])
-      true -> MapSet.new()
+    entries =
+      cond do
+        routes && routes.count <= @routes_open_max -> MapSet.new(["routes"])
+        groups == [] -> MapSet.new(["modules"])
+        true -> MapSet.new()
+      end
+
+    case Index.changed_functions(index) do
+      [] -> entries
+      _changes -> MapSet.put(entries, "changes")
     end
   end
 
@@ -75,11 +91,44 @@ defmodule GraspWeb.Sidebar do
   attr :expanded_module, :string, default: nil
 
   def entry_groups(assigns) do
+    changes = Index.changed_functions(assigns.index)
+
     assigns =
-      assign(assigns, groups: groups(assigns.index), modules: Index.modules(assigns.index))
+      assign(assigns,
+        groups: groups(assigns.index),
+        modules: Index.modules(assigns.index),
+        changes: by_module(changes),
+        change_count: length(changes)
+      )
 
     ~H"""
     <nav id="entries" class="entries">
+      <section :if={@changes != []} class="group" data-kind="changes">
+        <.group_title
+          kind="changes"
+          title="Changes"
+          count={@change_count}
+          open?={open?(@expanded, "changes")}
+        />
+        <div
+          id="group-changes"
+          class="group__body"
+          hidden={not open?(@expanded, "changes")}
+        >
+          <div :for={{module, records} <- @changes} class="group__module">
+            <h2 class="group__heading">{module}</h2>
+            <button
+              :for={record <- records}
+              class="entry"
+              phx-click="open_root"
+              phx-value-id={record["id"]}
+              title={record["id"]}
+            >
+              <.change_badge change={record["change"]} />{record["name"]}/{record["arity"]}
+            </button>
+          </div>
+        </div>
+      </section>
       <section :for={group <- @groups} class="group" data-kind={group.kind}>
         <.group_title
           kind={group.kind}
@@ -178,6 +227,12 @@ defmodule GraspWeb.Sidebar do
         modules: by_module(kind, entries)
       }
     end
+  end
+
+  # Changed functions arrive sorted by id, which orders each module's rows the way the
+  # module list orders them; grouping preserves that, so only the headings need sorting.
+  defp by_module(records) do
+    records |> Enum.group_by(& &1["module"]) |> Enum.sort_by(fn {module, _records} -> module end)
   end
 
   # A route is not a callback on a module: what it belongs to is the router that declared

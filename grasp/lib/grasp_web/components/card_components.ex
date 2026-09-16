@@ -100,9 +100,7 @@ defmodule GraspWeb.CardComponents do
     {dx, dy} = card.offset
 
     change = record["change"] || "unchanged"
-    # A modified record always carries the base it was compared against; anything else has
-    # only one side, and nothing to swap the body between.
-    diffable? = change == "modified" and is_binary(record["base_source"])
+    diffable? = Diff.diffable?(record)
 
     highlight_opts = [
       card_id: card.id,
@@ -128,13 +126,17 @@ defmodule GraspWeb.CardComponents do
             do: Grasp.Highlight.render_diff(record, highlight_opts),
             else: Grasp.Highlight.render(record, highlight_opts)
           ),
+        # A removed function's file and line are the base commit's: the line may hold
+        # something else on this branch, or the file may be gone, so there is nothing to
+        # open and the card prints the location as plain text.
         editor_href:
-          editor_url(
-            assigns.editor,
-            index.project["root"],
-            record["file"],
-            record["span"]["start_line"]
-          )
+          !record["removed"] &&
+            editor_url(
+              assigns.editor,
+              index.project["root"],
+              record["file"],
+              record["span"]["start_line"]
+            )
       )
 
     ~H"""

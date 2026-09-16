@@ -10,6 +10,7 @@ defmodule Grasp.MCP.SessionToolsTest do
   @wrap "SampleApp.Formatter.wrap/1"
   @show "SampleAppWeb.GreetController.show/2"
   @mailer "SampleApp.Workers.Mailer.perform/1"
+  @shout "SampleApp.Formatter.shout/1"
 
   setup do
     %{session: "mcp-#{System.unique_integer([:positive])}"}
@@ -261,6 +262,50 @@ defmodule Grasp.MCP.SessionToolsTest do
     end
   end
 
+  describe "set_view" do
+    test "swaps a modified card between its source and the diff", %{session: session} do
+      run(Tools.OpenCard, %{session: session, function_id: @shout})
+
+      body = json!(run(Tools.SetView, %{session: session, card_id: 1, view: "diff"}))
+      assert card(body, 1)["view"] == "diff"
+
+      body = json!(run(Tools.SetView, %{session: session, card_id: 1, view: "source"}))
+      assert card(body, 1)["view"] == "source"
+    end
+
+    test "a function with nothing to compare has no diff view, but has a source one", %{
+      session: session
+    } do
+      run(Tools.OpenCard, %{session: session, function_id: @greet})
+
+      response = run(Tools.SetView, %{session: session, card_id: 1, view: "diff"})
+
+      assert response.isError
+      assert [%{"text" => text}] = response.content
+      assert text == "no diff for " <> @greet
+
+      refute run(Tools.SetView, %{session: session, card_id: 1, view: "source"}).isError
+    end
+
+    test "an unknown card is an error", %{session: session} do
+      run(Tools.OpenCard, %{session: session, function_id: @shout})
+
+      response = run(Tools.SetView, %{session: session, card_id: 9, view: "diff"})
+
+      assert response.isError
+      assert [%{"text" => "unknown card: 9"}] = response.content
+    end
+
+    test "a view the card has no name for is an error", %{session: session} do
+      run(Tools.OpenCard, %{session: session, function_id: @shout})
+
+      response = run(Tools.SetView, %{session: session, card_id: 1, view: "sideways"})
+
+      assert response.isError
+      assert [%{"text" => "unknown view: sideways"}] = response.content
+    end
+  end
+
   describe "input schemas" do
     test "name the session, the cards and the required ids" do
       # Anubis leaves a field's default out of the JSON schema, so the description carries it
@@ -268,6 +313,8 @@ defmodule Grasp.MCP.SessionToolsTest do
       assert Tools.SetCards.input_schema()["required"] == ["cards"]
       assert "function_id" in Tools.OpenCard.input_schema()["required"]
       assert "card_id" in Tools.CloseCard.input_schema()["required"]
+      assert "card_id" in Tools.SetView.input_schema()["required"]
+      assert "view" in Tools.SetView.input_schema()["required"]
       refute Tools.GetSession.input_schema()["required"]
     end
   end

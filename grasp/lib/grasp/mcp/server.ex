@@ -19,6 +19,7 @@ defmodule Grasp.MCP.Server do
   component(Tools.GetCallees)
   component(Tools.FindPaths)
   component(Tools.ListEntryPoints)
+  component(Tools.ListChanges)
   component(Tools.ListModules)
   component(Tools.ListSessions)
   component(Tools.GetSession)
@@ -27,4 +28,5 @@ defmodule Grasp.MCP.Server do
   component(Tools.CloseCard)
   component(Tools.FocusCard)
   component(Tools.HighlightCard)
+  component(Tools.SetView)
 end

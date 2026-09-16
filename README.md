@@ -19,8 +19,10 @@ A coding agent can drive the same canvas over MCP: it searches the index, traces
 paths into a function, and lays the cards out for the human reviewer. The viewer can run
 that agent for you from a panel beside the canvas.
 
-Planned: the function's diff against a base branch on the card, sessions saved to disk,
-and annotations and guided tours the agent can author.
+Indexed against a base branch, the same canvas reviews a pull request: the sidebar leads
+with what the branch changed, and a modified card swaps between its source and its diff.
+
+Planned: sessions saved to disk, and annotations and guided tours the agent can author.
 
 Grasp exists because agents now write more code than humans can comfortably review with
 a text editor and a unified diff.
@@ -74,6 +76,38 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
   with everything that had no other way to be reached, `c` collapses it, ⌘K opens the
   palette.
 
+## PR mode
+
+Index against a base ref and the review becomes a pull request:
+
+```
+mix grasp.index --base main
+```
+
+The index then records, for every function, whether the branch left it alone, modified it,
+added it, or removed it, along with the base version of each modified function's source.
+Comparison is against the merge base of `HEAD` and the ref, so a base branch that has
+moved on since the branch started does not make every file look touched. Uncommitted and untracked
+work counts as part of the branch, so a review reads the code as it is on disk rather than
+as it was last committed.
+
+In the viewer:
+
+- **Changes** is the first group in the sidebar, open on arrival, listing every changed
+  function under its module with an `added` / `modified` / `removed` badge. Clicking one
+  opens it as a card, from which the call chain opens as usual. The line under the project
+  name says what the review is against, `main…feature`.
+- **A card wears its badge too**, and a modified one counts its lines (`+3 −1`) beside the
+  title. The palette carries the same badge, so a search says which hits are part of the
+  change.
+- **`diff` in a modified card's header** swaps its body for the diff against the base —
+  deleted lines from the base, inserted lines from the branch, highlighted as code either
+  way — and `source` swaps it back. The `d` key does the same to the focused card, and
+  passes over a card with nothing to compare.
+- **A removed function opens as a card of its own**, tinted and showing the source the base
+  had. Its `file:line` is the base commit's, so it is printed rather than linked into your
+  editor.
+
 ## MCP
 
 The viewer serves an MCP endpoint at `/mcp` on the same port as the page, over Streamable
@@ -104,6 +138,9 @@ Reading the code:
 - `list_modules(query?, limit)` — modules with their file and the behaviours they
   implement.
 - `list_sessions()` — the review sessions the viewer is running.
+- `list_changes()` — every function the branch added, modified or removed, with the base
+  ref it was compared against. The first call of a pull-request review: each id it returns
+  can be traced to its entry points with `find_paths`.
 
 Arranging the cards:
 
@@ -122,6 +159,9 @@ Arranging the cards:
 - `focus_card(name, card_id)` — scroll a card into view, to say "look here".
 - `highlight_card(name, card_id, highlight)` — point at one call inside a card, or shade a
   range of its lines.
+- `set_view(name, card_id, view)` — show a card as its `source` or as its `diff` against
+  the base, to point at what the branch did to a function rather than at the function.
+  Only a modified function has a diff; asking for one of anything else is an error.
 
 A session name defaults to `default`, which is the canvas at `/`; any other name is the
 canvas at `/s/<name>` and is created on first mention.

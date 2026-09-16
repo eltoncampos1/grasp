@@ -60,6 +60,13 @@ defmodule Grasp.Agent.CommandTest do
     assert prompt =~ "set_cards"
   end
 
+  test "system_prompt/1 sends a question about a change through list_changes" do
+    prompt = Command.system_prompt("s1")
+
+    assert prompt =~ "list_changes"
+    assert prompt =~ "find_paths"
+  end
+
   test "mcp_url/0 points at the configured endpoint port" do
     assert Command.mcp_url() == "http://127.0.0.1:4041/mcp"
   end

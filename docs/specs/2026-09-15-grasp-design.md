@@ -482,6 +482,30 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   that can bite a caller who asked for nothing unusual; an exhausted budget comes back as
   `truncated?: true`, which says the answer is partial but not which part is missing.
 
+### Known gaps (milestone 5)
+
+- **A whitespace-only edit reads as modified.** A function is modified when its text
+  differs from the base's, byte for byte, so reformatting or re-indenting it puts it in
+  the Changes group with a diff of lines that say the same thing. Comparing the parsed
+  forms instead would hide a change to a string literal or a heredoc, which is worse.
+- **A rename is a removal and an addition.** A function is identified by
+  `Module.name/arity`, so renaming it — or changing its arity, or moving it to another
+  module — is a definition the base had and this branch does not, plus one the branch has
+  and the base did not. The two are not joined, and neither carries the other's source.
+- **The base side is never compiled, only parsed.** Calls come from the compiler's tracer,
+  which runs over the branch alone, so a removed function has no callers and no callees at
+  all — its card shows its source and nothing else — and a modified function's calls are
+  the ones it makes now. A call the branch deleted is visible in the diff body and nowhere
+  in the graph.
+- **Uncommitted and untracked work is part of the branch.** Changed files are the ones
+  that differ from the merge base *in the working tree*, plus everything git reports as
+  untracked, so a review reads the code as it is on disk. Re-running the index after a
+  save is what refreshes it; there is no way to ask for the committed state instead.
+- **The diff is line-based.** `List.myers_difference/2` over the two sources, one entry
+  per line: a line that changed shows as a deletion above an insertion, with no marking of
+  which words inside it differ. Both sides are highlighted as code, so a reader compares
+  them by eye.
+
 ## Part 3 — MCP
 
 Served by `anubis_mcp` at `/mcp` over Streamable HTTP, on the same endpoint as the viewer.
@@ -521,8 +545,15 @@ first reference. Results are JSON text content, so any MCP client can read them.
   highlighted call with a ring, or the highlighted lines with a tinted background, and the
   canvas reveals it when the card gains focus. A highlight stays until replaced or the
   card closes.
+- PR mode adds two tools. `list_changes()` answers `total`, the `base_ref` the index was
+  built against (`null` without one) and the changed functions sorted by id, each with its
+  `id`, `change`, `file`, `line` and `module` — the first call of a pull-request review,
+  from which each id is traced to its entry points with `find_paths`. `set_view(name,
+  card_id, view)` shows a card as its `"source"` or its `"diff"` and answers the graph like
+  every other session tool; only a modified function has two sides, so a diff of anything
+  else is a tool error naming the function.
 - Later milestones add `annotate`, `set_tour`/`tour_goto`, resources and the
-  `build_review_tour` prompt; `list_changes` arrives with PR mode.
+  `build_review_tour` prompt.
 
 Registering in Claude Code:
 

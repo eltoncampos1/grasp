@@ -610,6 +610,43 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#card-1[data-view='source']")
   end
 
+  test "the Changes group lists what the branch touched and opens it", %{view: view} do
+    assert has_element?(view, "#entries .group[data-kind='changes'] .group__title", "Changes")
+
+    assert has_element?(
+             view,
+             "#entries .group[data-kind='changes'] .group__title[data-open='true']"
+           )
+
+    assert has_element?(
+             view,
+             "#entries .group[data-kind='changes'] .group__heading",
+             "SampleApp.Formatter"
+           )
+
+    assert has_element?(
+             view,
+             "#entries .group[data-kind='changes'] button.entry[phx-value-id='#{@whisper}'] .badge--change[data-change='removed']"
+           )
+
+    view
+    |> element("#entries .group[data-kind='changes'] button.entry[phx-value-id='#{@shout}']")
+    |> render_click()
+
+    assert has_element?(view, "#card-1[data-function-id='#{@shout}'][data-depth='0']")
+  end
+
+  test "the Changes group collapses like any other", %{view: view} do
+    view |> element("#entries .group[data-kind='changes'] .group__title") |> render_click()
+
+    assert has_element?(view, "#group-changes[hidden]")
+  end
+
+  test "the project line names the base the review is against", %{view: view} do
+    assert has_element?(view, ".sidebar__project", "sample_app")
+    assert has_element?(view, ".sidebar__base", "main…feature")
+  end
+
   defp open_caller(view, card_id, caller) do
     view |> element("#card-#{card_id} .card__callers-toggle") |> render_click()
 

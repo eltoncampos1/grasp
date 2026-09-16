@@ -3,7 +3,31 @@ defmodule GraspWeb.CardComponentsTest do
   # other test is running.
   use ExUnit.Case, async: false
 
+  import Phoenix.LiveViewTest
+
+  alias Grasp.Session.Forest
   alias GraspWeb.CardComponents
+
+  @wrap "SampleApp.Formatter.wrap/1"
+  @whisper "SampleApp.Formatter.whisper/1"
+
+  describe "card/1" do
+    test "links a card's file and line into the editor" do
+      html = render_card(@wrap)
+
+      assert html =~
+               ~s|<a class="card__file" href="vscode://file//tmp/sample_app/lib/sample_app/formatter.ex:4">|
+
+      assert html =~ "lib/sample_app/formatter.ex:4"
+    end
+
+    test "a removed function's file is plain text, since the line is the base commit's" do
+      html = render_card(@whisper)
+
+      assert html =~ ~s|<span class="card__file">|
+      refute html =~ "vscode://"
+    end
+  end
 
   describe "hexdocs_url/1" do
     test "links a standard-library function to its documentation" do
@@ -51,5 +75,18 @@ defmodule GraspWeb.CardComponentsTest do
       assert CardComponents.editor_url("idea", "/tmp/a&b", "lib/a.ex", 3) ==
                "idea://open?file=%2Ftmp%2Fa%26b%2Flib%2Fa.ex&line=3"
     end
+  end
+
+  defp render_card(function_id) do
+    {forest, _id} = Forest.open_root(Forest.new(), function_id)
+
+    render_component(&CardComponents.card/1,
+      forest: forest,
+      index: Grasp.IndexStore.get(),
+      card: Forest.card(forest, 1),
+      column: 0,
+      open_calls: %{},
+      editor: "vscode"
+    )
   end
 end

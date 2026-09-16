@@ -157,6 +157,21 @@ defmodule GraspWeb.PaletteTest do
     assert has_element?(view, "#card-1[data-depth='0']")
   end
 
+  test "a result the branch changed wears its change badge", %{view: view} do
+    search(view, "shout")
+
+    assert has_element?(
+             view,
+             "#palette-results li[data-id='#{@shout}'] .badge--change[data-change='modified']",
+             "modified"
+           )
+
+    search(view, "wrap")
+
+    assert has_element?(view, "#palette-results li[data-id='#{@wrap}']")
+    refute has_element?(view, "#palette-results li[data-id='#{@wrap}'] .badge--change")
+  end
+
   defp search(view, query) do
     view |> form("#palette-form", %{q: query}) |> render_change()
   end
