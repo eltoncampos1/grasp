@@ -215,8 +215,10 @@ defmodule Grasp.Index.Builder do
     end
   end
 
+  # Captured on its own: git writes warnings to stderr and still exits 0, and a warning
+  # folded into stdout would be read as the commit the project is sitting on.
   defp git(args, root) do
-    System.cmd("git", args, cd: root, stderr_to_stdout: true)
+    System.cmd("git", args, cd: root)
   rescue
     ErlangError -> {"", 1}
   end

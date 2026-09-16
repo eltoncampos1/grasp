@@ -4,27 +4,23 @@ defmodule Grasp.Index.BaseRefTest do
   alias Grasp.Index.BaseRef
 
   setup do
-    root = Path.join(System.tmp_dir!(), "grasp-base-ref-#{System.unique_integer([:positive])}")
-    File.mkdir_p!(Path.join(root, "lib"))
-    on_exit(fn -> File.rm_rf!(root) end)
-
-    git!(root, ["init", "-q"])
-    git!(root, ["config", "user.name", "Grasp Test"])
-    git!(root, ["config", "user.email", "grasp@example.com"])
-    git!(root, ["config", "commit.gpgsign", "false"])
+    root = repository!()
 
     write!(root, "lib/a.ex", "defmodule A do\n  def f, do: :f\nend\n")
     write!(root, "lib/keep.ex", "defmodule Keep do\n  def k, do: :k\nend\n")
     git!(root, ["add", "."])
     git!(root, ["commit", "-q", "-m", "base"])
     git!(root, ["tag", "base"])
+    # A tag and a branch of the same name: git warns about the ambiguity on stderr and
+    # resolves the ref anyway, which is how a diagnostic ends up where a sha is expected.
+    git!(root, ["branch", "base"])
 
     write!(root, "lib/a.ex", "defmodule A do\n  def f, do: :changed\nend\n")
     write!(root, "lib/b.ex", "defmodule B do\n  def g, do: :g\nend\n")
     File.rm!(Path.join(root, "lib/keep.ex"))
     write!(root, "README.md", "# readme\n")
 
-    %{root: root, base_sha: git!(root, ["rev-parse", "base^{commit}"])}
+    %{root: root, base_sha: git!(root, ["rev-parse", "refs/tags/base^{commit}"])}
   end
 
   test "resolves the base commit, the changed sources and their base contents", context do
@@ -32,6 +28,7 @@ defmodule Grasp.Index.BaseRefTest do
 
     assert resolved.base_ref == "base"
     assert resolved.base_sha == context.base_sha
+    assert resolved.base_sha =~ ~r/^[0-9a-f]{40}$/
     assert resolved.files == ["lib/a.ex", "lib/b.ex", "lib/keep.ex"]
     assert resolved.base_sources |> Map.keys() |> Enum.sort() == ["lib/a.ex", "lib/keep.ex"]
     assert resolved.base_sources["lib/a.ex"] == "defmodule A do\n  def f, do: :f\nend\n"
@@ -45,6 +42,49 @@ defmodule Grasp.Index.BaseRefTest do
     assert resolved.files == ["lib/a.ex", "lib/b.ex", "lib/keep.ex", "test/a_test.exs"]
   end
 
+  test "lists both paths of a renamed file so the old one keeps its base source", context do
+    git!(context.root, ["mv", "lib/a.ex", "lib/renamed.ex"])
+
+    assert {:ok, resolved} = BaseRef.resolve(context.root, "base")
+
+    assert resolved.files ==
+             ["lib/b.ex", "lib/keep.ex", "lib/renamed.ex", "lib/a.ex"] |> Enum.sort()
+
+    assert resolved.base_sources["lib/a.ex"] =~ "def f, do: :f"
+    refute Map.has_key?(resolved.base_sources, "lib/renamed.ex")
+  end
+
+  test "reads a path git would otherwise quote", context do
+    write!(context.root, "lib/café.ex", "defmodule Café do\n  def c, do: :c\nend\n")
+    git!(context.root, ["add", "lib/café.ex"])
+    git!(context.root, ["commit", "-q", "-m", "accented"])
+    write!(context.root, "lib/naïve.ex", "defmodule Naive do\n  def n, do: :n\nend\n")
+
+    assert {:ok, resolved} = BaseRef.resolve(context.root, "base")
+    assert "lib/café.ex" in resolved.files
+    assert "lib/naïve.ex" in resolved.files
+  end
+
+  test "falls back to the ref's own commit when it shares no history with HEAD" do
+    root = repository!()
+    write!(root, "lib/a.ex", "defmodule A do\n  def f, do: :f\nend\n")
+    git!(root, ["add", "."])
+    git!(root, ["commit", "-q", "-m", "first"])
+    trunk = git!(root, ["rev-parse", "--abbrev-ref", "HEAD"])
+
+    git!(root, ["checkout", "-q", "--orphan", "unrelated"])
+    write!(root, "lib/o.ex", "defmodule O do\n  def o, do: :o\nend\n")
+    git!(root, ["add", "."])
+    git!(root, ["commit", "-q", "-m", "unrelated"])
+    orphan_sha = git!(root, ["rev-parse", "refs/heads/unrelated"])
+    git!(root, ["checkout", "-q", trunk])
+
+    assert {:ok, resolved} = BaseRef.resolve(root, "unrelated")
+    assert resolved.base_sha == orphan_sha
+    assert resolved.files == ["lib/o.ex"]
+    assert resolved.base_sources["lib/o.ex"] =~ "def o, do: :o"
+  end
+
   test "reports a ref no commit answers to", context do
     assert BaseRef.resolve(context.root, "nope") == {:error, "unknown ref: nope"}
   end
@@ -53,14 +93,33 @@ defmodule Grasp.Index.BaseRefTest do
     assert BaseRef.resolve(System.tmp_dir!(), "main") == {:error, "not a git repository"}
   end
 
+  test "reports a root that does not exist" do
+    missing = Path.join(System.tmp_dir!(), "grasp-missing-#{System.unique_integer([:positive])}")
+    assert BaseRef.resolve(missing, "main") == {:error, "not a git repository"}
+  end
+
+  defp repository! do
+    root = Path.join(System.tmp_dir!(), "grasp-base-ref-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(root, "lib"))
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    git!(root, ["-c", "init.defaultBranch=main", "init", "-q"])
+    git!(root, ["config", "user.name", "Grasp Test"])
+    git!(root, ["config", "user.email", "grasp@example.com"])
+    git!(root, ["config", "commit.gpgsign", "false"])
+    root
+  end
+
   defp write!(root, path, contents) do
     path = Path.join(root, path)
     File.mkdir_p!(Path.dirname(path))
     File.write!(path, contents)
   end
 
+  # Captures stdout alone, for the same reason the module under test does: a warning about
+  # the ambiguous `base` ref would otherwise become part of the sha this fixture asserts on.
   defp git!(root, args) do
-    {output, 0} = System.cmd("git", args, cd: root, stderr_to_stdout: true)
+    {output, 0} = System.cmd("git", args, cd: root)
     String.trim(output)
   end
 end

@@ -6,19 +6,29 @@ defmodule Grasp.Index.BaseRef do
   The base commit is `git merge-base REF HEAD`, so a branch whose target has moved on is
   compared against the point the two diverged rather than against work the branch never
   saw. A ref with no common history has no merge base, and the ref's own commit is used
-  instead.
+  instead. The result has to look like a commit hash before it is believed: git writes
+  diagnostics on stderr and still exits 0 — a refname that is both a tag and a branch is
+  the everyday case — and a base commit that is not 40 hex digits would send every later
+  command looking for an object that cannot exist.
 
-  The file list is the union of the tracked paths that differ from the base commit and
-  the files git reports as untracked, narrowed to `.ex` and `.exs` sources under the
-  project's compile paths. A deleted file stays in the list: its functions still have to
-  be reported as removed. Paths are asked for, and resolved, relative to the working
-  directory rather than the repository root, so a Mix project sitting in a subdirectory
-  of a larger repository sees the project-relative paths the index itself uses.
+  The file list is the union of the tracked paths that differ from the base commit and the
+  files git reports as untracked, narrowed to `.ex` and `.exs` sources under the project's
+  compile paths. A deleted file stays in the list: its functions still have to be reported
+  as removed. Rename detection is off, so a file git would have reported as renamed
+  appears under both its old and its new path and keeps the base source it had under the
+  old one. Paths are asked for, and resolved, relative to the working directory rather than
+  the repository root, so a Mix project sitting in a subdirectory of a larger repository
+  sees the project-relative paths the index itself uses.
 
-  Everything goes through `git` as an external command, and every failure comes back as
-  an error string a caller can print: a directory outside a repository, a ref no commit
-  answers to, or no `git` on the machine at all.
+  Everything goes through `git` as an external command, and only the exit status decides
+  whether a command succeeded: stdout is captured on its own so nothing git says can be
+  read as a value, paths are read NUL-separated so a name git would otherwise quote or
+  break across lines survives, and every failure comes back as an error string a caller
+  can print rather than as a silently empty result.
   """
+
+  # Enough to tell a commit hash from anything git decided to say instead.
+  @commit ~r/^[0-9a-f]{40}$/
 
   @type resolved :: %{
           base_ref: String.t(),
@@ -38,67 +48,116 @@ defmodule Grasp.Index.BaseRef do
   def resolve(root, ref, opts \\ []) do
     paths = Keyword.get(opts, :paths, ["lib"])
 
-    with {:ok, _} <- git(["rev-parse", "--git-dir"], root, "not a git repository"),
-         {:ok, base_sha} <- base_sha(root, ref) do
-      files = changed_files(root, base_sha, paths)
+    with :ok <- repository(root),
+         {:ok, base_sha} <- base_sha(root, ref),
+         {:ok, changed} <- changed_files(root, base_sha),
+         {:ok, untracked} <- untracked_files(root),
+         files = sources(Enum.map(changed, fn {_status, path} -> path end) ++ untracked, paths),
+         kept = MapSet.new(files),
+         in_base = for({status, path} <- changed, status != "A", path in kept, do: path),
+         {:ok, base_sources} <- base_sources(root, base_sha, in_base) do
+      {:ok, %{base_ref: ref, base_sha: base_sha, files: files, base_sources: base_sources}}
+    end
+  end
 
-      {:ok,
-       %{
-         base_ref: ref,
-         base_sha: base_sha,
-         files: files,
-         base_sources: base_sources(root, base_sha, files)
-       }}
+  defp repository(root) do
+    if File.dir?(root) do
+      case discard(["rev-parse", "--git-dir"], root) do
+        :ok -> :ok
+        :error -> {:error, "not a git repository"}
+        :no_git -> {:error, "git is not installed"}
+      end
+    else
+      {:error, "not a git repository"}
     end
   end
 
   defp base_sha(root, ref) do
-    case git(["merge-base", ref, "HEAD"], root, "unknown ref: #{ref}") do
-      {:ok, sha} -> {:ok, String.trim(sha)}
-      {:error, _} -> disjoint_history_sha(root, ref)
+    result =
+      case git(["merge-base", ref, "HEAD"], root) do
+        # No merge base means the ref shares no history with HEAD (an orphan branch, a
+        # shallow clone); the ref's own commit is the only base there is.
+        :error -> git(["rev-parse", "--verify", ref <> "^{commit}"], root)
+        other -> other
+      end
+
+    case result do
+      {:ok, output} -> commit(String.trim(output), ref)
+      :error -> {:error, "unknown ref: #{ref}"}
+      :no_git -> {:error, "git is not installed"}
     end
   end
 
-  # No merge base means the ref shares no history with HEAD (a grafted branch, a shallow
-  # clone); the ref's own commit is the only base there is.
-  defp disjoint_history_sha(root, ref) do
-    case git(["rev-parse", "--verify", ref <> "^{commit}"], root, "unknown ref: #{ref}") do
-      {:ok, sha} -> {:ok, String.trim(sha)}
-      {:error, message} -> {:error, message}
+  defp commit(sha, ref) do
+    if Regex.match?(@commit, sha), do: {:ok, sha}, else: {:error, "could not resolve #{ref}"}
+  end
+
+  # Status letter and path per entry. `--no-renames` keeps a rename as the two paths it
+  # touches, so the old one still carries its base source instead of reading as an added
+  # file; `A` is the one status whose path the base commit does not hold.
+  defp changed_files(root, base_sha) do
+    args = ["diff", "--name-status", "--no-renames", "--relative", "-z", base_sha]
+
+    case git(args, root) do
+      {:ok, output} ->
+        {:ok, output |> fields() |> Enum.chunk_every(2) |> Enum.map(&List.to_tuple/1)}
+
+      :error ->
+        {:error, "could not diff against #{base_sha}"}
+
+      :no_git ->
+        {:error, "git is not installed"}
     end
   end
 
-  defp changed_files(root, base_sha, paths) do
-    prefixes = Enum.map(paths, &(String.trim_trailing(&1, "/") <> "/"))
+  defp untracked_files(root) do
+    case git(["ls-files", "--others", "--exclude-standard", "-z"], root) do
+      {:ok, output} -> {:ok, fields(output)}
+      :error -> {:error, "could not list untracked files"}
+      :no_git -> {:error, "git is not installed"}
+    end
+  end
 
-    changed = lines(git(["diff", "--name-only", "--relative", base_sha], root, ""))
-    untracked = lines(git(["ls-files", "--others", "--exclude-standard"], root, ""))
+  defp base_sources(root, base_sha, files) do
+    Enum.reduce_while(files, {:ok, %{}}, fn file, {:ok, sources} ->
+      case git(["show", "#{base_sha}:./#{file}"], root) do
+        {:ok, source} -> {:cont, {:ok, Map.put(sources, file, source)}}
+        :error -> {:halt, {:error, "could not read #{file} at #{base_sha}"}}
+        :no_git -> {:halt, {:error, "git is not installed"}}
+      end
+    end)
+  end
 
-    (changed ++ untracked)
-    |> Enum.filter(&source?(&1, prefixes))
+  defp sources(paths, roots) do
+    prefixes = Enum.map(roots, &(String.trim_trailing(&1, "/") <> "/"))
+
+    paths
+    |> Enum.filter(&(Path.extname(&1) in [".ex", ".exs"] and String.starts_with?(&1, prefixes)))
     |> Enum.uniq()
     |> Enum.sort()
   end
 
-  defp source?(path, prefixes),
-    do: Path.extname(path) in [".ex", ".exs"] and String.starts_with?(path, prefixes)
+  defp fields(output), do: String.split(output, "\0", trim: true)
 
-  defp base_sources(root, base_sha, files) do
-    for file <- files,
-        {:ok, source} <- [git(["show", "#{base_sha}:./#{file}"], root, "")],
-        into: %{},
-        do: {file, source}
-  end
-
-  defp lines({:ok, output}), do: output |> String.split("\n", trim: true)
-  defp lines({:error, _}), do: []
-
-  defp git(args, root, message) do
-    case System.cmd("git", args, cd: root, stderr_to_stdout: true) do
+  # Output is parsed, so stderr stays on the user's terminal where git's warnings belong
+  # rather than being folded into a value.
+  defp git(args, root) do
+    case System.cmd("git", args, cd: root) do
       {output, 0} -> {:ok, output}
-      {_output, _status} -> {:error, message}
+      {_output, _status} -> :error
     end
   rescue
-    ErlangError -> {:error, "git is not installed"}
+    ErlangError -> :no_git
+  end
+
+  # For a command run only for its exit status, so git's own message about a directory
+  # that is not a repository is swallowed rather than printed ahead of ours.
+  defp discard(args, root) do
+    case System.cmd("git", args, cd: root, stderr_to_stdout: true) do
+      {_output, 0} -> :ok
+      {_output, _status} -> :error
+    end
+  rescue
+    ErlangError -> :no_git
   end
 end

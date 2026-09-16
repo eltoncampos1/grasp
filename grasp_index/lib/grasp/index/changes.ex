@@ -45,9 +45,9 @@ defmodule Grasp.Index.Changes do
         }
 
   @doc """
-  Classifies `records` against `base_sources`, mapping every project-relative path that
+  Classifies `records` against `compared_sources`, mapping every project-relative path that
   differs from the base to the contents it had there — an empty string for a file the base
-  did not have.
+  did not have, which `Grasp.Index.BaseRef` leaves out of its own `base_sources` map.
 
   `paths` are the project's compile paths: a base source outside them is ignored, so a
   file the index never looked at cannot invent removed functions.
@@ -55,14 +55,14 @@ defmodule Grasp.Index.Changes do
   @spec classify([Join.function_record()], %{String.t() => String.t()}, [String.t()]) :: [
           classified_record()
         ]
-  def classify(records, base_sources, paths) do
+  def classify(records, compared_sources, paths) do
     prefixes = Enum.map(paths, &(String.trim_trailing(&1, "/") <> "/"))
 
-    base_sources =
-      Map.filter(base_sources, fn {file, _} -> String.starts_with?(file, prefixes) end)
+    compared_sources =
+      Map.filter(compared_sources, fn {file, _} -> String.starts_with?(file, prefixes) end)
 
     base_definitions =
-      Enum.flat_map(base_sources, fn {file, source} ->
+      Enum.flat_map(compared_sources, fn {file, source} ->
         case Extract.extract(source, file) do
           {:ok, %{definitions: definitions}} -> definitions
           {:error, _reason} -> []
@@ -72,7 +72,7 @@ defmodule Grasp.Index.Changes do
     base_ids =
       Map.new(base_definitions, &{Join.function_id(&1.module, &1.name, &1.arity), &1})
 
-    compared = MapSet.new(Map.keys(base_sources))
+    compared = MapSet.new(Map.keys(compared_sources))
     current_ids = MapSet.new(records, & &1.id)
 
     removed =

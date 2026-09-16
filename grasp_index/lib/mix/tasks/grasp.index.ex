@@ -38,7 +38,11 @@ defmodule Mix.Tasks.Grasp.Index do
 
     Mix.shell().info(
       "Grasp index written to #{summary.path} " <>
-        "(#{summary.functions} functions, #{summary.calls} calls, #{summary.hidden_calls} hidden)"
+        "(#{summary.functions} functions, #{summary.calls} calls, #{summary.hidden_calls} hidden)" <>
+        changed_against(opts[:base], summary)
     )
   end
+
+  defp changed_against(nil, _summary), do: ""
+  defp changed_against(base, summary), do: ", #{summary.changed} changed against #{base}"
 end
