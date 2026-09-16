@@ -67,6 +67,17 @@ defmodule Grasp.MCP.CardsTest do
     assert wrap.group == nil
   end
 
+  test "a blank group title is no group, and a padded one is trimmed", %{index: index} do
+    assert {:ok, [blank, padded]} =
+             Cards.prepare(index, [
+               %{key: "a", function_id: @show, group: "   "},
+               %{key: "b", function_id: @wrap, group: "  Request "}
+             ])
+
+    assert blank.group == nil
+    assert padded.group == "Request"
+  end
+
   test "unknown functions and parents are one readable error", %{index: index} do
     cards = [
       %{key: "a", function_id: "Nope.f/0", parent_key: nil, highlight: nil},

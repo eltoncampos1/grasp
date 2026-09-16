@@ -41,8 +41,9 @@ defmodule Grasp.MCP.Cards do
   card. Unknown functions are collected into one message so an agent fixes them in a
   single round trip rather than one per call.
 
-  A `group` is a title rather than an id, passed through untouched: cards carrying the same
-  title land in one group, which the canvas draws as a section of its own.
+  A `group` is a title rather than an id: cards carrying the same title land in one group,
+  which the canvas draws as a section of its own. A blank title means no group, so a model
+  that fills the field with nothing does not open an unnamed frame.
   """
   @spec prepare(Index.t(), [input()]) :: {:ok, [Forest.spec()]} | {:error, String.t()}
   def prepare(%Index{} = index, cards) when is_list(cards) do
@@ -106,7 +107,7 @@ defmodule Grasp.MCP.Cards do
          key: card.key,
          function_id: record["id"],
          parent_key: parent_key,
-         group: get(card, :group),
+         group: title(get(card, :group)),
          opened_by: parent_id && opened_by(index, parent_id, record["id"]),
          highlight: highlight
        }}
@@ -153,6 +154,15 @@ defmodule Grasp.MCP.Cards do
 
   defp calls(record),
     do: Enum.filter(List.wrap(record["calls"]) ++ List.wrap(record["hidden_calls"]), &is_map/1)
+
+  defp title(nil), do: nil
+
+  defp title(text) when is_binary(text) do
+    case String.trim(text) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
 
   defp get(nil, _key), do: nil
   defp get(map, key), do: Map.get(map, key)
