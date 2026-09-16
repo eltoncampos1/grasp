@@ -102,6 +102,24 @@ defmodule Grasp.PathsTest do
 
       assert %{paths: [[^first, _, ^target]]} = Paths.to_entry_points(index, target, limit: 1)
     end
+
+    test "a deeper entry point is reported when the nearer layer leaves room" do
+      target = "SampleApp.Target.run/0"
+      near = "SampleAppWeb.Near.call/0"
+      middle = "SampleApp.Middle.step/0"
+      far = "SampleAppWeb.Far.call/0"
+
+      index =
+        index(
+          %{target => [], near => [target], middle => [target], far => [middle]},
+          [near, far]
+        )
+
+      assert %{paths: [[^near, ^target], [^far, ^middle, ^target]], truncated?: false} =
+               Paths.to_entry_points(index, target, limit: 10)
+
+      assert %{paths: [[^near, ^target]]} = Paths.to_entry_points(index, target, limit: 1)
+    end
   end
 
   defp index(calls, entry_points \\ []) do

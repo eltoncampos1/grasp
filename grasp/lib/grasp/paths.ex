@@ -6,10 +6,11 @@ defmodule Grasp.Paths do
   from being re-entered at a greater depth while still letting two same-length paths share a
   node, and a visit budget bounds the walk on a large graph. Results are shortest first.
 
-  The walk reports one hop count: the first goal fixes the horizon, the rest of that layer is
-  drained, and nothing deeper is expanded — so a longer detour to a goal already reached the
-  short way is never listed. Draining the whole layer is what lets `limit` cut in the order
-  the result is documented in rather than in the order the walk happened to find paths.
+  `limit` is checked at a layer boundary, never mid-layer: a layer that yields a goal is
+  always drained, and the walk moves on to the next one whenever fewer than `limit` paths
+  have been collected, so a goal five hops out is still reported when the nearer layers do
+  not fill the result. Results may therefore mix hop counts, shortest first, and the cut is
+  taken from the fully ordered list rather than in the order the walk happened to find paths.
 
   A walk stops at the goal, and the seed is never a goal, so `between/4` on one function
   reports no path rather than a path of length one. Ids are canonical: the seed is resolved
@@ -75,10 +76,11 @@ defmodule Grasp.Paths do
           next: next,
           goal?: goal?,
           max_depth: opts[:max_depth],
+          limit: opts[:limit],
           budget: opts[:budget],
           seen: %{seed => 0},
           found: [],
-          horizon: opts[:max_depth]
+          layer: 0
         }
 
         walk(:queue.in([seed], :queue.new()), state)
@@ -97,22 +99,23 @@ defmodule Grasp.Paths do
         %{paths: state.found, truncated?: true}
 
       true ->
-        {{:value, path}, queue} = :queue.out(queue)
-        visit(path, queue, %{state | budget: state.budget - 1})
+        {{:value, [head | _] = path}, queue} = :queue.out(queue)
+        hops = length(path) - 1
+
+        if hops > state.layer and length(state.found) >= state.limit do
+          %{paths: state.found, truncated?: false}
+        else
+          visit(head, path, hops, queue, %{state | budget: state.budget - 1, layer: hops})
+        end
     end
   end
 
-  defp visit([head | _] = path, queue, state) do
-    hops = length(path) - 1
-
+  defp visit(head, path, hops, queue, state) do
     cond do
-      hops > state.horizon ->
-        walk(queue, state)
-
       state.goal?.(head) and hops > 0 ->
-        walk(queue, %{state | found: [Enum.reverse(path) | state.found], horizon: hops})
+        walk(queue, %{state | found: [Enum.reverse(path) | state.found]})
 
-      hops >= state.horizon ->
+      hops >= state.max_depth ->
         walk(queue, state)
 
       true ->
