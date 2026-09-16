@@ -484,6 +484,12 @@ defmodule GraspWeb.ReviewLiveTest do
              "#canvas[phx-hook='Canvas'] #stage svg#connectors[phx-update='ignore']"
            )
 
+    # The hook draws the edges but cannot build the arrowhead they point at, so the marker
+    # for every palette colour is server-rendered inside the ignored layer.
+    assert has_element?(view, "#connectors defs marker#arrow-0 path[data-color='0']")
+    assert has_element?(view, "#connectors defs marker#arrow-7 path[data-color='7']")
+    assert has_element?(view, "#connectors g#edges")
+
     assert has_element?(view, "#canvas .toolbar #reset-layout[phx-click='reset_layout']")
     assert has_element?(view, "#canvas .toolbar #zoom-in")
     assert has_element?(view, "#canvas .toolbar #zoom-out")

@@ -398,7 +398,26 @@ defmodule GraspWeb.ReviewLive do
         </p>
         <.chat_panel open?={@chat_open?} agent={@agent} error={@chat_error} />
         <div id="stage" class="stage">
-          <svg id="connectors" class="connectors" phx-update="ignore" aria-hidden="true"></svg>
+          <svg id="connectors" class="connectors" phx-update="ignore" aria-hidden="true">
+            <%!-- The hook owns the edge paths, but a marker cannot be built from a path string:
+            it has to exist in the document before an edge can point at it. The server renders
+            one per palette colour, and the ignored subtree keeps them across every patch. --%>
+            <defs>
+              <marker
+                :for={color <- 0..7}
+                id={"arrow-#{color}"}
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="8"
+                markerHeight="8"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" class="arrow" data-color={color} />
+              </marker>
+            </defs>
+            <g id="edges"></g>
+          </svg>
           <div class="columns">
             <div :for={{ids, column} <- Enum.with_index(Forest.layout(@forest))} class="column">
               <.card_node

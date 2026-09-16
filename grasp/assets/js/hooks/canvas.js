@@ -1,5 +1,5 @@
-// The card canvas: pan, zoom, card dragging and the SVG connectors between a card and
-// its children.
+// The card canvas: pan, zoom, card dragging and the SVG edges that run from a call site to
+// the card it calls.
 //
 // The view is {x, y, scale} and is written to a single stylesheet rule rather than to
 // #stage's style attribute, because #stage is rendered by the server and a LiveView patch
@@ -7,9 +7,10 @@
 // carries an inline translate so the move is seen at once, and updated() clears it as
 // soon as the server has rendered the offset it was pushed.
 //
-// Connector paths live inside a phx-update="ignore" <svg>, so the hook owns them and the
-// server never renders a connector. The zoom readout is ignored by patches for the same
-// reason: the hook writes its text on every view change.
+// Edge paths live inside a phx-update="ignore" <svg>, so the hook owns them and the server
+// never renders one. The server does render that svg's <defs>, because an arrowhead marker
+// has to be in the document before a path can point at it. The zoom readout is ignored by
+// patches for the same reason the edges are: the hook writes it on every view change.
 //
 // A card is dragged by its header, or from anywhere on it with Ctrl held; holding Space turns
 // the whole canvas, cards included, into a pan surface.
@@ -18,7 +19,7 @@ const MIN_SCALE = 0.25
 const MAX_SCALE = 2.5
 const DRAG_THRESHOLD = 4
 const MARGIN = 24
-// Half a card header, so a connector leaves and arrives at the title rather than the corner.
+// Half a card header, so an edge arrives at the callee's title rather than at its corner.
 const PORT_Y = 18
 // A Ctrl-drag's release is still a context-menu gesture; long enough to cover the menu the
 // browser opens just after the drag has ended.
@@ -28,6 +29,7 @@ const Canvas = {
   mounted() {
     this.stage = this.el.querySelector("#stage")
     this.svg = this.el.querySelector("#connectors")
+    this.edges = this.svg?.querySelector("#edges")
     this.zoomLevel = this.el.querySelector("#zoom-level")
     this.view = {x: MARGIN, y: MARGIN, scale: 1}
     this.lastReveal = null
@@ -435,30 +437,57 @@ const Canvas = {
     }
   },
 
+  // One path per open call site: `[data-edge-to]` names the callee's card, `data-color` the
+  // palette slot the call site is already painted with, so the line and the text it leaves
+  // agree without the hook knowing what the colours are.
   drawConnectors() {
-    if (!this.svg) return
+    if (!this.svg || !this.edges) return
     const s = this.stage.getBoundingClientRect()
     const {scale} = this.view
     const paths = []
-    for (const child of this.el.querySelectorAll(".node__children > .node > .card")) {
-      const parent = child.closest(".node__children")?.previousElementSibling
-      if (!parent || !parent.classList.contains("card")) continue
-      const a = parent.getBoundingClientRect()
-      const b = child.getBoundingClientRect()
-      const x1 = (a.right - s.left) / scale
-      const y1 = (a.top - s.top) / scale + PORT_Y
-      const x2 = (b.left - s.left) / scale
+    for (const site of this.el.querySelectorAll("[data-edge-to]")) {
+      const card = site.closest(".card")
+      if (!card) continue
+      const callee = document.getElementById(`card-${site.dataset.edgeTo}`)
+      // A collapse takes the callee off the canvas without touching the call site's own
+      // markup, so an edge is as likely to be hanging as attached.
+      if (!callee) continue
+      const b = callee.getBoundingClientRect()
+      if (!b.width && !b.height) continue
+
+      // A call site the browser gives no box — laid out away, or inside a subtree that is
+      // not displayed — cannot say where on the card its edge starts, so the edge leaves the
+      // card at the same port it arrives at rather than being dropped.
+      const anchor = site.getBoundingClientRect()
+      const anchored = anchor.width > 0 || anchor.height > 0
+      const a = anchored ? anchor : card.getBoundingClientRect()
+
+      const left = (a.left - s.left) / scale
+      const right = (a.right - s.left) / scale
+      const calleeLeft = (b.left - s.left) / scale
+      const calleeRight = (b.right - s.left) / scale
+      // An edge leaves towards the callee and arrives on the side it comes from, so a card
+      // opened to the left of its caller is joined round the outside rather than through it.
+      const rightward = calleeLeft > right
+      const x1 = anchored && !rightward ? left : right
+      const y1 = anchored
+        ? (a.top - s.top) / scale + a.height / scale / 2
+        : (a.top - s.top) / scale + PORT_Y
+      const x2 = rightward ? calleeLeft : calleeRight
       const y2 = (b.top - s.top) / scale + PORT_Y
       const mid = (x1 + x2) / 2
+      const color = /^[0-7]$/.test(site.dataset.color || "") ? site.dataset.color : null
       // The stroke is in stage units, so at the smallest zoom it would thin to under half a
       // pixel and disappear; the presentation attribute backs up the stylesheet's rule.
       paths.push(
-        `<path vector-effect="non-scaling-stroke" d="M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}" />`,
+        `<path class="edge" vector-effect="non-scaling-stroke"` +
+          (color === null ? "" : ` data-color="${color}" marker-end="url(#arrow-${color})"`) +
+          ` d="M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}" />`,
       )
     }
     this.svg.setAttribute("width", String(this.stage.scrollWidth))
     this.svg.setAttribute("height", String(this.stage.scrollHeight))
-    this.svg.innerHTML = paths.join("")
+    this.edges.innerHTML = paths.join("")
   },
 }
 

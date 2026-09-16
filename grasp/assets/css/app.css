@@ -85,7 +85,8 @@ body.grasp-space .canvas, body.grasp-space .card { cursor: grab; }
 body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cursor: grabbing; }
 .stage { position: absolute; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; }
 .connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 0; }
-.connectors path { fill: none; stroke: var(--border); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.connectors .edge { fill: none; stroke: var(--edge-color, var(--border)); stroke-width: 2; }
+.connectors .arrow { fill: var(--edge-color, var(--border)); }
 /* Callers to the left of what they call: one flex row of columns, each a stack of cards. */
 .columns { display: flex; align-items: flex-start; gap: var(--space-xl); padding: var(--space-m); position: relative; z-index: 1; }
 .column { display: flex; flex-direction: column; gap: var(--space-m); align-items: flex-start; }
