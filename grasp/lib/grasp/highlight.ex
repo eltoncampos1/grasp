@@ -83,8 +83,7 @@ defmodule Grasp.Highlight do
   under the function id suffixed `@base`) and wraps no call span, since the ranges the
   index recorded address the current source and nothing points at a line that is gone.
 
-  A record with no `base_source` — anything but a modified function — renders as
-  `render/2`.
+  A record with no `base_source` — an added or unchanged function — renders as `render/2`.
   """
   @spec render_diff(map(), opts()) :: Phoenix.HTML.safe()
   def render_diff(record, opts) do

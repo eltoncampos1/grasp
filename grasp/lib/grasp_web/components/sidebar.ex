@@ -18,11 +18,13 @@ defmodule GraspWeb.Sidebar do
   A review against a base ref leads with what the branch did: a Changes group above the
   entry points, listing every added, modified and removed function under its module with
   the badge naming which it is. It is the table of contents of a pull request, so it opens
-  on arrival whenever there is one, and is absent entirely from a review with no base.
+  on arrival whenever there is one, and is absent from a review with nothing to show — no
+  base ref, or a branch that changed nothing.
 
-  Which group opens on arrival is decided once, at mount, by `default_expanded/1`: the
-  changes whenever there are any, the routes when there are few enough to read as a list,
-  the module list when there are no entry points at all. Every group's body is rendered
+  Which group opens on arrival is decided by `default_expanded/1`, at mount and again
+  whenever the index reloads: the changes whenever there are any, the routes when there are
+  few enough to read as a list, the module list when there are no entry points at all.
+  Every group's body is rendered
   either way and hidden when collapsed, so the `aria-controls` on its title always names an
   element.
   """
@@ -97,7 +99,7 @@ defmodule GraspWeb.Sidebar do
       assign(assigns,
         groups: groups(assigns.index),
         modules: Index.modules(assigns.index),
-        changes: by_module(changes),
+        changes: changes_by_module(changes),
         change_count: length(changes)
       )
 
@@ -231,7 +233,7 @@ defmodule GraspWeb.Sidebar do
 
   # Changed functions arrive sorted by id, which orders each module's rows the way the
   # module list orders them; grouping preserves that, so only the headings need sorting.
-  defp by_module(records) do
+  defp changes_by_module(records) do
     records |> Enum.group_by(& &1["module"]) |> Enum.sort_by(fn {module, _records} -> module end)
   end
 

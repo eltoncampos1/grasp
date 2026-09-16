@@ -33,16 +33,42 @@ defmodule GraspWeb.IndexReloadTest do
     assert has_element?(view, "#card-1[data-function-id='#{@shout}']:not(.stub)")
   end
 
-  defp without_shout do
-    path = Path.join(System.tmp_dir!(), "grasp-reload-#{System.unique_integer([:positive])}.json")
+  test "an index that gains changes opens the Changes group under a running viewer", %{
+    conn: conn
+  } do
+    :ok = IndexStore.load(unchanged())
+    {:ok, view, _html} = live(conn, "/s/t-#{System.unique_integer([:positive])}")
+    refute has_element?(view, "#group-changes")
 
-    document =
-      @fixture
-      |> File.read!()
-      |> Jason.decode!()
-      |> Map.update!("functions", fn records ->
+    :ok = IndexStore.load(@fixture)
+
+    assert has_element?(view, "#entries .group[data-kind='changes'] .group__title", "Changes")
+    assert has_element?(view, "#group-changes:not([hidden])")
+  end
+
+  # A review run without `--base` compares nothing: every function is unchanged and no
+  # function the base alone had is carried over.
+  defp unchanged do
+    write(fn document ->
+      Map.update!(document, "functions", fn records ->
+        records
+        |> Enum.reject(& &1["removed"])
+        |> Enum.map(&Map.put(&1, "change", "unchanged"))
+      end)
+    end)
+  end
+
+  defp without_shout do
+    write(fn document ->
+      Map.update!(document, "functions", fn records ->
         Enum.reject(records, &(&1["id"] == @shout))
       end)
+    end)
+  end
+
+  defp write(edit) do
+    path = Path.join(System.tmp_dir!(), "grasp-reload-#{System.unique_integer([:positive])}.json")
+    document = @fixture |> File.read!() |> Jason.decode!() |> edit.()
 
     File.write!(path, Jason.encode!(document))
     on_exit(fn -> File.rm(path) end)

@@ -2,10 +2,10 @@ defmodule GraspWeb.ReviewLive do
   @moduledoc """
   The review page: a sidebar that starts from the project's entry points — routes, jobs,
   live views, processes — with the module list as its last group, the card canvas, and the
-  Cmd+K palette. Which sidebar groups arrive open is the sidebar's decision, taken once
-  from the index at mount and then owned by whoever clicks. State is the session's forest plus the loaded index; both arrive by
-  PubSub so any change — from this browser, another tab, or an MCP client later — renders
-  everywhere.
+  Cmd+K palette. Which sidebar groups arrive open is the sidebar's decision, taken from the
+  index at mount and again whenever it reloads, and owned by whoever clicks in between.
+  State is the session's forest plus the loaded index; both arrive by PubSub so any change
+  — from this browser, another tab, or an MCP client later — renders everywhere.
   """
 
   use GraspWeb, :live_view
@@ -65,14 +65,21 @@ defmodule GraspWeb.ReviewLive do
   def handle_info({:agent, name, view}, %{assigns: %{name: name}} = socket),
     do: {:noreply, assign(socket, agent: view)}
 
-  def handle_info(:index_reloaded, socket),
-    do:
-      {:noreply,
-       assign(socket,
-         index: IndexStore.get(),
-         index_error: IndexStore.last_error(),
-         index_path: IndexStore.path()
-       )}
+  # A reloaded index is a different index, so the sidebar's defaults are taken again: a
+  # re-index that adds a base ref gains a Changes group, and leaving the old set in place
+  # would open the page's table of contents shut. Only the resulting set is held — nothing
+  # records which groups the user toggled by hand — so it is recomputed, not merged.
+  def handle_info(:index_reloaded, socket) do
+    index = IndexStore.get()
+
+    {:noreply,
+     assign(socket,
+       index: index,
+       expanded_groups: default_expanded(index),
+       index_error: IndexStore.last_error(),
+       index_path: IndexStore.path()
+     )}
+  end
 
   def handle_info(_other, socket), do: {:noreply, socket}
 

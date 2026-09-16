@@ -102,6 +102,12 @@ defmodule GraspWeb.CardComponents do
     change = record["change"] || "unchanged"
     diffable? = Diff.diffable?(record)
 
+    # A card holds its view across an index reload, so one opened on a diff can outlive the
+    # diff itself — a rebase, or a base ref that moved. Nothing is left to show, and the
+    # toggle that would switch back is gone with the diff, so the card reads as source
+    # again rather than reporting a view it is not in.
+    view = if diffable?, do: card.view, else: :source
+
     highlight_opts = [
       card_id: card.id,
       open_calls: assigns.open_calls,
@@ -121,8 +127,9 @@ defmodule GraspWeb.CardComponents do
         entries: Index.entry_points_for(index, record["id"]),
         callees: Forest.callees(forest, card.id),
         hidden_count: Forest.hidden_count(forest, card.id),
+        view: view,
         body:
-          if(card.view == :diff,
+          if(view == :diff,
             do: Grasp.Highlight.render_diff(record, highlight_opts),
             else: Grasp.Highlight.render(record, highlight_opts)
           ),
@@ -145,7 +152,7 @@ defmodule GraspWeb.CardComponents do
       class={["card", @focused? && "card--focused", @record["removed"] && "card--removed"]}
       data-function-id={@record["id"]}
       data-focused={to_string(@focused?)}
-      data-view={to_string(@card.view)}
+      data-view={to_string(@view)}
       data-highlight-key={highlight_key(@card.highlight)}
       data-depth={@column}
       data-dx={@dx}
@@ -204,7 +211,7 @@ defmodule GraspWeb.CardComponents do
             phx-value-card={@card.id}
             title="Show the diff against the base (d)"
           >
-            {if @card.view == :source, do: "diff", else: "source"}
+            {if @view == :source, do: "diff", else: "source"}
           </button>
           <button
             :if={@callees != []}

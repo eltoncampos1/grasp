@@ -255,7 +255,7 @@
         1
       ],
       "arity": 1,
-      "base_source": "  @doc \"Upcases text and adds an exclamation mark.\"\n  @spec shout(String.t()) :: String.t()\n    text",
+      "base_source": "  @doc \"Upcases text and adds an exclamation mark.\"\n  @spec shout(String.t()) :: String.t()\n  def shout(text), do: text",
       "calls": [
         {
           "kind": "remote",
