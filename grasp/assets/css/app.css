@@ -8,7 +8,7 @@
   --fg: #1f2328;
   --fg-muted: #57606a;
   --fg-subtle: #6e7781;
-  --fg-faint: #9da7b1;
+  --fg-faint: #bcc4cc;
   --accent: #0969da;
   --accent-soft: color-mix(in oklch, var(--accent) 14%, transparent);
   --focus: #9a6700;
