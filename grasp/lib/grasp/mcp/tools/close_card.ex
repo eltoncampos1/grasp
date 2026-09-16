@@ -21,11 +21,9 @@ defmodule Grasp.MCP.Tools.CloseCard do
 
   @impl true
   def execute(%{session: session, card_id: card_id}, frame) do
-    :ok = Session.ensure(session)
-
-    case Forest.card(Session.get(session), card_id) do
-      nil -> Tools.error(frame, "unknown card: #{card_id}")
-      _card -> Tools.reply(frame, Forest.to_map(Session.close(session, card_id)))
+    case Tools.fetch_card(session, card_id) do
+      {:ok, _card} -> Tools.reply(frame, Forest.to_map(Session.close(session, card_id)))
+      {:error, message} -> Tools.error(frame, message)
     end
   end
 end

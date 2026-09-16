@@ -110,6 +110,23 @@ defmodule Grasp.MCP.SessionToolsTest do
       assert body["focus"] == 2
     end
 
+    test "opening a child twice focuses the one already there", %{session: session} do
+      run(Tools.OpenCard, %{session: session, function_id: @show})
+
+      first =
+        json!(run(Tools.OpenCard, %{session: session, function_id: @greet, parent_card_id: 1}))
+
+      run(Tools.FocusCard, %{session: session, card_id: 1})
+
+      second =
+        json!(run(Tools.OpenCard, %{session: session, function_id: @greet, parent_card_id: 1}))
+
+      assert second["card_id"] == first["card_id"]
+      assert second["focus"] == first["card_id"]
+      assert length(second["cards"]) == 2
+      assert card(second, 1)["children"] == [first["card_id"]]
+    end
+
     test "an unknown parent card is an error", %{session: session} do
       run(Tools.OpenCard, %{session: session, function_id: @show})
       before = Session.get(session)

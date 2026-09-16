@@ -97,6 +97,7 @@ defmodule Grasp.MCP.Cards do
 
   defp spec(index, opened, card) do
     parent_key = get(card, :parent_key)
+    # Safe because prepare/2 has already answered for every function_id in the list.
     {:ok, record} = Index.fetch_function(index, card.function_id)
 
     with {:ok, parent_id} <- parent(opened, parent_key),

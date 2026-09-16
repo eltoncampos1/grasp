@@ -168,6 +168,18 @@ defmodule Grasp.MCP.ToolsTest do
     end
   end
 
+  describe "the card lookup" do
+    test "answers the card, or the message a tool replies with when there is none" do
+      name = "t-#{System.unique_integer([:positive])}"
+
+      assert {:error, "unknown card: 1"} = Tools.fetch_card(name, 1)
+
+      Grasp.Session.open_root(name, @wrap)
+
+      assert {:ok, %{id: 1, function_id: @wrap}} = Tools.fetch_card(name, 1)
+    end
+  end
+
   describe "the loaded index" do
     test "answers the store's value" do
       assert {:ok, index} = Tools.index(Grasp.IndexStore.get())

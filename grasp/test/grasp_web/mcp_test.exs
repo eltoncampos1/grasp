@@ -57,6 +57,17 @@ defmodule GraspWeb.MCPTest do
     assert has_element?(view, "#card-1[data-function-id='#{@show}']")
     assert has_element?(view, "#card-2[data-function-id='#{@greet}']")
     assert has_element?(view, "#card-2 .call[data-highlight='true'][data-target='#{@wrap}']")
+
+    result =
+      rpc(conn, session, "tools/call", %{
+        "name" => "highlight_card",
+        "arguments" => %{"session" => name, "card_id" => 2, "highlight" => %{}}
+      })
+
+    refute result["isError"]
+    assert [%{"text" => text}] = result["content"]
+    assert %{"cards" => cards} = Jason.decode!(text)
+    assert Enum.find(cards, &(&1["id"] == 2))["highlight"] == nil
   end
 
   test "a request addressed to another host is refused", %{conn: conn} do

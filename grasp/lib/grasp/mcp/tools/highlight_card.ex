@@ -7,7 +7,6 @@ defmodule Grasp.MCP.Tools.HighlightCard do
 
   use Anubis.Server.Component, type: :tool
 
-  alias Anubis.Server.Response
   alias Grasp.MCP.Cards
   alias Grasp.MCP.Tools
   alias Grasp.Session
@@ -34,22 +33,12 @@ defmodule Grasp.MCP.Tools.HighlightCard do
 
   @impl true
   def execute(%{session: session, card_id: card_id, highlight: asked}, frame) do
-    :ok = Session.ensure(session)
-
     with {:ok, index} <- Tools.index(),
-         {:ok, card} <- fetch(session, card_id),
+         {:ok, card} <- Tools.fetch_card(session, card_id),
          {:ok, highlight} <- Cards.validate_highlight(index, card.function_id, asked) do
       Tools.reply(frame, Forest.to_map(Session.set_highlight(session, card_id, highlight)))
     else
-      {:error, %Response{} = response} -> {:reply, response, frame}
-      {:error, message} when is_binary(message) -> Tools.error(frame, message)
-    end
-  end
-
-  defp fetch(session, card_id) do
-    case Forest.card(Session.get(session), card_id) do
-      nil -> {:error, "unknown card: #{card_id}"}
-      card -> {:ok, card}
+      {:error, reason} -> Tools.error(frame, reason)
     end
   end
 end

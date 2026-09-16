@@ -10,7 +10,6 @@ defmodule Grasp.MCP.Tools.OpenCard do
 
   use Anubis.Server.Component, type: :tool
 
-  alias Anubis.Server.Response
   alias Grasp.Index
   alias Grasp.MCP.Cards
   alias Grasp.MCP.Tools
@@ -48,15 +47,13 @@ defmodule Grasp.MCP.Tools.OpenCard do
     with {:ok, index} <- Tools.index(),
          {:ok, record} <- fetch(index, function_id),
          {:ok, highlight} <- Cards.validate_highlight(index, record["id"], asked),
-         :ok <- Session.ensure(session),
          {:ok, forest} <- open(session, index, Map.get(params, :parent_card_id), record) do
       card_id = forest.focus
       forest = if asked, do: Session.set_highlight(session, card_id, highlight), else: forest
 
       Tools.reply(frame, Map.put(Forest.to_map(forest), "card_id", card_id))
     else
-      {:error, %Response{} = response} -> {:reply, response, frame}
-      {:error, message} when is_binary(message) -> Tools.error(frame, message)
+      {:error, reason} -> Tools.error(frame, reason)
     end
   end
 
@@ -67,16 +64,15 @@ defmodule Grasp.MCP.Tools.OpenCard do
     end
   end
 
-  defp open(session, _index, nil, record), do: {:ok, Session.open_root(session, record["id"])}
+  defp open(session, _index, nil, record) do
+    :ok = Session.ensure(session)
+    {:ok, Session.open_root(session, record["id"])}
+  end
 
   defp open(session, index, parent_card_id, record) do
-    case Forest.card(Session.get(session), parent_card_id) do
-      nil ->
-        {:error, "unknown card: #{parent_card_id}"}
-
-      parent ->
-        opened_by = Cards.opened_by(index, parent.function_id, record["id"])
-        {:ok, Session.open_child(session, parent_card_id, record["id"], opened_by)}
+    with {:ok, parent} <- Tools.fetch_card(session, parent_card_id) do
+      opened_by = Cards.opened_by(index, parent.function_id, record["id"])
+      {:ok, Session.open_child(session, parent_card_id, record["id"], opened_by)}
     end
   end
 end

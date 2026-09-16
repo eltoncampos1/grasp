@@ -12,7 +12,6 @@ defmodule Grasp.MCP.Tools.SetCards do
 
   use Anubis.Server.Component, type: :tool
 
-  alias Anubis.Server.Response
   alias Grasp.MCP.Cards
   alias Grasp.MCP.Tools
   alias Grasp.Session
@@ -57,9 +56,10 @@ defmodule Grasp.MCP.Tools.SetCards do
          {:ok, forest} <- Session.set_cards(session, specs) do
       Tools.reply(frame, Forest.to_map(forest))
     else
-      {:error, %Response{} = response} -> {:reply, response, frame}
-      {:error, message} when is_binary(message) -> Tools.error(frame, message)
+      # Cards.prepare/2 enforces the rule Forest.replace/1 does, so the unknown parent is
+      # unreachable today; it is here so the two drifting apart is an error, not a crash.
       {:error, {:unknown_parent, key}} -> Tools.error(frame, "unknown parent key: #{key}")
+      {:error, reason} -> Tools.error(frame, reason)
     end
   end
 end

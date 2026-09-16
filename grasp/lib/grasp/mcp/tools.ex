@@ -1,7 +1,9 @@
 defmodule Grasp.MCP.Tools do
-  @moduledoc "Shared plumbing for the MCP tools: the loaded index and JSON/error replies."
+  @moduledoc "Shared plumbing for the MCP tools: the loaded index, session cards, and JSON/error replies."
 
   alias Anubis.Server.Response
+  alias Grasp.Session
+  alias Grasp.Session.Forest
 
   @doc "The loaded index, or the tool error every index-reading tool replies with when none is loaded."
   @spec index() :: {:ok, Grasp.Index.t()} | {:error, Response.t()}
@@ -12,11 +14,31 @@ defmodule Grasp.MCP.Tools do
   def index(nil), do: {:error, Response.error(Response.tool(), "no index loaded")}
   def index(%Grasp.Index{} = index), do: {:ok, index}
 
+  @doc """
+  The card `card_id` of the session named `session`, or the message a tool answers with when
+  the session holds no such card.
+
+  Starts the session if it is not running, so every card-addressing tool reads the same
+  empty forest whether or not anyone has opened the session yet.
+  """
+  @spec fetch_card(Session.name(), Forest.id()) :: {:ok, Forest.card()} | {:error, String.t()}
+  def fetch_card(session, card_id) do
+    :ok = Session.ensure(session)
+
+    case Forest.card(Session.get(session), card_id) do
+      nil -> {:error, "unknown card: #{card_id}"}
+      card -> {:ok, card}
+    end
+  end
+
   @doc "A JSON tool reply."
   @spec reply(term(), term()) :: {:reply, Response.t(), term()}
   def reply(frame, data), do: {:reply, Response.json(Response.tool(), data), frame}
 
-  @doc "A tool error reply."
-  @spec error(term(), String.t()) :: {:reply, Response.t(), term()}
-  def error(frame, message), do: {:reply, Response.error(Response.tool(), message), frame}
+  @doc "A tool error reply, from a message or from a response an earlier step already built."
+  @spec error(term(), Response.t() | String.t()) :: {:reply, Response.t(), term()}
+  def error(frame, %Response{} = response), do: {:reply, response, frame}
+
+  def error(frame, message) when is_binary(message),
+    do: {:reply, Response.error(Response.tool(), message), frame}
 end
