@@ -16,7 +16,11 @@ defmodule Grasp.Agent.Runner do
   whole regardless.
 
   Closing the port does not stop the CLI: the port's process keeps running with its stdin
-  closed. `stop/1` therefore signals the OS process first and closes the port after.
+  closed, and a real run would only notice at its next write — a whole model call away, with
+  tokens being spent all the while. Every path that ends a run therefore signals the OS
+  process first and closes the port after. The runner traps exits so that path also covers
+  its own death: a runner that is stopped, supervised down or crashes takes its CLI with it
+  rather than leaving one reparented to init.
 
   A run outlives its subscribers, so state lives here rather than in the LiveView. Every
   change broadcasts `{:agent, name, view}` on `"agent:<name>"`.
@@ -37,14 +41,21 @@ defmodule Grasp.Agent.Runner do
   def start_link(name), do: GenServer.start_link(__MODULE__, name, name: via(name))
 
   @doc false
+  @spec via(name()) :: GenServer.name()
   def via(name), do: {:via, Registry, {Grasp.AgentRegistry, name}}
 
   @doc false
+  @spec topic(name()) :: String.t()
   def topic(name), do: "agent:" <> name
 
   @impl true
-  def init(name),
-    do: {:ok, %{name: name, stream: Stream.new(), port: nil, buffer: "", running?: false}}
+  def init(name) do
+    Process.flag(:trap_exit, true)
+    {:ok, %{name: name, stream: Stream.new(), port: nil, buffer: "", running?: false}}
+  end
+
+  @impl true
+  def terminate(_reason, state), do: halt(state, nil)
 
   @impl true
   def handle_call(:get, _from, state), do: {:reply, view(state), state}
@@ -55,7 +66,7 @@ defmodule Grasp.Agent.Runner do
   def handle_call({:prompt, prompt}, _from, state) do
     {command, argv} =
       Command.build(prompt,
-        command: Application.get_env(:grasp, :agent_command, "claude"),
+        command: Application.fetch_env!(:grasp, :agent_command),
         session: state.name,
         mcp_url: Command.mcp_url(),
         resume: state.stream.claude_session_id,
@@ -113,7 +124,8 @@ defmodule Grasp.Agent.Runner do
     {:noreply, broadcast(%{state | stream: stream, port: nil, buffer: "", running?: false})}
   end
 
-  # A port that was closed by `stop/1` can still have output or its exit status in flight.
+  # A port that was closed by `stop/1` can still have output or its exit status in flight, and
+  # trapping exits adds an `{:EXIT, port, _}` for every port that closes.
   def handle_info(_message, state), do: {:noreply, state}
 
   defp halt(%{port: nil} = state, _reason), do: state

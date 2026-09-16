@@ -91,9 +91,12 @@ defmodule Grasp.Agent.Stream do
     |> Enum.reduce(state, &block/2)
   end
 
+  # A `user` event reports the tool calls the CLI ran; anything else in it echoes what was
+  # sent to the model, and putting that in the transcript would read as the agent speaking.
   defp event(state, "user", event) do
     event
     |> content()
+    |> Enum.filter(&(is_map(&1) and &1["type"] == "tool_result"))
     |> Enum.reduce(state, &block/2)
   end
 

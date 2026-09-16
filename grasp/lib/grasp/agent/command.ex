@@ -83,11 +83,12 @@ defmodule Grasp.Agent.Command do
   @doc "The URL of this viewer's MCP endpoint, on the loopback address the endpoint serves."
   @spec mcp_url() :: String.t()
   def mcp_url do
+    # `http: false` is a legal endpoint setting, and is what `mix test` runs under.
     port =
-      :grasp
-      |> Application.get_env(GraspWeb.Endpoint, [])
-      |> Keyword.get(:http, [])
-      |> Keyword.get(:port, @default_port)
+      case Application.get_env(:grasp, GraspWeb.Endpoint, [])[:http] do
+        http when is_list(http) -> Keyword.get(http, :port, @default_port)
+        _not_serving -> @default_port
+      end
 
     "http://127.0.0.1:#{port}/mcp"
   end

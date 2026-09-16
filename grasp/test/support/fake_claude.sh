@@ -1,9 +1,15 @@
 #!/bin/sh
 # Stands in for the Claude Code CLI in tests: prints a canned stream-json run whose result
 # echoes the argv, so tests can assert on the flags the runner passed. A prompt containing
-# FAIL exits non-zero after writing to stderr; one containing SLOW keeps the run alive long
-# enough for a second prompt or a stop to land while it is still running.
+# FAIL exits non-zero after writing to stderr; SLOW keeps the run alive long enough for a
+# second prompt or a stop to land while it is still running, and HANG outlives any test that
+# does not kill it. With FAKE_CLAUDE_PID_FILE set it records its own pid there, so a test can
+# prove the process is gone rather than only that the transcript says so.
 args="$*"
+
+if [ -n "$FAKE_CLAUDE_PID_FILE" ]; then
+  echo $$ > "$FAKE_CLAUDE_PID_FILE"
+fi
 
 case "$args" in
   *FAIL*)
@@ -20,6 +26,7 @@ echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":" Done."}]}}'
 
 case "$args" in
+  *HANG*) sleep 5 ;;
   *SLOW*) sleep 1 ;;
 esac
 
