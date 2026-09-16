@@ -150,13 +150,21 @@ mix grasp.index [--base main] [--out .grasp/index.json]
    list is sorted by kind — route, live route, Oban worker, live view, live component,
    GenServer, supervisor, application, plug — then label, then target. The same pass
    writes each module's behaviours into its `modules[]` entry.
-5. **Base ref (PR mode).** With `--base REF`, changed files come from
-   `git diff --name-only REF` (working tree included) filtered to `.ex` and `.exs`. Each
-   base version is read with `git show REF:path` and run through step 2 only.
-   Definitions are matched by MFA across the two sides, giving each function a `change`
-   of `added`, `modified`, `removed` or `unchanged`; `base_source` is stored for modified
-   and removed functions. Removed functions become definitions flagged `removed: true`
-   with no calls. A function moved between files without change counts as unchanged.
+5. **Base ref (PR mode).** With `--base REF`, the merge base of `REF` and `HEAD` is
+   resolved first (`git merge-base`, falling back to `REF` itself), and everything is read
+   against that `BASE_SHA`: what the branch did, not what has landed on the base since.
+   Changed files are `git diff --name-only BASE_SHA` (working tree included) unioned with
+   `git ls-files --others --exclude-standard`, filtered to `.ex` sources under the compile
+   paths — the same extension the index itself is extracted with, so a changed file can
+   never carry base definitions no current record could answer to. Each base version is
+   read with `git show BASE_SHA:./path` and run through step 2 only; a file the base did
+   not have is compared against an empty source, so its functions read as added.
+   Definitions are matched by MFA across the two sides — under any arity a head declares,
+   so a function that gains a default argument is matched, not replaced — giving each
+   function a `change` of `added`, `modified`, `removed` or `unchanged`; `base_source` is
+   stored for modified and removed functions. Removed functions become definitions flagged
+   `removed: true` with no calls. A function moved between files without change counts as
+   unchanged.
 6. **Write JSON** to `--out`.
 
 ### Index JSON (version 1)
@@ -489,9 +497,11 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   the Changes group with a diff of lines that say the same thing. Comparing the parsed
   forms instead would hide a change to a string literal or a heredoc, which is worse.
 - **A rename is a removal and an addition.** A function is identified by
-  `Module.name/arity`, so renaming it — or changing its arity, or moving it to another
-  module — is a definition the base had and this branch does not, plus one the branch has
-  and the base did not. The two are not joined, and neither carries the other's source.
+  `Module.name/arity`, so renaming it — or moving it to another module — is a definition
+  the base had and this branch does not, plus one the branch has and the base did not. The
+  two are not joined, and neither carries the other's source. An arity change is the same,
+  with one exception: the two sides are matched under every arity a head declares, so
+  adding or dropping a default argument keeps the function joined to its base version.
 - **The base side is never compiled, only parsed.** Calls come from the compiler's tracer,
   which runs over the branch alone, so a removed function has no callers and no callees at
   all — its card shows its source and nothing else — and a modified function's calls are

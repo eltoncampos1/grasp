@@ -12,7 +12,7 @@ defmodule Grasp.Index.BaseRef do
   command looking for an object that cannot exist.
 
   The file list is the union of the tracked paths that differ from the base commit and the
-  files git reports as untracked, narrowed to `.ex` and `.exs` sources under the project's
+  files git reports as untracked, narrowed to the `.ex` sources under the project's
   compile paths. A deleted file stays in the list: its functions still have to be reported
   as removed. Rename detection is off, so a file git would have reported as renamed
   appears under both its old and its new path and keeps the base source it had under the
@@ -132,7 +132,10 @@ defmodule Grasp.Index.BaseRef do
     prefixes = Enum.map(roots, &(String.trim_trailing(&1, "/") <> "/"))
 
     paths
-    |> Enum.filter(&(Path.extname(&1) in [".ex", ".exs"] and String.starts_with?(&1, prefixes)))
+    # `.ex` only, matching the glob the index itself is extracted with: a changed `.exs`
+    # would carry base definitions no current record could ever answer to, and every one of
+    # them would read as a deletion.
+    |> Enum.filter(&(Path.extname(&1) == ".ex" and String.starts_with?(&1, prefixes)))
     |> Enum.uniq()
     |> Enum.sort()
   end

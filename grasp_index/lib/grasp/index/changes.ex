@@ -13,16 +13,23 @@ defmodule Grasp.Index.Changes do
   because nothing a reader would review about it has changed.
 
   Only the files git reported as differing from the base are compared: those are the keys
-  of `base_sources`, whether or not the base had anything to say about them. A record in a
-  file the diff never touched is unchanged by construction, even when no base definition
-  carries its id — the base sources at hand simply do not describe that file. A base
-  source that is empty (a file this branch added) or that cannot be parsed contributes no
-  definitions, so the functions defined in it read as added.
+  of the map passed in, whether or not the base had anything to say about them. A record
+  in a file the diff never touched is unchanged by construction, even when no base
+  definition carries its id — the base sources at hand simply do not describe that file. A
+  base source that is empty (a file this branch added) or that cannot be parsed contributes
+  no definitions, so the functions defined in it read as added.
 
-  Definitions the base holds that no current record answers to become removed records:
-  the same shape as any other record, carrying the base file, span and source and no
-  calls, so a reader can still see what a deleted function used to be. They are appended
-  after the records that were passed in, ordered by id.
+  A definition answers to every arity it declares, not only to its canonical id: a head
+  with default arguments is one function reachable under several ids. So a base `f/1` that
+  gains a default argument and becomes `f/2` is matched through the arity the two sides
+  share and reads "modified", with the base head as its `base_source` — not an added
+  `f/2` beside a removed `f/1` that is still perfectly callable. The canonical id is tried
+  first, so an exact match always wins over an alias.
+
+  Definitions the base holds that no current record answers to under any of their arities
+  become removed records: the same shape as any other record, carrying the base file, span
+  and source and no calls, so a reader can still see what a deleted function used to be.
+  They are appended after the records that were passed in, ordered by id.
   """
 
   alias Grasp.Index.{Extract, Join}
@@ -73,11 +80,13 @@ defmodule Grasp.Index.Changes do
       Map.new(base_definitions, &{Join.function_id(&1.module, &1.name, &1.arity), &1})
 
     compared = MapSet.new(Map.keys(compared_sources))
-    current_ids = MapSet.new(records, & &1.id)
+    current_ids = MapSet.new(Enum.flat_map(records, &ids/1))
 
     removed =
       base_ids
-      |> Enum.reject(fn {id, _definition} -> MapSet.member?(current_ids, id) end)
+      |> Enum.reject(fn {_id, definition} ->
+        Enum.any?(ids(definition), &MapSet.member?(current_ids, &1))
+      end)
       |> Enum.sort_by(fn {id, _definition} -> id end)
       |> Enum.map(fn {_id, definition} -> removed_record(definition) end)
 
@@ -85,17 +94,25 @@ defmodule Grasp.Index.Changes do
   end
 
   defp classify_record(record, base_ids, compared) do
-    case Map.fetch(base_ids, record.id) do
-      {:ok, definition} ->
-        if definition.source == record.source,
-          do: change(record, "unchanged", nil),
-          else: change(record, "modified", definition.source)
-
-      :error ->
+    case Enum.find_value(ids(record), &Map.get(base_ids, &1)) do
+      nil ->
         if MapSet.member?(compared, record.file),
           do: change(record, "added", nil),
           else: change(record, "unchanged", nil)
+
+      definition ->
+        if definition.source == record.source,
+          do: change(record, "unchanged", nil),
+          else: change(record, "modified", definition.source)
     end
+  end
+
+  # Every id the definition answers to, canonical arity first so an exact match outranks
+  # one made through an arity a default argument contributes.
+  defp ids(%{module: module, name: name, arity: arity, arities: arities}) do
+    [arity | arities]
+    |> Enum.uniq()
+    |> Enum.map(&Join.function_id(module, name, &1))
   end
 
   defp change(record, change, base_source),

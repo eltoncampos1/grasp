@@ -73,8 +73,13 @@ defmodule Grasp.Index do
   defp build(document, records) do
     functions = Map.new(records, &{&1["id"], &1})
 
+    # A removed record carries the arities the base declared, which can collide with a live
+    # definition's: the live one is written last so it wins the key, and a call site opens
+    # the function that still exists rather than the card for its deleted namesake.
+    {removed, live} = Enum.split_with(records, &(&1["removed"] == true))
+
     aliases =
-      for record <- records, arity <- arities(record), into: %{} do
+      for record <- removed ++ live, arity <- arities(record), into: %{} do
         {"#{record["module"]}.#{record["name"]}/#{arity}", record["id"]}
       end
 
@@ -193,10 +198,17 @@ defmodule Grasp.Index do
   def entry_points_for(%__MODULE__{} = index, function_id),
     do: Map.get(index.entry_points_by_target, resolve(index, function_id), [])
 
-  @doc "Functions whose `change` is anything but `\"unchanged\"`, sorted by id."
+  @doc """
+  Functions whose `change` names one of the three the reader reviews — `"added"`,
+  `"modified"` or `"removed"` — sorted by id.
+
+  A record with no `change` key at all is not changed: every document this tool writes
+  carries the key, and requiring it keeps a hand-made or trimmed document from reporting
+  its whole codebase as a pull request.
+  """
   @spec changed_functions(t()) :: [function_record()]
   def changed_functions(%__MODULE__{} = index) do
-    index |> functions() |> Enum.reject(&(&1["change"] == "unchanged"))
+    index |> functions() |> Enum.filter(&(&1["change"] in ~w(added modified removed)))
   end
 
   @doc """

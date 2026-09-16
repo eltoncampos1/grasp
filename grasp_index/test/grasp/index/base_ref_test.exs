@@ -35,11 +35,12 @@ defmodule Grasp.Index.BaseRefTest do
     assert resolved.base_sources["lib/keep.ex"] =~ "def k, do: :k"
   end
 
-  test "keeps only sources under the given paths", context do
+  test "keeps only the .ex sources under the given paths", context do
+    write!(context.root, "test/support/a.ex", "defmodule ASupport do\nend\n")
     write!(context.root, "test/a_test.exs", "defmodule ATest do\nend\n")
 
     assert {:ok, resolved} = BaseRef.resolve(context.root, "base", paths: ["lib", "test"])
-    assert resolved.files == ["lib/a.ex", "lib/b.ex", "lib/keep.ex", "test/a_test.exs"]
+    assert resolved.files == ["lib/a.ex", "lib/b.ex", "lib/keep.ex", "test/support/a.ex"]
   end
 
   test "lists both paths of a renamed file so the old one keeps its base source", context do

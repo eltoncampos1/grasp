@@ -39,6 +39,20 @@ defmodule Grasp.Index.ChangesTest do
   end
   """
 
+  @base_defaults ~S"""
+  defmodule A do
+    def f(a), do: a
+
+    def g, do: :g
+  end
+  """
+
+  @current_defaults ~S"""
+  defmodule A do
+    def f(a, b \\ 1), do: a + b
+  end
+  """
+
   test "classifies added, modified and unchanged functions and appends removed ones" do
     classified =
       Changes.classify(records(@current_a, "lib/a.ex"), %{"lib/a.ex" => @base_a}, ["lib"])
@@ -104,6 +118,41 @@ defmodule Grasp.Index.ChangesTest do
     assert by_id["A.f/0"].file == "lib/b.ex"
     assert by_id["A.g/1"].change == "removed"
     assert by_id["A.h/0"].change == "removed"
+  end
+
+  test "a function that gains a default argument is modified under its new id, not removed" do
+    classified =
+      Changes.classify(
+        records(@current_defaults, "lib/a.ex"),
+        %{"lib/a.ex" => @base_defaults},
+        ["lib"]
+      )
+
+    by_id = by_id(classified)
+
+    assert Enum.map(classified, & &1.id) == ["A.f/2", "A.g/0"]
+
+    assert by_id["A.f/2"].change == "modified"
+    assert by_id["A.f/2"].base_source =~ "def f(a), do: a"
+    assert by_id["A.f/2"].removed == false
+    assert by_id["A.f/2"].arities == [1, 2]
+
+    refute Enum.any?(classified, &(&1.id == "A.f/1"))
+  end
+
+  test "a definition the current file really dropped is still removed" do
+    classified =
+      Changes.classify(
+        records(@current_defaults, "lib/a.ex"),
+        %{"lib/a.ex" => @base_defaults},
+        ["lib"]
+      )
+
+    removed = by_id(classified)["A.g/0"]
+
+    assert removed.change == "removed"
+    assert removed.removed == true
+    assert removed.source =~ "def g, do: :g"
   end
 
   defp records(source, file) do
