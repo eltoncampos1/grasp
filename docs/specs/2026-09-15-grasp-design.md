@@ -336,6 +336,18 @@ style, so a LiveView patch cannot wipe it mid-gesture. A wheel over something th
 scroll itself — a code body scrolled sideways, an open callers menu — is left to that
 element.
 
+Zoom out past 0.6 and the canvas reads semantically rather than optically: the hook puts
+`grasp-far` on `<body>`, and every card drops its body, its "Also calls" footer, its title,
+its badges, its stats and its tools, keeping one line — the function's head, which
+`CardComponents.signature/1` takes from the record's source (the first `def`, `defp`,
+`defmacro`, `defguard` or `defdelegate` line, past whatever `@doc` and `@spec` sit above it,
+without its trailing `do`), falling back to `Mod.fun/arity` for a stub or a record with no
+definition in it. That line and a group's title are sized as `14px / --zoom`, `--zoom` being
+the scale the hook writes on the stage beside the transform, so they hold their size on
+screen while everything around them shrinks; the card's width floor and ceiling go with the
+body, leaving each card exactly as wide as its signature. The header stays, emptied, because
+its tint is what marks a removed function.
+
 Each card carries a persistent offset from its automatic position, set by dragging its
 header or by Ctrl-dragging anywhere on it. The drag shows an inline translate at once and
 pushes `move_card` on release; the offset is stored on the card (`Forest.move/3`) and

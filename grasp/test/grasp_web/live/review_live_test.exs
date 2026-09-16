@@ -127,6 +127,17 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#card-1 .card__file", "lib/sample_app/greeter.ex:6")
   end
 
+  test "a card carries the function's head, which is all a zoomed-out canvas shows", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.open_root(name, @whisper)
+
+    assert has_element?(view, "#card-1 .card__signature", ~S|def greet(name, loud? \\ false)|)
+    assert has_element?(view, "#card-2 .card__signature", "def whisper(text)")
+  end
+
   test "a highlighted card renders the ring and the tinted lines", %{view: view, name: name} do
     Session.open_root(name, @greet)
     id = 1

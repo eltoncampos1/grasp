@@ -68,6 +68,8 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
   something that can scroll itself.
 - ⌘0 resets the canvas zoom, as does clicking the zoom percentage in the toolbar. Some
   browsers also take ⌘0 for their own page zoom, and reset both.
+- Below 60% the cards stop shrinking and start summarising: body, badges and tools go, and
+  each card shows only the function's signature, scaled back up so it reads at any zoom.
 - ⌘M toggles the sidebar. On macOS the browser may take ⌘M for "minimise window", in
   which case use ⌘\\.
 - A card's callers menu opens a caller to its left; open several and the card keeps one

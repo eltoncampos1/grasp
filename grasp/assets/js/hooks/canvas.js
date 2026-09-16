@@ -17,6 +17,9 @@
 
 const MIN_SCALE = 0.25
 const MAX_SCALE = 2.5
+// Below this the code in a card is a grey smear whatever the font size, so the canvas
+// switches to the semantic zoom `body.grasp-far` describes in app.css.
+const FAR_SCALE = 0.6
 const DRAG_THRESHOLD = 4
 const MARGIN = 24
 // Half a card header, so an edge arrives at the callee's title rather than at its corner.
@@ -104,6 +107,7 @@ const Canvas = {
     document.removeEventListener("visibilitychange", this.onSpaceRelease)
     document.body.classList.remove("grasp-space")
     document.body.classList.remove("grasp-dragging")
+    document.body.classList.remove("grasp-far")
     this.resizeObserver.disconnect()
     this.style.remove()
   },
@@ -112,7 +116,11 @@ const Canvas = {
   // the rasterised card text and blurs it. this.view stays fractional so small deltas accumulate.
   applyView() {
     const {x, y, scale} = this.view
-    this.style.textContent = `#stage{transform:translate(${Math.round(x)}px,${Math.round(y)}px) scale(${scale})}`
+    this.style.textContent = `#stage{transform:translate(${Math.round(x)}px,${Math.round(y)}px) scale(${scale});--zoom:${scale}}`
+    // The scale is published as a custom property so the far-out rules can divide by it and
+    // keep a signature the same size on screen; the class lives on <body>, which the server
+    // never renders, so a patch mid-gesture cannot drop it.
+    document.body.classList.toggle("grasp-far", scale < FAR_SCALE)
     if (this.zoomLevel) this.zoomLevel.textContent = `${Math.round(scale * 100)}%`
   },
 

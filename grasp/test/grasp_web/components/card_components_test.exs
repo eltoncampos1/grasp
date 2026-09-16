@@ -29,6 +29,54 @@ defmodule GraspWeb.CardComponentsTest do
     end
   end
 
+  describe "signature/1" do
+    test "takes the definition line, past the docs above it and without its trailing do" do
+      record = %{
+        "id" => "SampleApp.Runner.run/1",
+        "source" => """
+          @doc "Runs the thing."
+          @spec run(term()) :: :ok
+          def run(x) do
+            :ok
+          end\
+        """
+      }
+
+      assert CardComponents.signature(record) == "def run(x)"
+    end
+
+    test "a head spread over several lines is cut at the first of them" do
+      head = ~S|  def handle("rename", %{"name" => name}, socket),|
+      record = %{"id" => "M.handle/3", "source" => head <> "\n    do: {:noreply, socket}"}
+
+      assert CardComponents.signature(record) == String.trim_leading(head)
+    end
+
+    test "falls back to the function id when no line defines anything" do
+      record = %{"id" => "SampleApp.Runner.run/1", "source" => "  # nothing to see\n  :ok"}
+
+      assert CardComponents.signature(record) == "SampleApp.Runner.run/1"
+    end
+
+    test "reads the base commit's text when the record carries no source of its own" do
+      record = %{
+        "id" => "SampleApp.Formatter.whisper/1",
+        "removed" => true,
+        "base_source" => "  defp whisper(text) do\n    text\n  end"
+      }
+
+      assert CardComponents.signature(record) == "defp whisper(text)"
+    end
+
+    test "recognises every form that defines a function" do
+      for keyword <- ~w(def defp defmacro defmacrop defguard defguardp defdelegate) do
+        record = %{"id" => "M.f/1", "source" => "  #{keyword} f(x)"}
+
+        assert CardComponents.signature(record) == "#{keyword} f(x)"
+      end
+    end
+  end
+
   describe "hexdocs_url/1" do
     test "links a standard-library function to its documentation" do
       assert CardComponents.hexdocs_url("Enum.map/2") ==
