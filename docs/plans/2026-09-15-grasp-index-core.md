@@ -1720,7 +1720,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 In a real Phoenix project on this machine, add to `deps/0`:
 
 ```elixir
-{:grasp_index, path: "/Users/gigio/repos/grasp/grasp_index", only: :dev, runtime: false}
+{:grasp_index, path: "/path/to/grasp/grasp_index", only: :dev, runtime: false}
 ```
 
 Run `mix deps.get` there. This edit is a local experiment: revert it with `git checkout -- mix.exs mix.lock` when done and never commit it to that repository.

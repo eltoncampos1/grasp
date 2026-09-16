@@ -33,6 +33,8 @@ defmodule GraspWeb.MCPTest do
     {conn, session} = initialize(conn)
     name = "http-#{System.unique_integer([:positive])}"
 
+    {:ok, view, _html} = live(%{Phoenix.ConnTest.build_conn() | host: "127.0.0.1"}, "/s/#{name}")
+
     result =
       rpc(conn, session, "tools/call", %{
         "name" => "set_cards",
@@ -52,8 +54,9 @@ defmodule GraspWeb.MCPTest do
 
     refute result["isError"]
 
-    {:ok, view, _html} = live(%{Phoenix.ConnTest.build_conn() | host: "127.0.0.1"}, "/s/#{name}")
-
+    # The view was already connected when the call landed, so this is the broadcast
+    # reaching a tab the user is looking at, not a fresh mount reading the session.
+    assert render(view) =~ "data-function-id=\"#{@show}\""
     assert has_element?(view, "#card-1[data-function-id='#{@show}']")
     assert has_element?(view, "#card-2[data-function-id='#{@greet}']")
     assert has_element?(view, "#card-2 .call[data-highlight='true'][data-target='#{@wrap}']")

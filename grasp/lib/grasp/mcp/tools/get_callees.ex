@@ -17,14 +17,13 @@ defmodule Grasp.MCP.Tools.GetCallees do
   @impl true
   def execute(%{id: id}, frame) do
     with {:ok, index} <- Tools.index(),
-         {:ok, record} <- Index.fetch_function(index, id) do
+         {:ok, record} <- Tools.fetch_function(index, id) do
       Tools.reply(frame, %{
         "id" => record["id"],
         "callees" => Index.callees(index, record["id"])
       })
     else
-      {:error, response} -> {:reply, response, frame}
-      :error -> Tools.error(frame, "unknown function: #{id}")
+      {:error, reason} -> Tools.error(frame, reason)
     end
   end
 end

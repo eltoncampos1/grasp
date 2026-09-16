@@ -3,10 +3,12 @@ const DIRECTIONS = {ArrowLeft: "parent", ArrowRight: "child", ArrowUp: "prev", A
 const Keys = {
   mounted() {
     this.onKeydown = (e) => {
-      const inField =
-        ["INPUT", "TEXTAREA"].includes(e.target.tagName) ||
-        document.getElementById("palette")?.dataset.open === "true"
-      if (inField) return
+      if (document.getElementById("palette")?.dataset.open === "true") return
+
+      // The toolbar advertises Cmd+I as a toggle, so it has to reach the prompt it just
+      // focused; every other chord stays out of a field the user is typing in.
+      const chatToggle = (e.metaKey || e.ctrlKey) && e.key === "i"
+      if (["INPUT", "TEXTAREA"].includes(e.target.tagName) && !chatToggle) return
 
       // Cmd+= and Cmd+- stay with the browser; only the two chords the canvas claims are taken.
       if (e.metaKey || e.ctrlKey) {

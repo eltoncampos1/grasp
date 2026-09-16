@@ -2,7 +2,7 @@ defmodule Grasp.MCP.Tools.SearchFunctions do
   @moduledoc """
   Find functions in the indexed project by name. Ranks an exact `Module.fun/arity` id
   first, then ids containing the query, then ids the query's characters run through in
-  order, so `walcre` still finds `MyApp.Wallets.credit/3`.
+  order, so `walcre` still finds `SampleApp.Wallets.credit/3`.
   """
 
   use Anubis.Server.Component, type: :tool

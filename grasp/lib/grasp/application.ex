@@ -5,7 +5,8 @@ defmodule Grasp.Application do
   `/mcp` to.
 
   The MCP server starts explicitly rather than following the endpoint, so it also runs
-  under `mix test`, where the endpoint does not serve.
+  under `mix test`, where the endpoint does not serve. It starts before the endpoint, so
+  `/mcp` is never routable ahead of the server that answers it.
   """
 
   use Application
@@ -26,8 +27,8 @@ defmodule Grasp.Application do
       {DynamicSupervisor, name: Grasp.SessionSupervisor, strategy: :one_for_one},
       {Registry, keys: :unique, name: Grasp.AgentRegistry},
       {DynamicSupervisor, name: Grasp.AgentSupervisor, strategy: :one_for_one},
-      GraspWeb.Endpoint,
-      {Grasp.MCP.Server, transport: {:streamable_http, start: true}}
+      {Grasp.MCP.Server, transport: {:streamable_http, start: true}},
+      GraspWeb.Endpoint
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: Grasp.Supervisor)

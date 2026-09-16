@@ -17,8 +17,9 @@ defmodule Grasp.Agent.Runner do
 
   Closing the port does not stop the CLI: the port's process keeps running with its stdin
   closed, and a real run would only notice at its next write — a whole model call away, with
-  tokens being spent all the while. Every path that ends a run therefore signals the OS
-  process first and closes the port after. The runner traps exits so that path also covers
+  tokens being spent all the while. Every path that ends a run therefore sends the OS
+  process a SIGTERM first and closes the port after; a CLI that chooses to ignore SIGTERM
+  is past what this can do. The runner traps exits so that path also covers
   its own death: a runner that is stopped, supervised down or crashes takes its CLI with it
   rather than leaving one reparented to init.
 
@@ -149,11 +150,10 @@ defmodule Grasp.Agent.Runner do
   defp kill({:os_pid, pid}), do: System.cmd("kill", ["-TERM", Integer.to_string(pid)])
   defp kill(_info), do: :ok
 
-  defp executable(command) do
-    exe = System.find_executable(command) || command
-
-    if File.regular?(exe), do: exe
-  end
+  # `System.find_executable/1` resolves a bare name on PATH and an absolute or relative
+  # path, and answers nil unless the result is executable — so a file the user forgot to
+  # `chmod +x` is reported as a missing command instead of raising :eacces in `Port.open/2`.
+  defp executable(command), do: System.find_executable(command)
 
   defp view(state) do
     %{

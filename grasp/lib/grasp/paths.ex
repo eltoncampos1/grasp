@@ -36,11 +36,12 @@ defmodule Grasp.Paths do
   """
   @spec between(Index.t(), String.t(), String.t(), opts()) :: result()
   def between(%Index{} = index, from, to, opts) do
+    opts = Keyword.merge(@defaults, opts)
     to = canonical(index, to)
 
     index
     |> search(canonical(index, from), &Index.callees(index, &1), &(&1 == to), opts)
-    |> rank(opts)
+    |> rank(opts[:limit])
   end
 
   @doc """
@@ -53,6 +54,7 @@ defmodule Grasp.Paths do
   """
   @spec to_entry_points(Index.t(), String.t(), opts()) :: result()
   def to_entry_points(%Index{} = index, to, opts) do
+    opts = Keyword.merge(@defaults, opts)
     entries = index |> Index.entry_points() |> MapSet.new(&canonical(index, &1["target"]))
 
     result =
@@ -64,12 +66,26 @@ defmodule Grasp.Paths do
         opts
       )
 
-    rank(%{result | paths: Enum.map(result.paths, &Enum.reverse/1)}, opts)
+    rank(%{result | paths: Enum.map(result.paths, &Enum.reverse/1)}, opts[:limit])
+  end
+
+  @doc """
+  The id `id` resolves to in `index`, or `id` unchanged when the index does not define it.
+
+  A call written against a default-argument arity (`Greeter.greet/1`) names a definition
+  stored under the arity it is defined at (`greet/2`), and the call graph is keyed by the
+  definition, so an id has to be resolved before it can be compared with one that came out
+  of the index.
+  """
+  @spec canonical(Index.t(), String.t()) :: String.t()
+  def canonical(%Index{} = index, id) do
+    case Index.fetch_function(index, id) do
+      {:ok, record} -> record["id"]
+      :error -> id
+    end
   end
 
   defp search(%Index{} = index, seed, next, goal?, opts) do
-    opts = Keyword.merge(@defaults, opts)
-
     case Index.fetch_function(index, seed) do
       {:ok, _record} ->
         state = %{
@@ -134,16 +150,7 @@ defmodule Grasp.Paths do
     end
   end
 
-  defp rank(result, opts) do
-    limit = Keyword.merge(@defaults, opts)[:limit]
-
+  defp rank(result, limit) do
     %{result | paths: result.paths |> Enum.sort_by(&{length(&1), &1}) |> Enum.take(limit)}
-  end
-
-  defp canonical(%Index{} = index, id) do
-    case Index.fetch_function(index, id) do
-      {:ok, record} -> record["id"]
-      :error -> id
-    end
   end
 end

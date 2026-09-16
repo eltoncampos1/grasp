@@ -2,11 +2,12 @@ defmodule Grasp.Session do
   @moduledoc """
   One review session: a named GenServer owning a `Grasp.Session.Forest`.
 
-  The browser and (in a later milestone) the MCP server both mutate a session through this
-  API, so state lives here rather than in a LiveView. Every mutation broadcasts
-  `{:session, name, forest}` on the `"session:<name>"` topic; subscribers re-render from
-  the forest they receive. Sessions are started on demand under `Grasp.SessionSupervisor`
-  and found through `Grasp.SessionRegistry`. Persistence to disk arrives in milestone 5.
+  The browser and the MCP server both mutate a session through this API, so state lives
+  here rather than in a LiveView. Every mutation broadcasts `{:session, name, forest}` on
+  the `"session:<name>"` topic; subscribers re-render from the forest they receive.
+  Sessions are started on demand under `Grasp.SessionSupervisor` and found through
+  `Grasp.SessionRegistry`, and they are held in memory only: a session is gone when the
+  viewer stops.
   """
 
   use GenServer

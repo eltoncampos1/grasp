@@ -17,7 +17,7 @@ defmodule Grasp.MCP.Tools.GetFunction do
   @impl true
   def execute(%{id: id}, frame) do
     with {:ok, index} <- Tools.index(),
-         {:ok, record} <- Index.fetch_function(index, id) do
+         {:ok, record} <- Tools.fetch_function(index, id) do
       entry_points =
         index
         |> Index.entry_points_for(record["id"])
@@ -34,8 +34,7 @@ defmodule Grasp.MCP.Tools.GetFunction do
 
       Tools.reply(frame, body)
     else
-      {:error, response} -> {:reply, response, frame}
-      :error -> Tools.error(frame, "unknown function: #{id}")
+      {:error, reason} -> Tools.error(frame, reason)
     end
   end
 end

@@ -30,17 +30,17 @@ defmodule Grasp.MCP.Tools.ListEntryPoints do
         {:reply, response, frame}
 
       {:ok, index} ->
-        kind = params |> Map.get(:kind) |> downcase()
-        query = params |> Map.get(:query) |> downcase()
+        kind = params |> Map.get(:kind) |> Tools.downcase()
+        query = params |> Map.get(:query) |> Tools.downcase()
 
         matches =
           index
           |> Index.entry_points()
           |> Enum.filter(fn entry ->
-            (is_nil(kind) or downcase(entry["kind"]) == kind) and
+            (is_nil(kind) or Tools.downcase(entry["kind"]) == kind) and
               (is_nil(query) or
-                 String.contains?(downcase(entry["label"]) || "", query) or
-                 String.contains?(downcase(entry["target"]) || "", query))
+                 String.contains?(Tools.downcase(entry["label"]) || "", query) or
+                 String.contains?(Tools.downcase(entry["target"]) || "", query))
           end)
 
         Tools.reply(frame, %{
@@ -50,7 +50,4 @@ defmodule Grasp.MCP.Tools.ListEntryPoints do
         })
     end
   end
-
-  defp downcase(nil), do: nil
-  defp downcase(string), do: String.downcase(string)
 end

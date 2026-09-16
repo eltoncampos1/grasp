@@ -27,15 +27,15 @@ defmodule Grasp.MCP.Tools.ListModules do
         {:reply, response, frame}
 
       {:ok, index} ->
-        query = params |> Map.get(:query) |> downcase()
+        query = params |> Map.get(:query) |> Tools.downcase()
 
         matches =
           index
           |> Index.modules()
           |> Enum.filter(fn module ->
             is_nil(query) or
-              String.contains?(downcase(module["name"]) || "", query) or
-              String.contains?(downcase(module["file"]) || "", query)
+              String.contains?(Tools.downcase(module["name"]) || "", query) or
+              String.contains?(Tools.downcase(module["file"]) || "", query)
           end)
 
         Tools.reply(frame, %{
@@ -53,7 +53,4 @@ defmodule Grasp.MCP.Tools.ListModules do
         })
     end
   end
-
-  defp downcase(nil), do: nil
-  defp downcase(string), do: String.downcase(string)
 end

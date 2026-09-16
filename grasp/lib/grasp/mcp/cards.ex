@@ -15,6 +15,7 @@ defmodule Grasp.MCP.Cards do
   """
 
   alias Grasp.Index
+  alias Grasp.Paths
   alias Grasp.Session.Forest
 
   @typedoc """
@@ -72,7 +73,7 @@ defmodule Grasp.MCP.Cards do
   def opened_by(%Index{} = index, parent_id, child_id) do
     with {:ok, parent} <- Index.fetch_function(index, parent_id),
          %{"target" => target} <-
-           Enum.find(calls(parent), &(canonical(index, &1["target"]) == child_id)) do
+           Enum.find(calls(parent), &(Paths.canonical(index, &1["target"]) == child_id)) do
       target
     else
       _no_such_call -> child_id
@@ -128,9 +129,9 @@ defmodule Grasp.MCP.Cards do
     do: {:error, "#{record["id"]}: a highlight names either a call or lines, not both"}
 
   defp highlight(index, record, call, nil) do
-    target = canonical(index, call)
+    target = Paths.canonical(index, call)
 
-    case Enum.find(calls(record), &(canonical(index, &1["target"]) == target)) do
+    case Enum.find(calls(record), &(Paths.canonical(index, &1["target"]) == target)) do
       %{"target" => raw} -> {:ok, %{"call" => raw}}
       nil -> {:error, "#{record["id"]} does not call #{call}"}
     end
@@ -153,13 +154,6 @@ defmodule Grasp.MCP.Cards do
 
   defp calls(record),
     do: Enum.filter(List.wrap(record["calls"]) ++ List.wrap(record["hidden_calls"]), &is_map/1)
-
-  defp canonical(index, id) do
-    case Index.fetch_function(index, id) do
-      {:ok, record} -> record["id"]
-      :error -> id
-    end
-  end
 
   defp get(nil, _key), do: nil
   defp get(map, key), do: Map.get(map, key)

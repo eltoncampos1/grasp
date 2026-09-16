@@ -31,6 +31,25 @@ defmodule Grasp.MCP.Tools do
     end
   end
 
+  @doc """
+  The record for the function id `id`, or the message a tool answers an unknown id with.
+
+  Any arity a definition with default arguments answers to resolves to that definition, so
+  `record["id"]` is the canonical id the graph and the cards are keyed by.
+  """
+  @spec fetch_function(Grasp.Index.t(), String.t()) :: {:ok, map()} | {:error, String.t()}
+  def fetch_function(%Grasp.Index{} = index, id) do
+    case Grasp.Index.fetch_function(index, id) do
+      {:ok, record} -> {:ok, record}
+      :error -> {:error, "unknown function: #{id}"}
+    end
+  end
+
+  @doc "A filter term folded to lower case, passing `nil` — an absent term — through."
+  @spec downcase(String.t() | nil) :: String.t() | nil
+  def downcase(nil), do: nil
+  def downcase(string) when is_binary(string), do: String.downcase(string)
+
   @doc "A JSON tool reply."
   @spec reply(term(), term()) :: {:reply, Response.t(), term()}
   def reply(frame, data), do: {:reply, Response.json(Response.tool(), data), frame}

@@ -45,7 +45,7 @@ defmodule Grasp.Highlight do
     open = MapSet.new(Keyword.get(opts, :open_targets, []))
     external? = Keyword.get(opts, :external?, fn _ -> false end)
     highlight = Keyword.get(opts, :highlight)
-    highlighted_call = highlight["call"]
+    highlighted_call = highlighted_call(highlight)
     first_line = record["span"]["start_line"]
 
     ranges =
@@ -193,6 +193,9 @@ defmodule Grasp.Highlight do
 
     Enum.reverse(pieces)
   end
+
+  defp highlighted_call(%{"call" => call}), do: call
+  defp highlighted_call(_highlight), do: nil
 
   defp highlighted_line(%{"lines" => [first, last]}, line) when first <= line and line <= last,
     do: ~s( data-highlight="true")

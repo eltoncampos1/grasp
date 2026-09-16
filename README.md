@@ -137,7 +137,9 @@ starts over.
 
 One run at a time per session: a second prompt while one is in flight is refused rather
 than queued. A follow-up continues the same CLI conversation, so the agent remembers what
-it just opened. Transcripts live in memory and are gone when the viewer stops.
+it just opened. A single run is capped at 60 agent turns; one that reaches the cap stops
+there and says so in the transcript. Transcripts live in memory and are gone when the
+viewer stops.
 
 The CLI has to be installed and signed in already — the panel runs whatever `claude` your
 `PATH` resolves to. Two settings change that:

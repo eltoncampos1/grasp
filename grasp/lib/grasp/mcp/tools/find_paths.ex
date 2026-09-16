@@ -54,19 +54,12 @@ defmodule Grasp.MCP.Tools.FindPaths do
 
       Tools.reply(frame, %{"paths" => paths, "truncated" => result.truncated?})
     else
-      {:error, response} -> {:reply, response, frame}
-      {:unknown, id} -> Tools.error(frame, "unknown function: #{id}")
+      {:error, reason} -> Tools.error(frame, reason)
     end
   end
 
   defp defined(_index, nil), do: {:ok, nil}
-
-  defp defined(index, id) do
-    case Index.fetch_function(index, id) do
-      {:ok, record} -> {:ok, record}
-      :error -> {:unknown, id}
-    end
-  end
+  defp defined(index, id), do: Tools.fetch_function(index, id)
 
   defp entry(index, id) do
     case Index.entry_points_for(index, id) do

@@ -10,7 +10,6 @@ defmodule Grasp.MCP.Tools.OpenCard do
 
   use Anubis.Server.Component, type: :tool
 
-  alias Grasp.Index
   alias Grasp.MCP.Cards
   alias Grasp.MCP.Tools
   alias Grasp.Session
@@ -45,7 +44,7 @@ defmodule Grasp.MCP.Tools.OpenCard do
     asked = Map.get(params, :highlight)
 
     with {:ok, index} <- Tools.index(),
-         {:ok, record} <- fetch(index, function_id),
+         {:ok, record} <- Tools.fetch_function(index, function_id),
          {:ok, highlight} <- Cards.validate_highlight(index, record["id"], asked),
          {:ok, forest} <- open(session, index, Map.get(params, :parent_card_id), record) do
       card_id = forest.focus
@@ -54,13 +53,6 @@ defmodule Grasp.MCP.Tools.OpenCard do
       Tools.reply(frame, Map.put(Forest.to_map(forest), "card_id", card_id))
     else
       {:error, reason} -> Tools.error(frame, reason)
-    end
-  end
-
-  defp fetch(index, function_id) do
-    case Index.fetch_function(index, function_id) do
-      {:ok, record} -> {:ok, record}
-      :error -> {:error, "unknown function: #{function_id}"}
     end
   end
 
