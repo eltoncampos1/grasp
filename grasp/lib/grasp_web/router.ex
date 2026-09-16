@@ -1,5 +1,8 @@
 defmodule GraspWeb.Router do
-  @moduledoc "Routes: the review page for the default session and for a named session."
+  @moduledoc """
+  Routes: the review page for the default session and for a named session, plus the MCP
+  endpoint agents connect to.
+  """
 
   use GraspWeb, :router
 
@@ -17,4 +20,6 @@ defmodule GraspWeb.Router do
     live "/", ReviewLive
     live "/s/:name", ReviewLive
   end
+
+  forward "/mcp", Anubis.Server.Transport.StreamableHTTP.Plug, server: Grasp.MCP.Server
 end

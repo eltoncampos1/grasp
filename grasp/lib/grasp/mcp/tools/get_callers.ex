@@ -1,0 +1,26 @@
+defmodule Grasp.MCP.Tools.GetCallers do
+  @moduledoc "List the functions that call a given function, by id. Use it to walk a call graph upwards, towards the entry points."
+
+  use Anubis.Server.Component, type: :tool
+
+  alias Grasp.Index
+  alias Grasp.MCP.Tools
+
+  schema do
+    field(:id, :string, required: true, description: "A function id, `Module.fun/arity`")
+  end
+
+  @impl true
+  def execute(%{id: id}, frame) do
+    with {:ok, index} <- Tools.index(),
+         {:ok, record} <- Index.fetch_function(index, id) do
+      Tools.reply(frame, %{
+        "id" => record["id"],
+        "callers" => Index.callers(index, record["id"])
+      })
+    else
+      {:error, response} -> {:reply, response, frame}
+      :error -> Tools.error(frame, "unknown function: #{id}")
+    end
+  end
+end

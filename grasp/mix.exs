@@ -35,7 +35,8 @@ defmodule Grasp.MixProject do
       {:lumis, "~> 0.8"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:lazy_html, ">= 0.1.0"},
-      {:grasp_index, path: "../grasp_index"}
+      {:grasp_index, path: "../grasp_index"},
+      {:anubis_mcp, "~> 2.0"}
     ]
   end
 
