@@ -1,7 +1,8 @@
 defmodule Grasp.Application do
   @moduledoc """
-  Supervision tree of the Grasp viewer: PubSub, the index store, the session registry
-  and supervisor, the endpoint, and the MCP server the endpoint forwards `/mcp` to.
+  Supervision tree of the Grasp viewer: PubSub, the index store, the session and agent
+  registries and supervisors, the endpoint, and the MCP server the endpoint forwards
+  `/mcp` to.
 
   The MCP server starts explicitly rather than following the endpoint, so it also runs
   under `mix test`, where the endpoint does not serve.
@@ -23,6 +24,8 @@ defmodule Grasp.Application do
       {Grasp.IndexStore, []},
       {Registry, keys: :unique, name: Grasp.SessionRegistry},
       {DynamicSupervisor, name: Grasp.SessionSupervisor, strategy: :one_for_one},
+      {Registry, keys: :unique, name: Grasp.AgentRegistry},
+      {DynamicSupervisor, name: Grasp.AgentSupervisor, strategy: :one_for_one},
       GraspWeb.Endpoint,
       {Grasp.MCP.Server, transport: {:streamable_http, start: true}}
     ]

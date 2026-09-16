@@ -7,7 +7,7 @@ config :grasp, GraspWeb.Endpoint,
   pubsub_server: Grasp.PubSub,
   live_view: [signing_salt: "grasp-live-view-salt"]
 
-config :grasp, index_path: nil, editor: nil
+config :grasp, index_path: nil, editor: nil, agent_command: "claude", agent_model: nil
 
 config :esbuild,
   version: "0.25.4",

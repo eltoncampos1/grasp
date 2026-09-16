@@ -8,5 +8,8 @@ config :grasp, GraspWeb.Endpoint,
 
 config :grasp, index_path: "test/fixtures/index.json"
 
+# The suite never runs the real CLI: this stand-in prints a canned stream-json run.
+config :grasp, agent_command: Path.expand("test/support/fake_claude.sh", __DIR__ <> "/..")
+
 config :logger, level: :warning
 config :phoenix, :plug_init_mode, :runtime

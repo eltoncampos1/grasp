@@ -11,6 +11,14 @@ if config_env() != :test do
     config :grasp, editor: editor
   end
 
+  if command = System.get_env("GRASP_AGENT_COMMAND") do
+    config :grasp, agent_command: command
+  end
+
+  if model = System.get_env("GRASP_AGENT_MODEL") do
+    config :grasp, agent_model: model
+  end
+
   if port = System.get_env("GRASP_PORT") do
     config :grasp, GraspWeb.Endpoint, http: [ip: {127, 0, 0, 1}, port: String.to_integer(port)]
   end
