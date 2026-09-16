@@ -101,7 +101,9 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .flows { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-xl); padding: var(--space-m); position: relative; z-index: 1; }
 .flow[data-grouped] { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-s) var(--space-m) var(--space-m); background: color-mix(in srgb, var(--bg-raised) 60%, transparent); }
 .flow__title { display: flex; align-items: baseline; gap: var(--space-s); margin: 0 0 var(--space-s); font-family: var(--sans); font-size: 13px; color: var(--fg-muted); }
-.flow__title h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--fg); }
+.flow__title h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--fg); cursor: text; }
+.flow__title h3:hover { text-decoration: underline; text-decoration-style: dotted; }
+.flow__rename input { font: inherit; font-size: 14px; font-weight: 600; padding: 2px var(--space-xs); border: 1px solid var(--border); border-radius: 4px; background: var(--bg-sunken); color: var(--fg); }
 /* Callers to the left of what they call: one flex row of columns, each a stack of cards. */
 .columns { display: flex; align-items: flex-start; gap: var(--space-xl); }
 .column { display: flex; flex-direction: column; gap: var(--space-m); align-items: flex-start; }
@@ -134,6 +136,17 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .card__callers ul { position: absolute; z-index: 2; margin: var(--space-xs) 0 0; padding: var(--space-xs); list-style: none; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); max-height: 16rem; overflow: auto; }
 .caller { display: block; width: 100%; text-align: start; padding: 2px var(--space-s); white-space: nowrap; }
 .caller:hover { color: var(--accent); }
+.card__group { position: relative; }
+.card__group-toggle { padding: 0; color: var(--fg-muted); }
+.card__group-toggle:hover, .card__group-toggle[aria-expanded="true"] { color: var(--accent); }
+.card__group-menu { position: absolute; z-index: 2; margin: var(--space-xs) 0 0; padding: var(--space-xs); list-style: none; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); max-height: 16rem; overflow: auto; }
+.group-option, .group-leave { display: block; width: 100%; text-align: start; padding: 2px var(--space-s); white-space: nowrap; color: var(--fg-muted); }
+.group-option:hover, .group-leave:hover { color: var(--accent); }
+/* The group a card is already in is still listed, so the menu says where the card stands
+   rather than only where it could go. */
+.group-option[aria-current="true"] { color: var(--fg); font-weight: 600; }
+.group-new { padding: var(--space-xs) var(--space-s) 0; }
+.group-new input { width: 12rem; font: inherit; padding: 2px var(--space-xs); border: 1px solid var(--border); border-radius: 4px; background: var(--bg-raised); color: var(--fg); }
 .card__stats { color: var(--fg-muted); font-size: 12px; white-space: nowrap; }
 .card__view, .card__collapse, .card__close { padding: 0 var(--space-xs); color: var(--fg-muted); }
 .card__view:hover { color: var(--accent); }

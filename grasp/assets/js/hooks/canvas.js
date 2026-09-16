@@ -13,7 +13,8 @@
 // patches for the same reason the edges are: the hook writes it on every view change.
 //
 // A card is dragged by its header, or from anywhere on it with Ctrl held; holding Space turns
-// the whole canvas, cards included, into a pan surface.
+// the whole canvas, cards included, into a pan surface. A card dropped inside another group's
+// frame joins that group, which is the drag half of the manual grouping the card menu drives.
 
 const MIN_SCALE = 0.25
 const MAX_SCALE = 2.5
@@ -367,7 +368,9 @@ const Canvas = {
     const ctrlCard = e.ctrlKey && e.target.closest(".card")
     if (ctrlCard) return this.beginCardDrag(e, ctrlCard, true)
     const header = e.target.closest(".card__header")
-    if (header && !e.target.closest("button, a")) {
+    // The header carries the group menu's own text field; a press there is aimed at the
+    // field, and the preventDefault a drag begins with would take the focus away from it.
+    if (header && !e.target.closest("button, a, input")) {
       this.beginCardDrag(e, header.closest(".card"), false)
     } else if (!e.target.closest(".card, .toolbar, .chat, button, a, input")) {
       this.beginPan(e)
@@ -473,8 +476,31 @@ const Canvas = {
       // Dropping on the offset the card already had produces no diff and so no updated()
       // to clear the fractional translate the drag left behind.
       drag.node.style.translate = `${dx}px ${dy}px`
-      this.pushEvent("move_card", {card: drag.id, dx, dy})
+      const group = this.groupUnder(e, drag)
+      const move = {card: drag.id, dx, dy}
+      this.pushEvent("move_card", group === null ? move : {...move, group})
     }
+  },
+
+  // The group whose frame a drop landed in, or null when it landed anywhere else — the
+  // ungrouped section, the bare canvas, or the card's own frame, none of which is a change
+  // of membership. The dragged node is under the pointer for the whole gesture, so the
+  // frame beneath it is only visible with the node taken out of hit testing; the inline
+  // property is put back whatever the lookup finds or throws. Off the viewport there is no
+  // element at all, and a release there groups nothing.
+  groupUnder(e, drag) {
+    const restore = drag.node.style.pointerEvents
+    drag.node.style.pointerEvents = "none"
+    let frame
+    try {
+      const under = document.elementFromPoint(e.clientX, e.clientY)
+      frame = under?.closest(".flow[data-grouped]")
+    } finally {
+      drag.node.style.pointerEvents = restore
+    }
+    if (!frame || frame === drag.node.closest(".flow")) return null
+    const group = parseInt(frame.id.replace(/^flow-/, ""), 10)
+    return Number.isInteger(group) ? group : null
   },
 
   // One path per open call site: `[data-edge-to]` names the callee's card, `data-color` the

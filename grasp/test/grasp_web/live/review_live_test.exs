@@ -701,6 +701,133 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#flow-none .columns .column:nth-child(2) #card-2[data-depth='1']")
   end
 
+  test "a card's group menu makes a group and puts the card in it", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+
+    refute has_element?(view, "#card-1 .card__group-menu")
+    assert has_element?(view, "#card-1 .card__group-toggle[aria-expanded='false']")
+
+    view |> element("#card-1 .card__group-toggle") |> render_click()
+
+    assert has_element?(view, "#card-1 .card__group-toggle[aria-expanded='true']")
+    refute has_element?(view, "#card-1 .card__group-menu button[phx-click='leave_group']")
+
+    view |> form("#card-1 form.group-new", %{"title" => "   "}) |> render_submit()
+
+    refute has_element?(view, ".flow[data-grouped]")
+
+    view |> element("#card-1 .card__group-toggle") |> render_click()
+    view |> form("#card-1 form.group-new", %{"title" => "  Greeting  "}) |> render_submit()
+
+    assert has_element?(view, "#flow-1[data-grouped][data-group='1'] .flow__title h3", "Greeting")
+    assert has_element?(view, "#flow-1 #card-1")
+    refute has_element?(view, "#card-1 .card__group-menu")
+  end
+
+  test "a second card joins the group from its own menu", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    Session.open_child(name, 1, @wrap)
+    Session.group_cards(name, "Greeting", [1])
+
+    view |> element("#card-2 .card__group-toggle") |> render_click()
+
+    assert has_element?(
+             view,
+             "#card-2 .card__group-menu button.group-option[phx-value-group='1']",
+             "Greeting"
+           )
+
+    refute has_element?(
+             view,
+             "#card-2 .card__group-menu button.group-option[aria-current='true']"
+           )
+
+    view
+    |> element("#card-2 .card__group-menu button.group-option[phx-value-group='1']")
+    |> render_click()
+
+    assert has_element?(view, "#flow-1 #card-1")
+    assert has_element?(view, "#flow-1 #card-2")
+    assert has_element?(view, "#flow-1 .flow__count", "2 cards")
+
+    view |> element("#card-2 .card__group-toggle") |> render_click()
+
+    assert has_element?(
+             view,
+             "#card-2 .card__group-menu button.group-option[phx-value-group='1'][aria-current='true']"
+           )
+  end
+
+  test "leaving a group returns the card and takes the emptied frame away", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.group_cards(name, "Greeting", [1])
+
+    view |> element("#card-1 .card__group-toggle") |> render_click()
+    view |> element("#card-1 .card__group-menu button[phx-click='leave_group']") |> render_click()
+
+    refute has_element?(view, "#flow-1")
+    assert has_element?(view, "#flow-none #card-1")
+  end
+
+  test "a frame's title is renamed in place", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    Session.group_cards(name, "Greeting", [1])
+
+    refute has_element?(view, "#flow-1 form.flow__rename")
+
+    view |> element("#flow-1 .flow__title h3") |> render_click()
+
+    assert has_element?(view, "#flow-1 form.flow__rename input[name='title'][value='Greeting']")
+    refute has_element?(view, "#flow-1 .flow__title h3")
+
+    view
+    |> form("#flow-1 form.flow__rename", %{"title" => "  The greeting flow  "})
+    |> render_submit()
+
+    assert has_element?(view, "#flow-1 .flow__title h3", "The greeting flow")
+    refute has_element?(view, "#flow-1 form.flow__rename")
+  end
+
+  test "a blank rename keeps the title and Escape closes the form", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    Session.group_cards(name, "Greeting", [1])
+
+    view |> element("#flow-1 .flow__title h3") |> render_click()
+    view |> form("#flow-1 form.flow__rename", %{"title" => "   "}) |> render_submit()
+
+    assert has_element?(view, "#flow-1 .flow__title h3", "Greeting")
+    refute has_element?(view, "#flow-1 form.flow__rename")
+
+    view |> element("#flow-1 .flow__title h3") |> render_click()
+
+    view
+    |> element("#flow-1 form.flow__rename input[name='title']")
+    |> render_keydown(%{"key" => "Escape"})
+
+    assert has_element?(view, "#flow-1 .flow__title h3", "Greeting")
+    refute has_element?(view, "#flow-1 form.flow__rename")
+  end
+
+  test "a card dropped on a frame joins its group, and a plain drop keeps membership", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.open_root(name, @perform)
+    Session.group_cards(name, "Greeting", [1])
+
+    render_hook(view, "move_card", %{"card" => 2, "dx" => 10, "dy" => 5, "group" => 1})
+
+    assert has_element?(view, "#flow-1 #card-2[data-dx='10'][data-dy='5']")
+
+    render_hook(view, "move_card", %{"card" => 2, "dx" => 20, "dy" => 6})
+
+    assert has_element?(view, "#flow-1 #card-2[data-dx='20'][data-dy='6']")
+  end
+
   test "the project line names the base the review is against", %{view: view} do
     assert has_element?(view, ".sidebar__project", "sample_app")
     assert has_element?(view, ".sidebar__base", "main…feature")

@@ -321,6 +321,18 @@ and leaves the cards. A group keeps its section while a collapse hides every mem
 the frame does not blink out of the page; the untitled section appears only when a visible
 card is in no group.
 
+Groups are made and edited on the canvas as well as over MCP. A frame's title is renamed in
+place: clicking it swaps the heading for a form over the same title, Enter saves through
+`Session.rename_group/3` — which keeps the group's id and its cards, so an id held elsewhere
+still names it — and Escape or a blur leaves it as it was. Which frame is being renamed is
+the LiveView's (`renaming_group`), not the browser's, so one rename is open at a time and a
+patch cannot lose it. A card is put into a group from its own header menu, or by being
+dragged into another group's frame: the drag hook finds the frame under the release with
+`elementFromPoint`, having taken the dragged node out of hit testing for the lookup, and
+sends its group id along with the move. A drop anywhere else — the untitled section, the
+bare canvas, the frame the card is already in — is a move and nothing more, so a card never
+changes group by being put down near one.
+
 A card is as wide as its widest line up to a ceiling (`--card-max-width`, 60rem), rather
 than a fixed width, so a column of one-line helpers does not reserve the width of the
 widest function in the session. Arrow keys move focus to a caller, a callee or the
@@ -410,7 +422,12 @@ otherwise to a new root, then focuses it with the step's highlight.
   the body carries it; the kind for every other kind, spelled as a reader says it — "live
   route", "worker", "GenServer" — since its label is what the title already says),
   `Mod.fun/arity`, `file:line` that opens the `--editor` URL scheme, change badge,
-  Source/Diff toggle, callers menu, collapse, close.
+  Source/Diff toggle, callers menu, group menu, collapse, close.
+- The group menu lists every group on the canvas, the card's own marked `aria-current`, so
+  joining one is picking it by name rather than by id; under them a form makes a new group
+  around this card from a title, and a card already in a group can leave it. Which card's
+  menu is open is server state (`group_menu_open`), as the callers menu is, so the two
+  cannot both be open and a patch cannot drop either.
 - Body: Lumis-highlighted source. Every resolved call is wrapped in a clickable span.
   The highlighted call gets a ring and is scrolled into view. Calls with an open child
   are marked. Calls to functions outside the index (deps, stdlib) render muted and open

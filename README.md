@@ -83,8 +83,16 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
   edge, so two flows on one canvas are read apart rather than run together. The frame's
   header carries the title, how many cards are in it, and `ungroup`, which takes the frame
   away and leaves the cards where they were. Cards in no group make a last, untitled
-  section under the framed ones. Groups are made over MCP — an agent asked for several
-  flows gives each one its own.
+  section under the framed ones. An agent asked for several flows gives each one its own
+  group over MCP, and you make and edit them by hand with the three gestures below.
+- A card's `group` button opens a menu of every group on the canvas: pick one to move the
+  card into it, type a name to make a new group around it, or leave the one it is in. A
+  group whose last card left is gone with it.
+- Click a frame's title to rename it in place — Enter saves, Escape or clicking away
+  leaves it as it was. The group keeps its id and its cards, so a tour or an agent holding
+  that id still finds it.
+- Drag a card into another group's frame to move it there. Dropping it anywhere else — the
+  untitled section, the bare canvas, its own frame — moves the card and nothing more.
 
 ## PR mode
 

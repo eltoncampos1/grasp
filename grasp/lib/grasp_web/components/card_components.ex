@@ -32,6 +32,8 @@ defmodule GraspWeb.CardComponents do
   attr :open_calls, :map, required: true
   attr :editor, :string, default: nil
   attr :callers_open, :integer, default: nil
+  attr :groups, :list, default: []
+  attr :group_menu_open, :integer, default: nil
 
   # The drag hook translates the node rather than the card, so the offset survives a
   # re-render: LiveView owns the card's attributes, and the node is where the hand-placed
@@ -52,6 +54,8 @@ defmodule GraspWeb.CardComponents do
         open_calls={@open_calls}
         editor={@editor}
         callers_open={@callers_open}
+        groups={@groups}
+        group_menu_open={@group_menu_open}
       />
     </div>
     """
@@ -64,6 +68,8 @@ defmodule GraspWeb.CardComponents do
   attr :open_calls, :map, required: true
   attr :editor, :string, default: nil
   attr :callers_open, :integer, default: nil
+  attr :groups, :list, default: []
+  attr :group_menu_open, :integer, default: nil
 
   def card(assigns) do
     case Index.fetch_function(assigns.index, assigns.card.function_id) do
@@ -201,6 +207,44 @@ defmodule GraspWeb.CardComponents do
                   phx-value-caller={caller}
                 >
                   {caller}
+                </button>
+              </li>
+            </ul>
+          </div>
+          <%!-- Every group on the canvas is offered, so a card joins one without the reader
+          having to remember what it is called; the form under them is the way a group that
+          does not exist yet is made, from the card that is to be its first member. --%>
+          <div class="card__group">
+            <button
+              class="card__group-toggle"
+              phx-click="toggle_group_menu"
+              phx-value-card={@card.id}
+              aria-expanded={to_string(@group_menu_open == @card.id)}
+              title="Put this card in a group"
+            >
+              group
+            </button>
+            <ul :if={@group_menu_open == @card.id} class="card__group-menu">
+              <li :for={group <- @groups}>
+                <button
+                  class="group-option"
+                  phx-click="join_group"
+                  phx-value-card={@card.id}
+                  phx-value-group={group.id}
+                  aria-current={@card.group == group.id && "true"}
+                >
+                  {group.title}
+                </button>
+              </li>
+              <li>
+                <form class="group-new" phx-submit="new_group">
+                  <input type="hidden" name="card" value={@card.id} />
+                  <input type="text" name="title" placeholder="New group…" autocomplete="off" />
+                </form>
+              </li>
+              <li :if={@card.group}>
+                <button class="group-leave" phx-click="leave_group" phx-value-card={@card.id}>
+                  leave group
                 </button>
               </li>
             </ul>
