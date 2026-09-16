@@ -354,7 +354,18 @@ defmodule GraspWeb.ReviewLive do
     """
   end
 
+  # Only edges between two visible cards mark a call site: a `data-edge-to` naming a card a
+  # collapse has taken off the canvas would point the connector layer at nothing. Grouped once
+  # here because `Forest.edges/1` walks the whole graph, and every card would otherwise do so.
   def render(assigns) do
+    open_calls =
+      assigns.forest
+      |> Forest.edges()
+      |> Enum.group_by(& &1.from, &{&1.target, %{to: &1.to, color: &1.color}})
+      |> Map.new(fn {from, calls} -> {from, Map.new(calls)} end)
+
+    assigns = assign(assigns, open_calls: open_calls)
+
     ~H"""
     <main
       class={["app", !@sidebar_open? && "app--no-sidebar"]}
@@ -435,6 +446,7 @@ defmodule GraspWeb.ReviewLive do
                 index={@index}
                 card_id={id}
                 column={column}
+                open_calls={Map.get(@open_calls, id, %{})}
                 editor={@editor}
                 callers_open={@callers_open}
               />

@@ -41,7 +41,7 @@ defmodule GraspWeb.ChatTest do
     view |> element("#toggle-chat") |> render_click()
     assert has_element?(view, ~s(#chat-model-select option[value=""][selected]))
 
-    view |> form("#chat .chat__model", %{"model" => "sonnet"}) |> render_change()
+    view |> form("#chat-model", %{"model" => "sonnet"}) |> render_change()
     assert has_element?(view, ~s(#chat-model-select option[value="sonnet"][selected]))
 
     :ok = Grasp.Agent.subscribe(name)

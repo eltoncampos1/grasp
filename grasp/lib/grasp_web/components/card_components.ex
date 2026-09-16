@@ -28,6 +28,7 @@ defmodule GraspWeb.CardComponents do
   attr :index, Index, required: true
   attr :card_id, :integer, required: true
   attr :column, :integer, required: true
+  attr :open_calls, :map, required: true
   attr :editor, :string, default: nil
   attr :callers_open, :integer, default: nil
 
@@ -47,6 +48,7 @@ defmodule GraspWeb.CardComponents do
         index={@index}
         card={@card}
         column={@column}
+        open_calls={@open_calls}
         editor={@editor}
         callers_open={@callers_open}
       />
@@ -58,6 +60,7 @@ defmodule GraspWeb.CardComponents do
   attr :index, Index, required: true
   attr :card, :map, required: true
   attr :column, :integer, required: true
+  attr :open_calls, :map, required: true
   attr :editor, :string, default: nil
   attr :callers_open, :integer, default: nil
 
@@ -70,14 +73,6 @@ defmodule GraspWeb.CardComponents do
 
   defp function_card(assigns) do
     %{forest: forest, index: index, card: card, record: record} = assigns
-
-    # Only edges between two visible cards mark a call site: a `data-edge-to` naming a card
-    # a collapse has taken off the canvas would point the connector layer at nothing.
-    open_calls =
-      for %{from: from, to: to, target: target, color: color} <- Forest.edges(forest),
-          from == card.id,
-          into: %{},
-          do: {target, %{to: to, color: color}}
 
     external? = fn target -> match?(:error, Index.fetch_function(index, target)) end
 
@@ -92,11 +87,10 @@ defmodule GraspWeb.CardComponents do
         entries: Index.entry_points_for(index, record["id"]),
         callees: Forest.callees(forest, card.id),
         hidden_count: Forest.hidden_count(forest, card.id),
-        open_calls: open_calls,
         body:
           Grasp.Highlight.render(record,
             card_id: card.id,
-            open_calls: open_calls,
+            open_calls: assigns.open_calls,
             external?: external?,
             highlight: card.highlight
           ),
