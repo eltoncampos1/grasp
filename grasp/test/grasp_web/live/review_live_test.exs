@@ -132,8 +132,11 @@ defmodule GraspWeb.ReviewLiveTest do
              ~s(#card-#{id} .call[data-highlight="true"][data-target="#{@wrap}"])
            )
 
+    assert has_element?(view, ~s(#card-#{id}[data-highlight-key="call:#{@wrap}"]))
+
     Session.set_highlight(name, id, %{"lines" => [9, 10]})
     assert has_element?(view, ~s(#card-#{id} .line[data-highlight="true"][data-line="9"]))
+    assert has_element?(view, ~s(#card-#{id}[data-highlight-key="lines:9-10"]))
     refute has_element?(view, ~s(#card-#{id} .call[data-highlight="true"]))
   end
 
