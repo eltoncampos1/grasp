@@ -8,6 +8,7 @@
   --fg: #1f2328;
   --fg-muted: #57606a;
   --fg-subtle: #6e7781;
+  --fg-faint: #9da7b1;
   --accent: #0969da;
   --accent-soft: color-mix(in oklch, var(--accent) 14%, transparent);
   --focus: #9a6700;
@@ -22,7 +23,7 @@
   --card-width: 60rem;
   --sidebar-width: 18rem;
   --code-size: 13px;
-  --code-leading: 1.2308;
+  --code-leading: 1.45;
   --mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
   --sans: system-ui, sans-serif;
 }
@@ -102,7 +103,7 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .card__close:hover { color: var(--danger); }
 .card .card__body { user-select: text; margin: 0; padding: var(--space-xs) 0; overflow-x: auto; line-height: var(--code-leading); background: var(--code-bg); }
 .line { display: block; padding-inline: var(--space-s); white-space: pre; }
-.ln { display: inline-block; width: 3ch; margin-inline-end: var(--space-s); text-align: end; color: var(--fg-subtle); user-select: none; }
+.ln { display: inline-block; width: 3ch; margin-inline-end: var(--space-s); text-align: end; color: var(--fg-faint); user-select: none; }
 .call { cursor: pointer; border-bottom: 1px dashed var(--accent); }
 .call:hover { background: var(--accent-soft); }
 .call[data-open="true"] { background: var(--accent-soft); border-bottom-style: solid; }
