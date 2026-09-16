@@ -10,6 +10,8 @@ defmodule GraspWeb.ReviewLiveTest do
   @show "SampleAppWeb.GreetController.show/2"
   @mount "SampleAppWeb.HelloLive.mount/3"
   @perform "SampleApp.Workers.Mailer.perform/1"
+  @create "SampleAppWeb.GreetController.create/2"
+  @greet_alias "SampleApp.Greeter.greet/1"
 
   setup %{conn: conn} do
     name = "t-#{System.unique_integer([:positive])}"
@@ -124,7 +126,8 @@ defmodule GraspWeb.ReviewLiveTest do
   end
 
   test "a highlighted card renders the ring and the tinted lines", %{view: view, name: name} do
-    %{roots: [id]} = Session.open_root(name, @greet)
+    Session.open_root(name, @greet)
+    id = 1
     Session.set_highlight(name, id, %{"call" => @wrap})
 
     assert has_element?(
@@ -140,7 +143,7 @@ defmodule GraspWeb.ReviewLiveTest do
     refute has_element?(view, ~s(#card-#{id} .call[data-highlight="true"]))
   end
 
-  test "clicking a call opens the callee as a child; clicking again focuses it", %{
+  test "clicking a call opens the callee one column right and colours the call site", %{
     view: view,
     name: name
   } do
@@ -148,15 +151,30 @@ defmodule GraspWeb.ReviewLiveTest do
 
     view |> element("#card-1 span.call[data-target='#{@wrap}']") |> render_click()
 
+    assert has_element?(view, ".columns .column:first-child #card-1[data-depth='0']")
+
     assert has_element?(
              view,
-             "#card-1-children #card-2[data-function-id='#{@wrap}'][data-depth='1'][data-focused='true']"
+             ".columns .column:nth-child(2) #card-2[data-function-id='#{@wrap}'][data-depth='1'][data-focused='true']"
            )
 
-    assert has_element?(view, "#card-1 span.call[data-target='#{@wrap}'][data-open='true']")
+    assert has_element?(
+             view,
+             "#card-1 span.call[data-target='#{@wrap}'][data-open='true'][data-color='0'][data-edge-to='2']"
+           )
 
     view |> element("#card-1 span.call[data-target='#{@shout}']") |> render_click()
-    assert has_element?(view, "#card-1-children #card-3[data-function-id='#{@shout}']")
+
+    assert has_element?(
+             view,
+             ".columns .column:nth-child(2) #card-3[data-function-id='#{@shout}']"
+           )
+
+    assert has_element?(
+             view,
+             "#card-1 span.call[data-target='#{@shout}'][data-open='true'][data-color='1'][data-edge-to='3']"
+           )
+
     assert has_element?(view, "#card-2[data-focused='false']")
 
     view |> element("#card-1 span.call[data-target='#{@wrap}']") |> render_click()
@@ -164,45 +182,141 @@ defmodule GraspWeb.ReviewLiveTest do
     refute has_element?(view, "#card-4")
   end
 
-  test "closing a card removes its subtree; collapsing hides it behind a count", %{
+  test "a call the graph has not opened carries neither a colour nor a destination", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+
+    assert has_element?(view, "#card-1 span.call[data-target='#{@wrap}'][data-open='false']")
+    refute has_element?(view, "#card-1 span.call[data-target='#{@wrap}'][data-color]")
+    refute has_element?(view, "#card-1 span.call[data-target='#{@wrap}'][data-edge-to]")
+  end
+
+  test "a function two cards call renders once, with a differently coloured call site in each",
+       %{view: view, name: name} do
+    Session.open_root(name, @create)
+    Session.open_root(name, @perform)
+
+    view |> element("#card-1 span.call[data-target='#{@greet}']") |> render_click()
+    view |> element("#card-2 span.call[data-target='#{@greet_alias}']") |> render_click()
+
+    assert count(view, ".card[data-function-id='#{@greet}']") == 1
+    assert has_element?(view, ".columns .column:nth-child(2) #card-3[data-depth='1']")
+
+    assert has_element?(
+             view,
+             "#card-1 span.call[data-target='#{@greet}'][data-open='true'][data-color='0'][data-edge-to='3']"
+           )
+
+    assert has_element?(
+             view,
+             "#card-2 span.call[data-target='#{@greet_alias}'][data-open='true'][data-color='1'][data-edge-to='3']"
+           )
+  end
+
+  test "closing the middle card of a chain leaves the other two, the last one a source", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet_all)
+    Session.open_child(name, 1, @greet, @greet_alias)
+    Session.open_child(name, 2, @wrap)
+
+    view |> element("#card-2 .card__close") |> render_click()
+
+    refute has_element?(view, "#card-2")
+    assert has_element?(view, ".columns .column:first-child #card-1[data-depth='0']")
+    assert has_element?(view, ".columns .column:first-child #card-3[data-depth='0']")
+    refute has_element?(view, ".columns .column:nth-child(2)")
+  end
+
+  test "close_chain takes the cards that had no other way to be reached", %{
     view: view,
     name: name
   } do
     Session.open_root(name, @greet)
     Session.open_child(name, 1, @wrap)
     Session.open_child(name, 1, @shout)
-
-    view |> element("#card-1 .card__collapse") |> render_click()
-    refute has_element?(view, "#card-2")
-    assert has_element?(view, "#card-1 .card__collapse", "2")
-
-    view |> element("#card-1 .card__collapse") |> render_click()
-    assert has_element?(view, "#card-2")
-
-    view |> element("#card-2 .card__close") |> render_click()
-    refute has_element?(view, "#card-2")
     assert has_element?(view, "#card-3")
 
-    view |> element("#card-1 .card__close") |> render_click()
+    render_click(view, "close_chain", %{"card" => "1"})
+
     refute has_element?(view, "#card-1")
+    refute has_element?(view, "#card-2")
     refute has_element?(view, "#card-3")
   end
 
-  test "opening a caller from a root re-parents the tree", %{view: view, name: name} do
+  test "Shift+x closes the focused card's chain, and does nothing without a focus", %{
+    view: view,
+    name: name
+  } do
+    render_hook(view, "close_focused_chain", %{})
+
     Session.open_root(name, @greet)
+    Session.open_child(name, 1, @wrap)
+    Session.focus(name, 1)
 
-    view |> element("#card-1 .card__callers-toggle") |> render_click()
+    render_hook(view, "close_focused_chain", %{})
 
-    view
-    |> element("#card-1 .card__callers button.caller[phx-value-caller='#{@greet_all}']")
-    |> render_click()
+    refute has_element?(view, ".card")
+  end
+
+  test "collapsing hides the callee behind a count and says so on the button", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.open_child(name, 1, @wrap)
+
+    view |> element("#card-1 .card__collapse") |> render_click()
+
+    refute has_element?(view, "#card-2")
+    assert has_element?(view, "#card-1 .card__collapse", "▸ 1")
+
+    view |> element("#card-1 .card__collapse") |> render_click()
+
+    assert has_element?(view, "#card-2")
+    assert has_element?(view, "#card-1 .card__collapse", "▾")
+    refute has_element?(view, "#card-2 .card__collapse")
+  end
+
+  test "the close button advertises the chain close", %{view: view, name: name} do
+    Session.open_root(name, @greet)
 
     assert has_element?(
              view,
-             "#card-2[data-function-id='#{@greet_all}'][data-depth='0'][data-focused='true']"
+             "#card-1 .card__close[title='Close (x) · Shift+x closes the chain']"
+           )
+  end
+
+  test "opening a caller puts it left of the card, which keeps its only copy", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+
+    open_caller(view, 1, @greet_all)
+
+    assert has_element?(
+             view,
+             ".columns .column:first-child #card-2[data-function-id='#{@greet_all}'][data-depth='0'][data-focused='true']"
            )
 
-    assert has_element?(view, "#card-2-children #card-1[data-depth='1']")
+    assert has_element?(view, ".columns .column:nth-child(2) #card-1[data-depth='1']")
+    assert count(view, "#card-1") == 1
+    assert count(view, ".card[data-function-id='#{@greet}']") == 1
+
+    open_caller(view, 1, @perform)
+
+    assert count(view, ".columns .column:first-child .card") == 2
+
+    assert has_element?(
+             view,
+             ".columns .column:first-child #card-3[data-function-id='#{@perform}']"
+           )
+
+    assert count(view, "#card-1") == 1
   end
 
   test "the callers menu opens on click, focuses its card and closes again", %{
@@ -224,11 +338,7 @@ defmodule GraspWeb.ReviewLiveTest do
 
   test "opening a caller closes the callers menu", %{view: view, name: name} do
     Session.open_root(name, @greet)
-    view |> element("#card-1 .card__callers-toggle") |> render_click()
-
-    view
-    |> element("#card-1 .card__callers button.caller[phx-value-caller='#{@greet_all}']")
-    |> render_click()
+    open_caller(view, 1, @greet_all)
 
     refute has_element?(view, ".card__callers ul")
   end
@@ -249,19 +359,15 @@ defmodule GraspWeb.ReviewLiveTest do
     name: name
   } do
     Session.open_root(name, @greet)
-    view |> element("#card-1 .card__callers-toggle") |> render_click()
-
-    view
-    |> element("#card-1 .card__callers button.caller[phx-value-caller='#{@greet_all}']")
-    |> render_click()
+    open_caller(view, 1, @greet_all)
 
     assert has_element?(
              view,
-             "#card-2 span.call[data-target='SampleApp.Greeter.greet/1'][data-open='true']"
+             "#card-2 span.call[data-target='#{@greet_alias}'][data-open='true'][data-edge-to='1']"
            )
 
     view
-    |> element("#card-2 span.call[data-target='SampleApp.Greeter.greet/1']")
+    |> element("#card-2 span.call[data-target='#{@greet_alias}']")
     |> render_click()
 
     assert has_element?(view, "#card-1[data-focused='true']")
@@ -282,12 +388,26 @@ defmodule GraspWeb.ReviewLiveTest do
     refute has_element?(view, "#card-2")
   end
 
-  test "a hidden call opens a child card", %{view: view, name: name} do
+  test "a hidden call opens a card one column right and marks its footer button", %{
+    view: view,
+    name: name
+  } do
     Session.open_root(name, @greet_all)
+
+    refute has_element?(view, "#card-1 .card__also button.also[data-open='true']")
 
     view |> element("#card-1 .card__also button.also", @shout) |> render_click()
 
-    assert has_element?(view, "#card-1-children #card-2[data-function-id='#{@shout}']")
+    assert has_element?(
+             view,
+             ".columns .column:nth-child(2) #card-2[data-function-id='#{@shout}']"
+           )
+
+    assert has_element?(
+             view,
+             "#card-1 .card__also button.also[data-open='true'][data-color='0'][data-edge-to='2']",
+             @shout
+           )
   end
 
   test "opening a call pushes a focus event for the new card", %{view: view, name: name} do
@@ -328,7 +448,7 @@ defmodule GraspWeb.ReviewLiveTest do
     refute has_element?(view, "#card-1")
   end
 
-  test "keyboard focus moves through the tree", %{view: view, name: name} do
+  test "keyboard focus moves along the edges", %{view: view, name: name} do
     Session.open_root(name, @greet)
     Session.open_child(name, 1, @wrap)
     Session.focus(name, 2)
@@ -410,5 +530,19 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert render(view) =~ "card-1"
     assert has_element?(view, "#card-1")
+  end
+
+  defp open_caller(view, card_id, caller) do
+    view |> element("#card-#{card_id} .card__callers-toggle") |> render_click()
+
+    view
+    |> element("#card-#{card_id} .card__callers button.caller[phx-value-caller='#{caller}']")
+    |> render_click()
+  end
+
+  # has_element?/3 answers whether a selector matches at all; a graph keeps one card per
+  # function, which is a statement about how many times it matches.
+  defp count(view, selector) do
+    view |> render() |> LazyHTML.from_fragment() |> LazyHTML.query(selector) |> Enum.count()
   end
 end

@@ -35,6 +35,8 @@ const Keys = {
         this.pushEvent("move_focus", {dir: DIRECTIONS[e.key]})
       } else if (e.key === "x") {
         this.pushEvent("close_focused", {})
+      } else if (e.key === "X") {
+        this.pushEvent("close_focused_chain", {})
       } else if (e.key === "c") {
         this.pushEvent("collapse_focused", {})
       }

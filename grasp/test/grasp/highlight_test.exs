@@ -32,7 +32,7 @@ defmodule Grasp.HighlightTest do
   end
 
   defp render_string(record, opts) do
-    opts = Keyword.merge([card_id: 7, open_targets: [], external?: fn _ -> false end], opts)
+    opts = Keyword.merge([card_id: 7, open_calls: %{}, external?: fn _ -> false end], opts)
     record |> Highlight.render(opts) |> Phoenix.HTML.safe_to_string()
   end
 
@@ -44,7 +44,7 @@ defmodule Grasp.HighlightTest do
   end
 
   test "wraps each call range in a clickable span covering exactly the callee" do
-    html = render(open_targets: ["Enum.map/2"])
+    html = render(open_calls: %{"Enum.map/2" => %{to: 2, color: 0}})
     [map] = LazyHTML.query(html, "span.call[data-target='Enum.map/2']") |> Enum.to_list()
 
     assert LazyHTML.text(map) == "Enum.map"
@@ -56,6 +56,20 @@ defmodule Grasp.HighlightTest do
     [g] = LazyHTML.query(html, "span.call[data-target='Sample.g/1']") |> Enum.to_list()
     assert LazyHTML.text(g) == "g"
     assert LazyHTML.attribute(g, "data-open") == ["false"]
+  end
+
+  test "an open call carries the colour and the destination of the edge leaving it" do
+    html = render(open_calls: %{"Enum.map/2" => %{to: 7, color: 3}})
+
+    [map] = LazyHTML.query(html, "span.call[data-target='Enum.map/2']") |> Enum.to_list()
+    assert LazyHTML.attribute(map, "data-open") == ["true"]
+    assert LazyHTML.attribute(map, "data-color") == ["3"]
+    assert LazyHTML.attribute(map, "data-edge-to") == ["7"]
+
+    [g] = LazyHTML.query(html, "span.call[data-target='Sample.g/1']") |> Enum.to_list()
+    assert LazyHTML.attribute(g, "data-open") == ["false"]
+    assert LazyHTML.attribute(g, "data-color") == []
+    assert LazyHTML.attribute(g, "data-edge-to") == []
   end
 
   test "marks external targets" do
@@ -84,7 +98,7 @@ defmodule Grasp.HighlightTest do
 
     html =
       record
-      |> Highlight.render(card_id: 1, open_targets: [], external?: fn _ -> false end)
+      |> Highlight.render(card_id: 1, open_calls: %{}, external?: fn _ -> false end)
       |> Phoenix.HTML.safe_to_string()
       |> LazyHTML.from_fragment()
 
@@ -112,7 +126,7 @@ defmodule Grasp.HighlightTest do
 
     html =
       record
-      |> Highlight.render(card_id: 1, open_targets: [], external?: fn _ -> false end)
+      |> Highlight.render(card_id: 1, open_calls: %{}, external?: fn _ -> false end)
       |> Phoenix.HTML.safe_to_string()
       |> LazyHTML.from_fragment()
 

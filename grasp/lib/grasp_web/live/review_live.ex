@@ -15,7 +15,7 @@ defmodule GraspWeb.ReviewLive do
   import GraspWeb.Palette
   import GraspWeb.Sidebar
 
-  alias Grasp.{Index, IndexStore, Session}
+  alias Grasp.{Index, IndexStore, Links, Session}
   alias Grasp.Session.Forest
 
   @groups GraspWeb.Sidebar.group_kinds()
@@ -103,7 +103,9 @@ defmodule GraspWeb.ReviewLive do
   def handle_event("open_caller", %{"card" => card, "caller" => caller}, socket)
       when is_binary(caller) do
     socket = assign(socket, callers_open: nil)
-    mutate(socket, &Session.open_caller(&1, int(card), canonical(socket, caller)))
+    id = int(card)
+    caller_id = canonical(socket, caller)
+    mutate(socket, &Session.open_caller(&1, id, caller_id, call_target(socket, caller_id, id)))
   end
 
   def handle_event("toggle_callers", %{"card" => card}, socket) do
@@ -120,6 +122,15 @@ defmodule GraspWeb.ReviewLive do
       if socket.assigns.callers_open == id, do: assign(socket, callers_open: nil), else: socket
 
     mutate(socket, &Session.close(&1, id))
+  end
+
+  def handle_event("close_chain", %{"card" => card}, socket) do
+    id = int(card)
+
+    socket =
+      if socket.assigns.callers_open == id, do: assign(socket, callers_open: nil), else: socket
+
+    mutate(socket, &Session.close_chain(&1, id))
   end
 
   def handle_event("focus_card", %{"card" => card}, socket),
@@ -151,6 +162,13 @@ defmodule GraspWeb.ReviewLive do
     case socket.assigns.forest.focus do
       nil -> {:noreply, socket}
       id -> mutate(socket, &Session.close(&1, id))
+    end
+  end
+
+  def handle_event("close_focused_chain", _params, socket) do
+    case socket.assigns.forest.focus do
+      nil -> {:noreply, socket}
+      id -> mutate(socket, &Session.close_chain(&1, id))
     end
   end
 
@@ -246,6 +264,18 @@ defmodule GraspWeb.ReviewLive do
       end
 
     {:noreply, socket |> assign(forest: forest) |> reset_palette()}
+  end
+
+  # The edge an opened caller gains is identified by the spelling the caller's own source
+  # uses, which is not the callee's id whenever the call goes through a default-argument
+  # alias; nil leaves the graph to fall back to that id.
+  defp call_target(socket, caller_function_id, card_id) do
+    with %Index{} = index <- socket.assigns.index,
+         %{function_id: function_id} <- Forest.card(socket.assigns.forest, card_id) do
+      Links.call_target(index, caller_function_id, function_id)
+    else
+      _no_card_or_index -> nil
+    end
   end
 
   # A call written against a default-argument alias (`greet/1` for `greet/2`) names a
@@ -355,15 +385,18 @@ defmodule GraspWeb.ReviewLive do
         <.chat_panel open?={@chat_open?} agent={@agent} error={@chat_error} />
         <div id="stage" class="stage">
           <svg id="connectors" class="connectors" phx-update="ignore" aria-hidden="true"></svg>
-          <div class="roots">
-            <.card_node
-              :for={root <- Enum.concat(Forest.layout(@forest))}
-              forest={@forest}
-              index={@index}
-              card_id={root}
-              editor={@editor}
-              callers_open={@callers_open}
-            />
+          <div class="columns">
+            <div :for={{ids, column} <- Enum.with_index(Forest.layout(@forest))} class="column">
+              <.card_node
+                :for={id <- ids}
+                forest={@forest}
+                index={@index}
+                card_id={id}
+                column={column}
+                editor={@editor}
+                callers_open={@callers_open}
+              />
+            </div>
           </div>
         </div>
       </section>

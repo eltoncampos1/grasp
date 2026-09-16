@@ -18,7 +18,7 @@ defmodule Grasp.Highlight do
   pipeline parses in tens of milliseconds, a forty-step one in hundreds — and a card
   re-renders on every LiveView pass, so the parse is memoised per function id in the
   `:grasp_highlight_cache` ETS table. Only the source-derived pieces are cached; the range
-  split and call wrapping depend on `card_id` and `open_targets` and stay per render. The
+  split and call wrapping depend on `card_id` and `open_calls` and stay per render. The
   table is owned by `Grasp.IndexStore`, which clears it on every index reload — a cached
   piece list carries absolute line numbers, so a stale entry would outlive the span it was
   computed for. Without the table (a unit test with no store running) every render parses.
@@ -31,9 +31,16 @@ defmodule Grasp.Highlight do
 
   @cache :grasp_highlight_cache
 
+  @typedoc """
+  The call sites a card has already opened, keyed by the raw target the source writes:
+  `to` is the id of the card at the far end of the edge and `color` its palette index, so
+  the call site can be painted like the edge that leaves it.
+  """
+  @type open_calls :: %{optional(String.t()) => %{to: pos_integer(), color: 0..7}}
+
   @type opts :: [
           card_id: pos_integer(),
-          open_targets: [String.t()],
+          open_calls: open_calls(),
           external?: (String.t() -> boolean()),
           highlight: nil | %{optional(String.t()) => String.t() | [integer()]}
         ]
@@ -42,7 +49,7 @@ defmodule Grasp.Highlight do
   @spec render(map(), opts()) :: Phoenix.HTML.safe()
   def render(record, opts) do
     card_id = Keyword.fetch!(opts, :card_id)
-    open = MapSet.new(Keyword.get(opts, :open_targets, []))
+    open = Keyword.get(opts, :open_calls, %{})
     external? = Keyword.get(opts, :external?, fn _ -> false end)
     highlight = Keyword.get(opts, :highlight)
     highlighted_call = highlighted_call(highlight)
@@ -214,13 +221,24 @@ defmodule Grasp.Highlight do
 
         %{target: target} ->
           attrs =
-            ~s( data-target="#{escape(target)}" data-open="#{MapSet.member?(open, target)}") <>
+            ~s( data-target="#{escape(target)}") <>
+              edge_attrs(open, target) <>
               ~s( data-external="#{escape(to_string(external?.(target)))}" phx-click="open_call" phx-value-card="#{escape(to_string(card_id))}" phx-value-target="#{escape(target)}") <>
               if target == highlighted_call, do: ~s( data-highlight="true"), else: ""
 
           ~s(<span class="call"#{attrs}>#{inner}</span>)
       end
     end)
+  end
+
+  defp edge_attrs(open, target) do
+    case Map.fetch(open, target) do
+      {:ok, %{to: to, color: color}} ->
+        ~s( data-open="true" data-color="#{color}" data-edge-to="#{to}")
+
+      :error ->
+        ~s( data-open="false")
+    end
   end
 
   # Whitespace is never part of a callee, so a range that continues onto a new line does

@@ -121,7 +121,10 @@ defmodule GraspWeb.PaletteTest do
     Session.open_root(name, @greet)
     render_hook(view, "palette_open", %{"id" => @wrap, "child" => true})
 
-    assert has_element?(view, "#card-1-children #card-2[data-function-id='#{@wrap}']")
+    assert has_element?(
+             view,
+             ".columns .column:nth-child(2) #card-2[data-function-id='#{@wrap}'][data-depth='1']"
+           )
   end
 
   test "palette_open with child: true and no focus opens a root", %{view: view} do

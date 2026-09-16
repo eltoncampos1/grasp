@@ -1,7 +1,12 @@
 defmodule GraspWeb.CardComponents do
   @moduledoc """
-  The card tree: a recursive node component laying out a card and its children, the card
-  itself, and the stub shown for a function the index does not contain.
+  One card on the canvas: the node the canvas drags, the card itself, and the stub shown
+  for a function the index does not contain.
+
+  A card carries no knowledge of what it calls beyond the edges leaving it. Each of those
+  edges paints its own call site — the span in the body, or the button in the "Also calls"
+  footer — with the edge's palette colour and the id of the card at the far end, so the
+  connector layer can join the two without a second source of truth.
   """
 
   use GraspWeb, :html
@@ -22,22 +27,18 @@ defmodule GraspWeb.CardComponents do
   attr :forest, Forest, required: true
   attr :index, Index, required: true
   attr :card_id, :integer, required: true
+  attr :column, :integer, required: true
   attr :editor, :string, default: nil
   attr :callers_open, :integer, default: nil
 
-  # The offset moves the whole node, not the card alone, so a card dragged by hand takes
-  # the branch it opened with it rather than leaving its children behind.
+  # The drag hook translates the node rather than the card, so the offset survives a
+  # re-render: LiveView owns the card's attributes, and the node is where the hand-placed
+  # position lives.
   def card_node(assigns) do
     card = Forest.card(assigns.forest, assigns.card_id)
     {dx, dy} = card.offset
 
-    assigns =
-      assign(assigns,
-        card: card,
-        depth: Forest.depth(assigns.forest, assigns.card_id),
-        dx: dx,
-        dy: dy
-      )
+    assigns = assign(assigns, card: card, dx: dx, dy: dy)
 
     ~H"""
     <div class="node" style={"--dx: #{@dx}px; --dy: #{@dy}px"}>
@@ -45,7 +46,7 @@ defmodule GraspWeb.CardComponents do
         forest={@forest}
         index={@index}
         card={@card}
-        depth={@depth}
+        column={@column}
         editor={@editor}
         callers_open={@callers_open}
       />
@@ -56,7 +57,7 @@ defmodule GraspWeb.CardComponents do
   attr :forest, Forest, required: true
   attr :index, Index, required: true
   attr :card, :map, required: true
-  attr :depth, :integer, required: true
+  attr :column, :integer, required: true
   attr :editor, :string, default: nil
   attr :callers_open, :integer, default: nil
 
@@ -70,11 +71,13 @@ defmodule GraspWeb.CardComponents do
   defp function_card(assigns) do
     %{forest: forest, index: index, card: card, record: record} = assigns
 
-    open_targets =
-      for child <- Forest.callees(forest, card.id),
-          c = Forest.card(forest, child),
-          alias_id <- arity_aliases(index, c.function_id),
-          do: alias_id
+    # Only edges between two visible cards mark a call site: a `data-edge-to` naming a card
+    # a collapse has taken off the canvas would point the connector layer at nothing.
+    open_calls =
+      for %{from: from, to: to, target: target, color: color} <- Forest.edges(forest),
+          from == card.id,
+          into: %{},
+          do: {target, %{to: to, color: color}}
 
     external? = fn target -> match?(:error, Index.fetch_function(index, target)) end
 
@@ -89,10 +92,11 @@ defmodule GraspWeb.CardComponents do
         entries: Index.entry_points_for(index, record["id"]),
         callees: Forest.callees(forest, card.id),
         hidden_count: Forest.hidden_count(forest, card.id),
+        open_calls: open_calls,
         body:
           Grasp.Highlight.render(record,
             card_id: card.id,
-            open_targets: open_targets,
+            open_calls: open_calls,
             external?: external?,
             highlight: card.highlight
           ),
@@ -112,7 +116,7 @@ defmodule GraspWeb.CardComponents do
       data-function-id={@record["id"]}
       data-focused={to_string(@focused?)}
       data-highlight-key={highlight_key(@card.highlight)}
-      data-depth={@depth}
+      data-depth={@column}
       data-dx={@dx}
       data-dy={@dy}
     >
@@ -164,7 +168,7 @@ defmodule GraspWeb.CardComponents do
             class="card__collapse"
             phx-click="toggle_collapse"
             phx-value-card={@card.id}
-            title="Collapse subtree"
+            title="Collapse what only this card reaches (c)"
           >
             {if @card.collapsed, do: "▸ #{@hidden_count}", else: "▾"}
           </button>
@@ -172,7 +176,7 @@ defmodule GraspWeb.CardComponents do
             class="card__close"
             phx-click="close_card"
             phx-value-card={@card.id}
-            title="Close (x)"
+            title="Close (x) · Shift+x closes the chain"
           >
             ×
           </button>
@@ -187,12 +191,25 @@ defmodule GraspWeb.CardComponents do
           phx-click="open_call"
           phx-value-card={@card.id}
           phx-value-target={call["target"]}
+          {edge_attrs(@open_calls, call["target"])}
         >
           {call["target"]}
         </button>
       </footer>
     </article>
     """
+  end
+
+  # The footer button for a hidden call is marked exactly as the call spans in the body are,
+  # so a call the graph has opened reads the same wherever the card shows it.
+  defp edge_attrs(open_calls, target) do
+    case Map.fetch(open_calls, target) do
+      {:ok, %{to: to, color: color}} ->
+        ["data-open": "true", "data-color": color, "data-edge-to": to]
+
+      :error ->
+        ["data-open": "false"]
+    end
   end
 
   # The canvas reveals a card again when this key changes, so a highlight pushed onto the
@@ -226,7 +243,7 @@ defmodule GraspWeb.CardComponents do
       class={["card", "stub", @focused? && "card--focused"]}
       data-function-id={@card.function_id}
       data-focused={to_string(@focused?)}
-      data-depth={@depth}
+      data-depth={@column}
       data-dx={@dx}
       data-dy={@dy}
     >
@@ -303,19 +320,6 @@ defmodule GraspWeb.CardComponents do
   end
 
   defp module_of(_function_id), do: nil
-
-  # Every arity a definition answers to, so a call written against a default-argument
-  # alias is marked as open even though the card shows the defining arity.
-  defp arity_aliases(%Index{} = index, function_id) do
-    case Index.fetch_function(index, function_id) do
-      {:ok, record} ->
-        for arity <- record["arities"] || List.wrap(record["arity"]),
-            do: "#{record["module"]}.#{record["name"]}/#{arity}"
-
-      :error ->
-        [function_id]
-    end
-  end
 
   # Call targets come from the index and from the browser, so concatenating them into a
   # module atom would let anyone grow the atom table one unknown name at a time.
