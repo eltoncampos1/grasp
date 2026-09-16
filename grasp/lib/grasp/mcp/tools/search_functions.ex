@@ -12,7 +12,13 @@ defmodule Grasp.MCP.Tools.SearchFunctions do
 
   schema do
     field(:query, :string, required: true, description: "Part of a module, function or id")
-    field(:limit, :integer, default: 20, min: 1, max: 100)
+
+    field(:limit, :integer,
+      default: 20,
+      min: 1,
+      max: 100,
+      description: "How many results to return; default 20, maximum 100"
+    )
   end
 
   @impl true

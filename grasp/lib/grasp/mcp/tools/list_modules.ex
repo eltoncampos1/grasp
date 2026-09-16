@@ -11,7 +11,13 @@ defmodule Grasp.MCP.Tools.ListModules do
 
   schema do
     field(:query, :string, description: "Case-insensitive substring of the name or the file")
-    field(:limit, :integer, default: 200, min: 1, max: 2000)
+
+    field(:limit, :integer,
+      default: 200,
+      min: 1,
+      max: 2000,
+      description: "How many modules to return; default 200, maximum 2000"
+    )
   end
 
   @impl true

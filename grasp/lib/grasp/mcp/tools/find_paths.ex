@@ -18,8 +18,19 @@ defmodule Grasp.MCP.Tools.FindPaths do
       description: "The function the paths start at; entry points are used when omitted"
     )
 
-    field(:max_depth, :integer, default: 6, min: 1, max: 8, description: "Hops a path may take")
-    field(:limit, :integer, default: 5, min: 1, max: 20)
+    field(:max_depth, :integer,
+      default: 6,
+      min: 1,
+      max: 8,
+      description: "Hops a path may take; default 6, maximum 8"
+    )
+
+    field(:limit, :integer,
+      default: 5,
+      min: 1,
+      max: 20,
+      description: "How many paths to return; default 5, maximum 20"
+    )
   end
 
   @impl true

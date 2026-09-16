@@ -11,9 +11,18 @@ defmodule Grasp.MCP.Tools.ListEntryPoints do
   alias Grasp.MCP.Tools
 
   schema do
-    field(:kind, :string, description: "Keep only this kind, e.g. `route` or `oban_worker`")
+    field(:kind, :string,
+      description: "Keep only this kind, lowercase, e.g. `route` or `oban_worker`"
+    )
+
     field(:query, :string, description: "Case-insensitive substring of the label or the target")
-    field(:limit, :integer, default: 100, min: 1, max: 500)
+
+    field(:limit, :integer,
+      default: 100,
+      min: 1,
+      max: 500,
+      description: "How many entry points to return; default 100, maximum 500"
+    )
   end
 
   @impl true
@@ -23,14 +32,14 @@ defmodule Grasp.MCP.Tools.ListEntryPoints do
         {:reply, response, frame}
 
       {:ok, index} ->
-        kind = Map.get(params, :kind)
+        kind = params |> Map.get(:kind) |> downcase()
         query = params |> Map.get(:query) |> downcase()
 
         matches =
           index
           |> Index.entry_points()
           |> Enum.filter(fn entry ->
-            (is_nil(kind) or entry["kind"] == kind) and
+            (is_nil(kind) or downcase(entry["kind"]) == kind) and
               (is_nil(query) or
                  String.contains?(downcase(entry["label"]) || "", query) or
                  String.contains?(downcase(entry["target"]) || "", query))

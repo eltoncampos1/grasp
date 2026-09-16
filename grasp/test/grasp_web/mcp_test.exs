@@ -12,6 +12,8 @@ defmodule GraspWeb.MCPTest do
     assert names ==
              ~w(find_paths get_callees get_callers get_function list_entry_points list_modules list_sessions search_functions)
 
+    assert Enum.all?(result["tools"], &(&1["description"] not in [nil, ""]))
+
     result =
       rpc(conn, session, "tools/call", %{
         "name" => "get_callees",
@@ -21,6 +23,33 @@ defmodule GraspWeb.MCPTest do
     assert [%{"type" => "text", "text" => text}] = result["content"]
     assert %{"callees" => callees} = Jason.decode!(text)
     assert "SampleApp.Formatter.wrap/1" in callees
+  end
+
+  test "a request addressed to another host is refused", %{conn: conn} do
+    conn =
+      %{conn | host: "evil.example"}
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("accept", "application/json, text/event-stream")
+      |> post("/mcp", Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "method" => "tools/list"}))
+
+    assert conn.status == 403
+    assert conn.resp_body == "forbidden"
+  end
+
+  test "a loopback request a foreign page declares an origin for is refused", %{conn: conn} do
+    conn =
+      %{conn | host: "127.0.0.1"}
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("accept", "application/json, text/event-stream")
+      |> put_req_header("origin", "http://evil.example")
+      |> post("/mcp", Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "method" => "tools/list"}))
+
+    assert conn.status == 403
+    assert conn.resp_body == "forbidden"
+  end
+
+  test "the review page is served to any host", %{conn: conn} do
+    assert %{conn | host: "evil.example"} |> get("/") |> html_response(200)
   end
 
   # -- helpers -------------------------------------------------------------
@@ -63,8 +92,7 @@ defmodule GraspWeb.MCPTest do
   end
 
   defp post_json(conn, session, body) do
-    conn
-    |> recycle()
+    %{recycle(conn) | host: "127.0.0.1"}
     |> put_req_header("content-type", "application/json")
     |> put_req_header("accept", "application/json, text/event-stream")
     |> then(&if(session, do: put_req_header(&1, "mcp-session-id", session), else: &1))

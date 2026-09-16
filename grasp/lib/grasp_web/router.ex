@@ -14,6 +14,10 @@ defmodule GraspWeb.Router do
     plug :put_root_layout, html: {GraspWeb.Layouts, :root}
   end
 
+  pipeline :mcp do
+    plug GraspWeb.Plugs.LocalOnly
+  end
+
   scope "/", GraspWeb do
     pipe_through :browser
 
@@ -21,5 +25,9 @@ defmodule GraspWeb.Router do
     live "/s/:name", ReviewLive
   end
 
-  forward "/mcp", Anubis.Server.Transport.StreamableHTTP.Plug, server: Grasp.MCP.Server
+  scope "/" do
+    pipe_through :mcp
+
+    forward "/mcp", Anubis.Server.Transport.StreamableHTTP.Plug, server: Grasp.MCP.Server
+  end
 end

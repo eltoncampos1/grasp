@@ -168,6 +168,18 @@ defmodule Grasp.MCP.ToolsTest do
     end
   end
 
+  describe "the loaded index" do
+    test "answers the store's value" do
+      assert {:ok, index} = Tools.index(Grasp.IndexStore.get())
+      assert %Grasp.Index{} = index
+    end
+
+    test "is the error every index-reading tool replies when none is loaded" do
+      assert {:error, %Response{isError: true} = response} = Tools.index(nil)
+      assert [%{"type" => "text", "text" => "no index loaded"}] = response.content
+    end
+  end
+
   describe "input schemas" do
     test "are what clients see" do
       assert "query" in Tools.SearchFunctions.input_schema()["required"]
@@ -175,6 +187,15 @@ defmodule Grasp.MCP.ToolsTest do
       assert "to" in Tools.FindPaths.input_schema()["required"]
       refute "from" in (Tools.FindPaths.input_schema()["required"] || [])
       refute Tools.ListEntryPoints.input_schema()["required"]
+    end
+
+    test "state each bounded field's default and maximum" do
+      properties = Tools.SearchFunctions.input_schema()["properties"]
+
+      assert properties["limit"]["description"] ==
+               "How many results to return; default 20, maximum 100"
+
+      assert properties["limit"]["maximum"] == 100
     end
   end
 end
