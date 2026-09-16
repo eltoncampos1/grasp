@@ -359,11 +359,11 @@ defmodule Grasp.PathsTest do
     %{paths: paths, truncated?: false} = Paths.to_entry_points(index, @wrap, limit: 10)
 
     assert paths == [
-             [@component_render, @greet, @wrap],
-             [@hello_render, @greet, @wrap],
              [@perform, @greet, @wrap],
              [@create, @greet, @wrap],
-             [@show, @greet, @wrap]
+             [@show, @greet, @wrap],
+             [@component_render, @greet, @wrap],
+             [@hello_render, @greet, @wrap]
            ]
   end
 
@@ -382,7 +382,7 @@ defmodule Grasp.PathsTest do
 end
 ```
 
-Sorting note for the third test: all five paths have two hops; ties order by ids ascending, and `SampleAppWeb.GreetingComponent…` < `SampleAppWeb.HelloLive…` < `SampleApp.Workers…`? No — `"SampleApp.Workers"` sorts before `"SampleAppWeb"` because `.` (0x2E) < `W` (0x57). The expected order is therefore `[@perform, @component_render, @hello_render, @create, @show]`. **Use that order in the test**, and confirm with `Enum.sort/1` in `iex` before trusting either list.
+All five paths have two hops, so the order is the ids of their entry ends ascending (`Enum.sort/1`); `"SampleApp.Workers"` sorts before `"SampleAppWeb"` because `.` precedes `W`, and `GreetController` before `GreetingComponent` because `C` precedes `i`.
 
 - [ ] **Step 2: Run to see them fail** — `mix test test/grasp/paths_test.exs`.
 
@@ -741,7 +741,7 @@ Check `@wrap`'s span in the fixture before pinning `[21, 22]` and `[1, 2]` (the 
 - Produces:
   - `Grasp.Agent.Stream.apply(state(), String.t()) :: state()` — folds one output line into a transcript state `%{entries: [entry()], claude_session_id: String.t() | nil, log: [String.t()], done?: boolean()}`. Entries (newest last): `%{type: :user, text}`, `%{type: :assistant, text}` (consecutive assistant text blocks merge into one entry), `%{type: :tool, name, summary, status: :running | :done | :error}`, `%{type: :error, text}`, `%{type: :done, cost_usd: float | nil, turns: integer | nil}`. A non-JSON line goes to `log`. Rules: `system/init` → session id; if its `mcp_servers` list has no `%{"name" => "grasp", "status" => "connected"}` append `%{type: :error, text: "grasp MCP server not connected (status: <status or missing>)"}`. `assistant` → for each content block: `text` → assistant entry; `tool_use` → tool entry with `name` stripped of a leading `mcp__grasp__` and `summary` = the first present of `input["query"]`, `input["id"]`, `input["to"]`, `input["function_id"]`, `input["file_path"]`, `input["pattern"]`, `"#{length(input["cards"])} cards"` when `cards` is a list, else `""`. `user` → for each `tool_result` block, the oldest `:running` tool entry becomes `:done`, or `:error` when `is_error` is true. `result` → `done?: true`, append `:done` with `total_cost_usd` and `num_turns`; when `is_error` is true also append `%{type: :error, text: result["result"] || subtype}`. `rate_limit_event` and unknown types are ignored. `Stream.new() :: state()`.
   - `Grasp.Agent.Command.build(prompt, opts) :: {String.t(), [String.t()]}` with `opts :: [command: String.t(), session: String.t(), mcp_url: String.t(), resume: String.t() | nil, model: String.t() | nil]` → `{command, argv}`. argv, in this order: `["-p", prompt, "--output-format", "stream-json", "--verbose", "--strict-mcp-config", "--mcp-config", mcp_json, "--tools", "Read,Grep,Glob", "--allowedTools", "mcp__grasp,Read,Grep,Glob", "--max-turns", "60", "--append-system-prompt", system_prompt]` then `["--resume", id]` when `resume`, then `["--model", model]` when `model`. `mcp_json` is `Jason.encode!(%{"mcpServers" => %{"grasp" => %{"type" => "http", "url" => mcp_url}}})`. `Command.system_prompt(session) :: String.t()` returns the text below. `Command.mcp_url() :: String.t()` builds `"http://127.0.0.1:#{port}/mcp"` from `Application.get_env(:grasp, GraspWeb.Endpoint)[:http][:port]` (default 4040). `Command.cwd() :: String.t()` returns the index's `project["root"]` when `File.dir?/1`, else `File.cwd!()`.
-  - `Grasp.Agent` facade: `ensure(name) :: :ok`, `subscribe(name) :: :ok`, `get(name) :: view()`, `send_prompt(name, prompt) :: :ok | {:error, :running | :no_command}`, `stop(name) :: :ok`, `reset(name) :: :ok` (clears entries, log and session id; stops a run first). `view :: %{entries: [entry()], running?: boolean(), claude_session_id: String.t() | nil, log: [String.t()]}`; the broadcast is `{:agent, name, view}` on `"agent:" <> name` via `Grasp.PubSub`, sent after every change.
+  - `Grasp.Agent` facade: `ensure(name) :: :ok`, `subscribe(name) :: :ok`, `get(name) :: view()`, `send_prompt(name, prompt) :: :ok | {:error, :running | :no_command}`, `stop(name) :: :ok`, `reset(name) :: :ok` (clears entries, log and session id; stops a run first). `view :: %{entries: [entry()], running?: boolean(), claude_session_id: String.t() | nil, log: [String.t()], last_result: String.t() | nil}`; the broadcast is `{:agent, name, view}` on `"agent:" <> name` via `Grasp.PubSub`, sent after every change.
   - Runner internals: `Port.open({:spawn_executable, exe}, [:binary, :exit_status, :stderr_to_stdout, {:line, 1_048_576}, {:args, argv}, {:cd, cwd}])` where `exe = System.find_executable(command) || command` (an absolute path passes through); `{:error, :no_command}` when neither resolves to an existing file. Handle `{port, {:data, {:eol, line}}}` (apply), `{port, {:data, {:noeol, chunk}}}` (buffer until eol), `{port, {:exit_status, code}}` → `running?: false`; when `code != 0` and the state is not `done?`, append `%{type: :error, text: "claude exited with status #{code}"}` (the log is shown by the UI). On `send_prompt` append the `:user` entry first, broadcast, then spawn. `stop/1`: `Port.info(port, :os_pid)` → `System.cmd("kill", ["-TERM", Integer.to_string(pid)])`, then `Port.close/1` guarded by a `rescue`/`catch` for an already-closed port; mark `running?: false`, append `%{type: :error, text: "stopped"}`.
 
 System prompt text (`Command.system_prompt/1`), verbatim:
@@ -805,11 +805,14 @@ printf '{"type":"result","subtype":"success","is_error":false,"num_turns":2,"tot
     assert_receive {:agent, ^name, %{running?: false, entries: entries, claude_session_id: "fake-1"}}, 2_000
     assert Enum.map(entries, & &1.type) == [:user, :assistant, :tool, :assistant, :done]
     assert %{type: :done, cost_usd: 0.01} = List.last(entries)
-    argv = entries |> Enum.find(&(&1.type == :assistant)) # not the argv; see below
+    %{last_result: argv} = Grasp.Agent.get(name)
+    assert argv =~ "--strict-mcp-config"
+    assert argv =~ "/mcp"
+    assert argv =~ ~s(session: \\"#{name}\\")
   end
 ```
 
-Replace the last two lines with the argv assertion: the `:done` entry does not carry the result text, so have `Stream` keep `result_text` in state and the runner expose it in the view as `last_result: String.t() | nil`; assert `view.last_result =~ "--strict-mcp-config"` and `=~ "/mcp"` and `=~ ~s(session: \\"#{name}\\")`. Further tests: a second prompt after the first finishes passes `--resume fake-1` (assert on `last_result`); `send_prompt` while running returns `{:error, :running}` (use a prompt containing `SLOW` and make the fake script `sleep 1` when it sees `SLOW`, before printing the result); `stop/1` during `SLOW` ends with `running?: false` and an `:error "stopped"` entry within 1 s; a `FAIL` prompt yields an `:error` entry mentioning `status 3` and `log` containing `"something went wrong on stderr"`; `reset/1` empties entries and clears `claude_session_id` so the next run has no `--resume`; with `Application.put_env(:grasp, :agent_command, "/definitely/not/here")` (restore in `on_exit`; this test cannot be async with the others — put it in its own module with `async: false`) `send_prompt` returns `{:error, :no_command}`.
+The `:done` entry does not carry the result text, so `Stream` keeps `result_text` in its state (the `result` event's `"result"` field) and the runner exposes it in the view as `last_result: String.t() | nil`. Further tests: a second prompt after the first finishes passes `--resume fake-1` (assert on `last_result`); `send_prompt` while running returns `{:error, :running}` (use a prompt containing `SLOW` and make the fake script `sleep 1` when it sees `SLOW`, before printing the result); `stop/1` during `SLOW` ends with `running?: false` and an `:error "stopped"` entry within 1 s; a `FAIL` prompt yields an `:error` entry mentioning `status 3` and `log` containing `"something went wrong on stderr"`; `reset/1` empties entries and clears `claude_session_id` so the next run has no `--resume`; with `Application.put_env(:grasp, :agent_command, "/definitely/not/here")` (restore in `on_exit`; this test cannot be async with the others — put it in its own module with `async: false`) `send_prompt` returns `{:error, :no_command}`.
 
 - [ ] **Step 2: Run to see them fail.**
 
