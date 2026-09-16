@@ -12,28 +12,47 @@ defmodule Grasp.Index.Builder do
   read or parsed is reported and skipped rather than aborting the run. Entry points and
   module behaviours come from `Grasp.Index.EntryPoints`, which introspects the modules
   the compile just produced.
+
+  With a `:base` git ref, `Grasp.Index.BaseRef` resolves the commit to compare against and
+  `Grasp.Index.Changes` marks every record added, modified, unchanged or removed. The ref
+  is resolved before the compile, so a ref no commit answers to fails in a second rather
+  than after a full rebuild. Removed functions are written as records like any other, so a
+  reader can see what a deleted function was, but they are not definitions this project
+  holds: entry-point detection and the set of ids a call can resolve to see only the
+  functions the compile produced.
   """
 
-  alias Grasp.Index.{EntryPoints, Extract, Join, Tracer}
+  alias Grasp.Index.{BaseRef, Changes, EntryPoints, Extract, Join, Tracer}
 
   @type summary :: %{
           path: String.t(),
           functions: non_neg_integer(),
           calls: non_neg_integer(),
-          hidden_calls: non_neg_integer()
+          hidden_calls: non_neg_integer(),
+          changed: non_neg_integer()
         }
 
-  @doc "Traces, extracts, joins and writes the index. `:out` defaults to `.grasp/index.json`."
-  @spec run(out: String.t()) :: {:ok, summary()}
+  @doc """
+  Traces, extracts, joins and writes the index. `:out` defaults to `.grasp/index.json`.
+
+  `:base` compares the project against a git ref: every record is classified by
+  `Grasp.Index.Changes` and the functions the ref holds that the project no longer
+  defines are written as removed records. An unresolvable ref aborts the run.
+  """
+  @spec run(out: String.t(), base: String.t()) :: {:ok, summary()}
   def run(opts) do
     out = Keyword.get(opts, :out, ".grasp/index.json")
     config = Mix.Project.config()
     root = File.cwd!()
     paths = Keyword.get(config, :elixirc_paths, ["lib"])
 
+    base = resolve_base(root, paths, Keyword.get(opts, :base))
     events = trace_compile(root, paths)
     {definitions, modules} = extract_all(root, paths)
     functions = Join.join(definitions, events)
+
+    records =
+      if base, do: Changes.classify(functions, compared_sources(base), paths), else: functions
 
     indexed =
       MapSet.new(for f <- functions, a <- f.arities, do: Join.function_id(f.module, f.name, a))
@@ -45,9 +64,9 @@ defmodule Grasp.Index.Builder do
       "version" => 1,
       "generated_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
       "project" => %{"app" => to_string(config[:app]), "root" => root, "elixirc_paths" => paths},
-      "git" => git_info(root),
+      "git" => git_info(root, base),
       "modules" => Enum.map(modules, &module_json(&1, behaviours)),
-      "functions" => Enum.map(functions, &function_json/1),
+      "functions" => Enum.map(records, &function_json/1),
       "entry_points" =>
         Enum.map(
           entry_points,
@@ -60,10 +79,27 @@ defmodule Grasp.Index.Builder do
     {:ok,
      %{
        path: out,
-       functions: length(functions),
-       calls: functions |> Enum.map(&length(&1.calls)) |> Enum.sum(),
-       hidden_calls: functions |> Enum.map(&length(&1.hidden_calls)) |> Enum.sum()
+       functions: length(records),
+       calls: records |> Enum.map(&length(&1.calls)) |> Enum.sum(),
+       hidden_calls: records |> Enum.map(&length(&1.hidden_calls)) |> Enum.sum(),
+       changed: Enum.count(records, &(Map.get(&1, :change, "unchanged") != "unchanged"))
      }}
+  end
+
+  # Every file the diff touched, under the contents the base had for it. A file the base
+  # did not have maps to an empty string rather than being left out: without an entry the
+  # classifier cannot tell a file this branch added from one it never touched, and the new
+  # file's functions would read as untouched instead of added.
+  defp compared_sources(base),
+    do: Map.new(base.files, &{&1, Map.get(base.base_sources, &1, "")})
+
+  defp resolve_base(_root, _paths, nil), do: nil
+
+  defp resolve_base(root, paths, ref) do
+    case BaseRef.resolve(root, ref, paths: paths) do
+      {:ok, base} -> base
+      {:error, message} -> Mix.raise("grasp.index: #{message}")
+    end
   end
 
   defp trace_compile(root, paths) do
@@ -159,20 +195,20 @@ defmodule Grasp.Index.Builder do
           record.hidden_calls,
           &%{"target" => &1.target, "kind" => Atom.to_string(&1.kind), "line" => &1.line}
         ),
-      "change" => "unchanged",
-      "base_source" => nil,
-      "removed" => false
+      "change" => Map.get(record, :change, "unchanged"),
+      "base_source" => Map.get(record, :base_source),
+      "removed" => Map.get(record, :removed, false)
     }
   end
 
-  defp git_info(root) do
+  defp git_info(root, base) do
     with {head, 0} <- git(["rev-parse", "HEAD"], root),
          {branch, 0} <- git(["rev-parse", "--abbrev-ref", "HEAD"], root) do
       %{
         "head" => String.trim(head),
         "branch" => String.trim(branch),
-        "base_ref" => nil,
-        "base_sha" => nil
+        "base_ref" => base && base.base_ref,
+        "base_sha" => base && base.base_sha
       }
     else
       _ -> nil

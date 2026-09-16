@@ -36,6 +36,8 @@ defmodule Grasp.Index.BuilderTest do
     assert index.project["elixirc_paths"] == ["lib"]
     assert index.project["root"] == @fixture
     assert is_binary(index.generated_at)
+    assert index.git["base_ref"] == nil
+    assert index.git["base_sha"] == nil
   end
 
   test "indexes definitions with spans, sources and default arities", %{index: index} do

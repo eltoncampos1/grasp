@@ -4,7 +4,7 @@ defmodule Mix.Tasks.Grasp.Index do
   @moduledoc """
   Builds the Grasp index for the current Mix project.
 
-      mix grasp.index [--out PATH]
+      mix grasp.index [--out PATH] [--base REF]
 
   Forces a full recompile with a compiler tracer attached, so every call the compiler
   resolves is recorded with its position, then writes the JSON document the Grasp viewer
@@ -17,11 +17,14 @@ defmodule Mix.Tasks.Grasp.Index do
   ## Options
 
     * `--out` - where to write the index. Defaults to `.grasp/index.json`.
+    * `--base` - a git ref to compare against. Each function is marked added, modified,
+      unchanged or removed against the merge base of `REF` and `HEAD`, and the functions
+      that commit defines and this one no longer does are written as removed records.
   """
 
   use Mix.Task
 
-  @switches [out: :string]
+  @switches [out: :string, base: :string]
 
   @impl Mix.Task
   def run(args) do
