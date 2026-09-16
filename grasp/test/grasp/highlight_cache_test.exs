@@ -10,7 +10,7 @@ defmodule Grasp.HighlightCacheTest do
     :ok
   end
 
-  defp opts, do: [card_id: 1, open_targets: [], external?: fn _ -> false end]
+  defp opts, do: [card_id: 1, open_calls: %{}, external?: fn _ -> false end]
 
   defp record(id) do
     %{

@@ -89,7 +89,7 @@ defmodule Grasp.IndexStoreTest do
 
     {:ok, index} = Grasp.Index.load(@fixture)
     {:ok, record} = Grasp.Index.fetch_function(index, "SampleApp.Formatter.shout/1")
-    Grasp.Highlight.render(record, card_id: 1, open_targets: [], external?: fn _ -> false end)
+    Grasp.Highlight.render(record, card_id: 1, open_calls: %{}, external?: fn _ -> false end)
     assert :ets.info(:grasp_highlight_cache, :size) > 0
 
     assert :ok = IndexStore.load(@fixture)

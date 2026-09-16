@@ -8,6 +8,8 @@ defmodule GraspWeb.PaletteTest do
   @wrap "SampleApp.Formatter.wrap/1"
   @shout "SampleApp.Formatter.shout/1"
   @last_greet "SampleAppWeb.GreetingComponent.handle_event/3"
+  @show "SampleAppWeb.GreetController.show/2"
+  @greet_alias "SampleApp.Greeter.greet/1"
 
   setup %{conn: conn} do
     name = "t-#{System.unique_integer([:positive])}"
@@ -124,6 +126,29 @@ defmodule GraspWeb.PaletteTest do
     assert has_element?(
              view,
              ".columns .column:nth-child(2) #card-2[data-function-id='#{@wrap}'][data-depth='1']"
+           )
+  end
+
+  test "a child opened by Shift+Enter paints the call site the parent actually writes", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @show)
+    render_hook(view, "palette_show", %{})
+    search(view, "greet/2")
+
+    assert has_element?(view, "#palette-results li:first-child[data-id='#{@greet}']")
+
+    render_hook(view, "palette_choose", %{"child" => true})
+
+    assert has_element?(
+             view,
+             ".columns .column:nth-child(2) #card-2[data-function-id='#{@greet}']"
+           )
+
+    assert has_element?(
+             view,
+             "#card-1 span.call[data-target='#{@greet_alias}'][data-open='true'][data-color='0'][data-edge-to='2']"
            )
   end
 

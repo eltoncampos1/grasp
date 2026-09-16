@@ -105,7 +105,8 @@ defmodule GraspWeb.ReviewLive do
     socket = assign(socket, callers_open: nil)
     id = int(card)
     caller_id = canonical(socket, caller)
-    mutate(socket, &Session.open_caller(&1, id, caller_id, call_target(socket, caller_id, id)))
+    target = call_target(socket, caller_id, function_id(socket, id))
+    mutate(socket, &Session.open_caller(&1, id, caller_id, target))
   end
 
   def handle_event("toggle_callers", %{"card" => card}, socket) do
@@ -259,22 +260,35 @@ defmodule GraspWeb.ReviewLive do
 
     forest =
       case {child?, socket.assigns.forest.focus} do
-        {true, focus} when is_integer(focus) -> Session.open_child(name, focus, id)
-        _ -> Session.open_root(name, id)
+        {true, focus} when is_integer(focus) ->
+          Session.open_child(name, focus, id, call_target(socket, function_id(socket, focus), id))
+
+        _ ->
+          Session.open_root(name, id)
       end
 
     {:noreply, socket |> assign(forest: forest) |> reset_palette()}
   end
 
-  # The edge an opened caller gains is identified by the spelling the caller's own source
-  # uses, which is not the callee's id whenever the call goes through a default-argument
-  # alias; nil leaves the graph to fall back to that id.
-  defp call_target(socket, caller_function_id, card_id) do
-    with %Index{} = index <- socket.assigns.index,
-         %{function_id: function_id} <- Forest.card(socket.assigns.forest, card_id) do
-      Links.call_target(index, caller_function_id, function_id)
-    else
-      _no_card_or_index -> nil
+  # The edge an opened card gains is identified by the spelling the caller's own source uses,
+  # which is not the callee's id whenever the call goes through a default-argument alias. The
+  # palette opens whatever the user picked under whatever has focus, so the two need not be
+  # joined by a call at all; nil then leaves the graph to fall back to the callee's id, and the
+  # edge simply has no call site in the caller's body to paint.
+  defp call_target(socket, caller_function_id, callee_function_id)
+       when is_binary(caller_function_id) and is_binary(callee_function_id) do
+    case socket.assigns.index do
+      %Index{} = index -> Links.call_target(index, caller_function_id, callee_function_id)
+      _no_index -> nil
+    end
+  end
+
+  defp call_target(_socket, _caller_function_id, _callee_function_id), do: nil
+
+  defp function_id(socket, card_id) do
+    case Forest.card(socket.assigns.forest, card_id) do
+      %{function_id: function_id} -> function_id
+      _no_card -> nil
     end
   end
 

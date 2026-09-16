@@ -129,7 +129,9 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 [data-color="7"] { --edge-color: var(--edge-7); }
 .call[data-open="true"] { outline: 2px solid var(--edge-color); outline-offset: 1px; border-radius: 2px; border-bottom-style: solid; background: color-mix(in srgb, var(--edge-color) 12%, transparent); }
 .call[data-external="true"] { border-bottom-color: var(--fg-muted); opacity: 0.8; }
-.call[data-highlight="true"] { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; background: var(--accent-soft); }
+/* The agent's pointer is a shadow, not an outline: a call that is both open and pointed at
+   has only one outline box, and it belongs to the edge leaving the call. */
+.call[data-highlight="true"] { box-shadow: 0 0 0 2px var(--accent); border-radius: 2px; }
 .line[data-highlight="true"] { background: var(--accent-soft); }
 .card__also { display: flex; flex-wrap: wrap; gap: var(--space-xs); padding: var(--space-s) var(--space-m); border-top: 1px solid var(--border); font-size: 12px; }
 .card__also-label { color: var(--fg-muted); }

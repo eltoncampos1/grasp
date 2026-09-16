@@ -33,10 +33,10 @@ const Keys = {
       if (DIRECTIONS[e.key]) {
         e.preventDefault()
         this.pushEvent("move_focus", {dir: DIRECTIONS[e.key]})
-      } else if (e.key === "x") {
-        this.pushEvent("close_focused", {})
-      } else if (e.key === "X") {
-        this.pushEvent("close_focused_chain", {})
+      } else if (e.key.toLowerCase() === "x") {
+        // Shift is what separates the two, not the case of the key: CapsLock also sends "X",
+        // and closing the whole chain is the one of the pair that cannot be undone.
+        this.pushEvent(e.shiftKey ? "close_focused_chain" : "close_focused", {})
       } else if (e.key === "c") {
         this.pushEvent("collapse_focused", {})
       }

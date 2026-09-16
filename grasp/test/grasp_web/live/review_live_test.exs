@@ -247,12 +247,14 @@ defmodule GraspWeb.ReviewLiveTest do
     refute has_element?(view, "#card-3")
   end
 
-  test "Shift+x closes the focused card's chain, and does nothing without a focus", %{
-    view: view,
-    name: name
-  } do
+  test "close_focused_chain with nothing focused leaves the canvas as it was", %{view: view} do
     render_hook(view, "close_focused_chain", %{})
 
+    assert has_element?(view, "#stage")
+    refute has_element?(view, ".card")
+  end
+
+  test "Shift+x closes the focused card's chain", %{view: view, name: name} do
     Session.open_root(name, @greet)
     Session.open_child(name, 1, @wrap)
     Session.focus(name, 1)
