@@ -435,13 +435,6 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   than a silently smaller answer. The third bound, a 20 000-node visit budget, is the one
   that can bite a caller who asked for nothing unusual; an exhausted budget comes back as
   `truncated?: true`, which says the answer is partial but not which part is missing.
-- **The browser page is not behind the local-only check.** `GraspWeb.Plugs.LocalOnly`
-  guards `/mcp`, where the whole index is one call away. The review page is guarded one
-  step later, by the LiveView socket's `check_origin` list, so a page served to a rebound
-  DNS name gets the static first render and no live socket: the sidebar's names and
-  whatever cards the session already holds, with no way to open another. Running the plug
-  on the page as well costs nothing and is worth doing when the viewer stops being a
-  localhost-only tool.
 
 ## Part 3 — MCP
 

@@ -7,6 +7,7 @@ defmodule GraspWeb.Router do
   use GraspWeb, :router
 
   pipeline :browser do
+    plug GraspWeb.Plugs.LocalOnly
     plug :accepts, ["html"]
     plug :fetch_session
     plug :protect_from_forgery

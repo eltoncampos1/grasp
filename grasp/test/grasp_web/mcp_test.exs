@@ -52,7 +52,7 @@ defmodule GraspWeb.MCPTest do
 
     refute result["isError"]
 
-    {:ok, view, _html} = live(Phoenix.ConnTest.build_conn(), "/s/#{name}")
+    {:ok, view, _html} = live(%{Phoenix.ConnTest.build_conn() | host: "127.0.0.1"}, "/s/#{name}")
 
     assert has_element?(view, "#card-1[data-function-id='#{@show}']")
     assert has_element?(view, "#card-2[data-function-id='#{@greet}']")
@@ -112,8 +112,9 @@ defmodule GraspWeb.MCPTest do
     assert ["text/plain" <> _] = get_resp_header(conn, "content-type")
   end
 
-  test "the review page is served to any host", %{conn: conn} do
-    assert %{conn | host: "evil.example"} |> get("/") |> html_response(200)
+  test "the review page is guarded the same way", %{conn: conn} do
+    assert %{conn | host: "evil.example"} |> get("/") |> response(403) == "forbidden"
+    assert conn |> get("/") |> html_response(200)
   end
 
   # -- helpers -------------------------------------------------------------
@@ -139,7 +140,7 @@ defmodule GraspWeb.MCPTest do
       "method" => "notifications/initialized"
     })
 
-    {Phoenix.ConnTest.build_conn(), session}
+    {%{Phoenix.ConnTest.build_conn() | host: "127.0.0.1"}, session}
   end
 
   defp rpc(conn, session, method, params) do
