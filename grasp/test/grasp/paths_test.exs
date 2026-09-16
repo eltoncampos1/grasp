@@ -51,4 +51,82 @@ defmodule Grasp.PathsTest do
   test "an unknown function has no paths", %{index: index} do
     assert %{paths: []} = Paths.between(index, "Nope.f/0", @wrap, [])
   end
+
+  test "the seed is resolved through a default-arity alias", %{index: index} do
+    assert %{paths: [[@greet, @wrap]]} =
+             Paths.between(index, "SampleApp.Greeter.greet/1", @wrap, [])
+  end
+
+  test "a function is not a path to itself", %{index: index} do
+    assert %{paths: []} = Paths.between(index, @wrap, @wrap, [])
+  end
+
+  describe "graph shapes" do
+    @a "SampleApp.Shapes.a/0"
+    @b "SampleApp.Shapes.b/0"
+    @c "SampleApp.Shapes.c/0"
+    @d "SampleApp.Shapes.d/0"
+
+    test "both same-length routes through a diamond are reported" do
+      index = index(%{@a => [@b, @c], @b => [@d], @c => [@d], @d => []})
+
+      assert %{paths: [[@a, @b, @d], [@a, @c, @d]], truncated?: false} =
+               Paths.between(index, @a, @d, [])
+    end
+
+    test "a cycle terminates with the route that leaves it" do
+      index = index(%{@a => [@b], @b => [@a, @c], @c => []})
+
+      assert %{paths: [[@a, @b, @c]], truncated?: false} = Paths.between(index, @a, @c, [])
+    end
+
+    test "limit keeps the first paths of the documented order, not of the walk" do
+      target = "SampleApp.Target.run/0"
+      first = "SampleAppWeb.Alpha.call/0"
+      second = "SampleAppWeb.Zeta.call/0"
+
+      index =
+        index(
+          %{
+            target => [],
+            "SampleApp.Middle.one/0" => [target],
+            "SampleApp.Middle.two/0" => [target],
+            first => ["SampleApp.Middle.two/0"],
+            second => ["SampleApp.Middle.one/0"]
+          },
+          [first, second]
+        )
+
+      assert %{paths: [[^first, _, ^target], [^second, _, ^target]]} =
+               Paths.to_entry_points(index, target, limit: 10)
+
+      assert %{paths: [[^first, _, ^target]]} = Paths.to_entry_points(index, target, limit: 1)
+    end
+  end
+
+  defp index(calls, entry_points \\ []) do
+    {:ok, index} =
+      Grasp.Index.from_document(%{
+        "version" => 1,
+        "functions" => Enum.map(calls, fn {id, targets} -> record(id, targets) end),
+        "entry_points" =>
+          Enum.map(entry_points, &%{"kind" => "route", "label" => &1, "target" => &1})
+      })
+
+    index
+  end
+
+  defp record(id, targets) do
+    [qualified, arity] = String.split(id, "/")
+    {name, module} = qualified |> String.split(".") |> List.pop_at(-1)
+
+    %{
+      "id" => id,
+      "module" => Enum.join(module, "."),
+      "name" => name,
+      "arity" => String.to_integer(arity),
+      "calls" => Enum.map(targets, &%{"target" => &1}),
+      "hidden_calls" => []
+    }
+  end
 end
