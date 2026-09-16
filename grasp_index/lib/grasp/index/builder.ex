@@ -216,9 +216,13 @@ defmodule Grasp.Index.Builder do
   end
 
   # Captured on its own: git writes warnings to stderr and still exits 0, and a warning
-  # folded into stdout would be read as the commit the project is sitting on.
+  # folded into stdout would be read as the commit the project is sitting on. Outside a
+  # repository git's complaint is discarded rather than shown: the block is best-effort.
   defp git(args, root) do
-    System.cmd("git", args, cd: root)
+    case System.cmd("git", ["rev-parse", "--git-dir"], cd: root, stderr_to_stdout: true) do
+      {_out, 0} -> System.cmd("git", args, cd: root)
+      _not_a_repository -> {"", 1}
+    end
   rescue
     ErlangError -> {"", 1}
   end
