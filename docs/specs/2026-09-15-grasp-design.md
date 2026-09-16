@@ -410,29 +410,75 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 
 ## Part 3 — MCP
 
-Served by `anubis_mcp` at `/mcp` over Streamable HTTP. A session is created on first
-reference.
+Served by `anubis_mcp` at `/mcp` over Streamable HTTP, on the same endpoint as the viewer.
+Every session tool takes a `session` name (default `"default"`) and creates that session on
+first reference. Results are JSON text content, so any MCP client can read them.
 
-- Read tools: `search_functions(query, limit)`, `get_function(id)` returning source,
-  file, span, calls, callers, change and base source, `get_callers(id)`,
-  `get_callees(id)`, `find_paths(from, to, max_depth)` (breadth-first search over the
-  call graph, for building tours), `list_entry_points(kind?)`, `list_changes()`,
-  `list_modules()`.
-- Session tools: `list_sessions()`, `get_session(name)`, `set_cards(name, forest)`
-  where a node is `{function_id, highlight?, children}`,
-  `open_card(name, function_id, parent_card_id?, highlight?)`, `close_card(name, card_id)`,
-  `focus_card(name, card_id)`, `annotate(name, function_id, body, line?)`,
-  `clear_annotations(name, function_id?)`, `set_tour(name, title, steps)`,
-  `tour_goto(name, position)`, `clear_tour(name)`, `reload_index()`.
-- Resources: `grasp://function/{id}`, `grasp://entry-points`, `grasp://changes`.
-- Prompt `build_review_tour`: instructs an agent to read `list_changes`, trace each
-  change to its entry point with `find_paths`, and author a tour with annotations.
+- Read tools: `search_functions(query, limit)`, `get_function(id)` returning the record
+  (module, name, arity, kind, file, span, source, calls, hidden calls) plus its callers and
+  the entry points that lead to it, `get_callers(id)`, `get_callees(id)`,
+  `find_paths(to, from?, max_depth, limit)`, `list_entry_points(kind?, query?, limit)`,
+  `list_modules(query?, limit)`, `list_sessions()`.
+- `find_paths` walks the call graph (visible and hidden calls) breadth first, shortest
+  paths first, and returns at most `limit` distinct paths of at most `max_depth` hops
+  (default 6, cap 8). With `from` omitted it walks callers backwards from `to` until it
+  reaches an entry-point target, so "which controller or worker reaches this function"
+  is one call. Each path is a list of function ids; a path that starts at an entry point
+  carries the entry's kind and label. A visit budget bounds the walk on large graphs and
+  the result says when it was hit.
+- Session tools: `get_session(name)`, `set_cards(name, cards)`, `open_card(name,
+  function_id, parent_card_id?, highlight?)`, `close_card(name, card_id)`,
+  `focus_card(name, card_id)`, `highlight_card(name, card_id, highlight)`. Every session
+  tool returns the resulting forest as JSON (`roots`, `cards` with ids, parents, children,
+  highlight, `focus`) so the agent can address cards it just created.
+- `set_cards` replaces the forest. `cards` is a flat list of `{key, function_id,
+  parent_key?, highlight?}`; `key` is any string the caller picks, `parent_key` names
+  another entry, and entries are applied in order so a parent precedes its children.
+  Unknown function ids or dangling parent keys make the whole call a tool error that
+  names them, and the forest is left untouched. Cards from `set_cards` and `open_card` are
+  linked to their parent through the parent's call to them when such a call exists
+  (`opened_by`), so the connector and the marked call span render as if a human clicked.
+- A highlight is `{call: target_id}` or `{lines: [first, last]}`. The card renders the
+  highlighted call with a ring, or the highlighted lines with a tinted background, and the
+  canvas reveals it when the card gains focus. A highlight stays until replaced or the
+  card closes.
+- Later milestones add `annotate`, `set_tour`/`tour_goto`, resources and the
+  `build_review_tour` prompt; `list_changes` arrives with PR mode.
 
 Registering in Claude Code:
 
 ```
 claude mcp add --transport http grasp http://127.0.0.1:4040/mcp
 ```
+
+### Chat panel
+
+The viewer can drive an agent itself, so a reviewer types "show me the award bonus flow"
+and watches the cards arrive. The panel is a server-owned dock over the canvas (toggle
+with Cmd+I or the toolbar button) with a transcript, a prompt box, Send, Stop and New
+conversation.
+
+- `Grasp.Agent.Runner` is a GenServer per session name. On a prompt it spawns the Claude
+  Code CLI headless (`claude -p PROMPT --output-format stream-json --verbose`) with the
+  indexed project's root as its working directory, Grasp registered as its only MCP server
+  (`--strict-mcp-config --mcp-config {"mcpServers":{"grasp":{"type":"http","url":
+  ".../mcp"}}}`), built-in tools limited to `Read Grep Glob`, and `mcp__grasp Read Grep
+  Glob` pre-approved through `--allowedTools`, so it never edits files or runs commands.
+  The appended system prompt names the viewer session and tells the agent to discover with
+  the read tools and answer with `set_cards`, starting roots at entry points. Follow-up
+  prompts pass `--resume <session_id>` (taken from the stream's `system/init` event), and
+  New conversation drops that id. The command is configurable (`:grasp, :agent_command`,
+  default `claude`) so tests substitute a script.
+- The runner parses the JSON stream line by line: `assistant` text blocks stream into the
+  transcript, `tool_use` blocks become tool rows showing the tool name and its main
+  argument, `tool_result` blocks mark the row done or failed, `system/init` records the
+  session id and reports when the `grasp` MCP server is not connected, and `result`
+  closes the run with its cost. Lines that are not JSON (stderr is merged) are kept as a
+  log shown when the run fails. Stop kills the OS process. One run at a time per session;
+  a second prompt while running is refused.
+- The runner broadcasts its transcript on `agent:<name>`; `ReviewLive` subscribes, so
+  every tab on the session sees the same conversation, and card changes arrive through
+  the ordinary session broadcast because the agent went through MCP like any other client.
 
 ## Testing
 
@@ -469,10 +515,14 @@ claude mcp add --transport http grasp http://127.0.0.1:4040/mcp
      carry an entry badge, and the join keeps a template's calls into the project as
      hidden calls, so a controller reaches its context through its template. Route
      pipelines are the one thing step 4 set out to carry and could not.
-4. PR mode: base ref extraction, change badges, Changes sidebar, diff view.
-5. Sessions: GenServer, persistence, annotations UI.
-6. MCP tools, resources, tours and the tour bar.
-7. README for strangers, CI, editor links, `mix grasp.serve` polish.
+4. MCP tools and the chat panel: read tools, `find_paths`, card tools with highlights,
+   Streamable HTTP at `/mcp`, and the in-viewer agent runner. The agent proves the
+   arrangement loop before PR mode and tours build on it.
+5. PR mode: base ref extraction, change badges, Changes sidebar, diff view, `list_changes`.
+6. Sessions on disk: persistence, annotations UI and `annotate`.
+7. Tours: `set_tour`, `tour_goto`, the tour bar, resources and the `build_review_tour`
+   prompt.
+8. README for strangers, CI, editor links, `mix grasp.serve` polish.
 
 ## Verification
 
