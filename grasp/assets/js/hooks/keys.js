@@ -25,6 +25,11 @@ const Keys = {
           // The zoom lives entirely in the Canvas hook, so this is hook to hook through the DOM
           // rather than a round trip to the server.
           window.dispatchEvent(new CustomEvent("grasp:zoom-reset"))
+        } else if (e.key.toLowerCase() === "g") {
+          // ⌘G is the browser's own find-next, which would otherwise run on top of the frame
+          // this just made. Shift is what separates the pair, not the case of the key.
+          e.preventDefault()
+          this.pushEvent(e.shiftKey ? "ungroup_selected" : "group_selected", {})
         }
         return
       }
@@ -41,6 +46,10 @@ const Keys = {
         this.pushEvent("collapse_focused", {})
       } else if (e.key === "d") {
         this.pushEvent("toggle_view_focused", {})
+      } else if (e.key === "Escape") {
+        // The palette and any field have already returned above, so Escape here is aimed at
+        // the canvas and means the cards picked out on it are let go.
+        this.pushEvent("clear_selection", {})
       }
     }
     window.addEventListener("keydown", this.onKeydown)

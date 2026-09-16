@@ -330,20 +330,38 @@ is what names a group afterwards, and a blank title there clears the name rather
 refused, so a frame can be drawn first and named once the reader sees what it holds. The id
 is what names a group for certain: titles are neither required nor unique.
 
-Groups are made and edited on the canvas as well as over MCP. A frame's title is renamed in
-place: clicking it swaps the heading for a form over the same title, Enter saves through
-`Session.rename_group/3` — which keeps the group's id and its cards, so an id held elsewhere
-still names it, and takes a blank title as a frame left with no name — and Escape or a blur
-leaves it as it was. Which frame is being renamed is the LiveView's (`renaming_group`), not
-the browser's, so one rename is open at a time and a
-patch cannot lose it. A card is put into a group from its own header menu, or by being
-dragged into another group's frame: the drag hook finds the frame under the release with
+Groups are made and edited on the canvas as well as over MCP, by selecting cards and framing
+the selection. Shift+click picks a card out or puts it back — the canvas hook takes the click
+in the capture phase, before the card's own focus handler, and pushes `toggle_select`; a
+button, a link, a call site or an "Also calls" entry inside the card keeps what it already
+does. The selection is a `MapSet` on the LiveView (`selected`) and nowhere else: it is a
+gesture half-finished rather than a fact about the session, so it is neither stored nor
+broadcast, and two tabs on one session pick cards out independently. A card that closes
+leaves the selection with it, and an index reload empties it.
+
+⌘G frames the selection through `Session.new_group/3` under no title, then clears the
+selection and focuses the frame's first card; ⇧⌘G calls `Session.ungroup_cards/2` over it and
+keeps the selection, since taking cards out of a frame is as often the first half of putting
+them in another. Both fall back to the focused card when nothing is selected, so the chords
+work before anything has been picked out. Escape lets the selection go. A frame with no title
+renders the placeholder "Untitled group" in place of its heading, muted and italic, which is
+clicked to name it like any other title.
+
+A frame's title is renamed in place: clicking it swaps the heading for a form over the same
+title — empty for an untitled frame — Enter saves through `Session.rename_group/3` — which
+keeps the group's id and its cards, so an id held elsewhere still names it, and takes a blank
+title as a frame left with no name — and Escape or a blur leaves it as it was. Which frame is
+being renamed is the LiveView's (`renaming_group`), not the browser's, so one rename is open
+at a time and a patch cannot lose it. A card is also put into a group by being dragged into
+another group's frame: the drag hook finds the frame under the release with
 `elementFromPoint`, having taken the dragged node out of hit testing for the lookup, and
-sends its group id along with the move. A drop anywhere else — the groupless section, the
-bare canvas, the frame the card is already in — is a move and nothing more, so a card never
-changes group by being put down near one. A card that does change group keeps the offset the
-drag gave it, which was measured against where it sat in its old section, so it is drawn
-displaced by that much from its place in the new one until the layout is reset.
+sends its group id along with the move. Dragging a selected card carries the rest of the
+selection into that frame, the others keeping the offsets they had, since only the card under
+the pointer moved. A drop anywhere else — the groupless section, the bare canvas, the frame
+the card is already in — is a move and nothing more, so a card never changes group by being
+put down near one. A card that does change group keeps the offset the drag gave it, which was
+measured against where it sat in its old section, so it is drawn displaced by that much from
+its place in the new one until the layout is reset.
 
 A card is as wide as its widest line up to a ceiling (`--card-max-width`, 60rem), rather
 than a fixed width, so a column of one-line helpers does not reserve the width of the
@@ -434,14 +452,13 @@ otherwise to a new root, then focuses it with the step's highlight.
   the body carries it; the kind for every other kind, spelled as a reader says it — "live
   route", "worker", "GenServer" — since its label is what the title already says),
   `Mod.fun/arity`, `file:line` that opens the `--editor` URL scheme, change badge,
-  Source/Diff toggle, callers menu, group menu, collapse, close.
-- The group menu lists every group on the canvas, the card's own marked `aria-current`, so
-  joining one is picking it by name rather than by id; under them a form makes a new group
-  around this card from a title, and a card already in a group can leave it. A stub carries
-  the same menu as a function card, since a stub dragged into a frame is in that group like
-  any other card and would otherwise have no way out of it. Which card's menu is open is
-  server state (`group_menu_open`), as the callers menu is; opening either menu, or a frame
-  rename, closes the other two, so one panel stands at a time and a patch cannot drop it.
+  Source/Diff toggle, callers menu, collapse, close. Which card's callers menu is open is
+  server state (`callers_open`); opening it closes a frame rename under way and the other way
+  round, so one panel stands at a time and a patch cannot drop it.
+- A selected card carries `data-selected` and a dashed outline, which a stub carries too:
+  a stub dragged into a frame is in that group like any other card and needs the same way
+  out of it. Grouping is a canvas gesture rather than a control on the card, so the header
+  holds nothing for it.
 - Body: Lumis-highlighted source. Every resolved call is wrapped in a clickable span.
   The highlighted call gets a ring and is scrolled into view. Calls with an open child
   are marked. Calls to functions outside the index (deps, stdlib) render muted and open

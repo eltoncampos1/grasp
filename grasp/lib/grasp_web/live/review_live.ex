@@ -5,7 +5,9 @@ defmodule GraspWeb.ReviewLive do
   Cmd+K palette. Which sidebar groups arrive open is the sidebar's decision, taken from the
   index at mount and again whenever it reloads, and owned by whoever clicks in between.
   State is the session's forest plus the loaded index; both arrive by PubSub so any change
-  — from this browser, another tab, or an MCP client later — renders everywhere.
+  — from this browser, another tab, or an MCP client later — renders everywhere. Which cards
+  are selected is this tab's alone (`selected`): a selection is a gesture half-finished, and
+  broadcasting it would move the cards another reader is picking out.
   """
 
   use GraspWeb, :live_view
@@ -45,8 +47,8 @@ defmodule GraspWeb.ReviewLive do
        expanded_module: nil,
        expanded_groups: default_expanded(index),
        callers_open: nil,
-       group_menu_open: nil,
        renaming_group: nil,
+       selected: MapSet.new(),
        palette_open?: false,
        palette_query: "",
        palette_results: [],
@@ -71,6 +73,8 @@ defmodule GraspWeb.ReviewLive do
   # re-index that adds a base ref gains a Changes group, and leaving the old set in place
   # would open the page's table of contents shut. Only the resulting set is held — nothing
   # records which groups the user toggled by hand — so it is recomputed, not merged.
+  # The selection goes with them: a reload rewrites what the cards are of, and a set picked
+  # out of the old index is a claim about functions that may no longer be there.
   def handle_info(:index_reloaded, socket) do
     index = IndexStore.get()
 
@@ -78,6 +82,7 @@ defmodule GraspWeb.ReviewLive do
      assign(socket,
        index: index,
        expanded_groups: default_expanded(index),
+       selected: MapSet.new(),
        index_error: IndexStore.last_error(),
        index_path: IndexStore.path()
      )}
@@ -131,34 +136,53 @@ defmodule GraspWeb.ReviewLive do
      |> assign(callers_open: open, forest: Session.focus(socket.assigns.name, id))}
   end
 
-  def handle_event("toggle_group_menu", %{"card" => card}, socket) do
-    id = int(card)
-    open = if socket.assigns.group_menu_open == id, do: nil, else: id
-    {:noreply, socket |> close_overlays() |> assign(group_menu_open: open)}
-  end
+  # Shift+click, which the canvas hook turns into this rather than into a focus: the card is
+  # picked out or put back, and nothing else about it changes.
+  def handle_event("toggle_select", %{"card" => card}, socket) do
+    selected = socket.assigns.selected
 
-  # Every pick in the menu is the last thing it is asked, so each of them closes it rather
-  # than leaving it open over a card that has just moved to another frame.
-  def handle_event("join_group", %{"card" => card, "group" => group}, socket) do
-    socket = close_overlays(socket)
-    mutate(socket, &Session.add_to_group(&1, int(group), [int(card)]))
-  end
+    case int(card) do
+      nil ->
+        {:noreply, socket}
 
-  # The menu's form makes a group by naming it, so a blank submission is nothing to act on
-  # and closes the menu; a frame is left with no name by clearing its title instead.
-  def handle_event("new_group", %{"card" => card, "title" => title}, socket)
-      when is_binary(title) do
-    socket = close_overlays(socket)
+      id ->
+        picked =
+          if MapSet.member?(selected, id),
+            do: MapSet.delete(selected, id),
+            else: MapSet.put(selected, id)
 
-    case String.trim(title) do
-      "" -> {:noreply, socket}
-      trimmed -> mutate(socket, &Session.group_cards(&1, trimmed, [int(card)]))
+        {:noreply, assign(socket, selected: picked)}
     end
   end
 
-  def handle_event("leave_group", %{"card" => card}, socket) do
-    socket = close_overlays(socket)
-    mutate(socket, &Session.ungroup_cards(&1, [int(card)]))
+  def handle_event("clear_selection", _params, socket),
+    do: {:noreply, assign(socket, selected: MapSet.new())}
+
+  # The new frame has no title: naming it is a second decision, taken on the frame itself
+  # once the reader can see what it holds. The selection has been spent, so it is dropped,
+  # and the focus moves onto the frame's first card so the canvas reveals where it went.
+  def handle_event("group_selected", _params, socket) do
+    case grouping_ids(socket) do
+      [] ->
+        {:noreply, socket}
+
+      [first | _] = ids ->
+        socket
+        |> assign(selected: MapSet.new())
+        |> mutate(fn name ->
+          Session.new_group(name, nil, ids)
+          Session.focus(name, first)
+        end)
+    end
+  end
+
+  # The cards stay selected: taking them out of a frame is as often the first half of
+  # putting them in another one as it is the end of the gesture.
+  def handle_event("ungroup_selected", _params, socket) do
+    case grouping_ids(socket) do
+      [] -> {:noreply, socket}
+      ids -> mutate(socket, &Session.ungroup_cards(&1, ids))
+    end
   end
 
   def handle_event("edit_group_title", %{"group" => group}, socket),
@@ -175,12 +199,12 @@ defmodule GraspWeb.ReviewLive do
 
   def handle_event("close_card", %{"card" => card}, socket) do
     id = int(card)
-    mutate(forget_menus(socket, id), &Session.close(&1, id))
+    mutate(forget_callers_menu(socket, id), &Session.close(&1, id))
   end
 
   def handle_event("close_chain", %{"card" => card}, socket) do
     id = int(card)
-    mutate(forget_menus(socket, id), &Session.close_chain(&1, id))
+    mutate(forget_callers_menu(socket, id), &Session.close_chain(&1, id))
   end
 
   def handle_event("focus_card", %{"card" => card}, socket),
@@ -197,16 +221,20 @@ defmodule GraspWeb.ReviewLive do
 
   # A drop carries a group only when it landed inside another group's frame; every other
   # drop is a move alone, so a card keeps the group it was in wherever on the canvas it is
-  # put down.
+  # put down. Dragging a selected card into a frame takes the rest of the selection with it,
+  # which is what makes the set a set — the others keep the offsets they had, since only the
+  # one under the pointer was moved.
   def handle_event("move_card", %{"card" => card, "dx" => dx, "dy" => dy} = params, socket) do
     case {int(card), int(dx), int(dy)} do
       {id, dx, dy} when is_integer(id) and is_integer(dx) and is_integer(dy) ->
+        joining = dragged_set(socket, id)
+
         mutate(socket, fn name ->
           moved = Session.move(name, id, {dx, dy})
 
           case int(params["group"]) do
             nil -> moved
-            group -> Session.add_to_group(name, group, [id])
+            group -> Session.add_to_group(name, group, joining)
           end
         end)
 
@@ -327,20 +355,34 @@ defmodule GraspWeb.ReviewLive do
 
   defp refresh_agent(socket), do: assign(socket, agent: Grasp.Agent.get(socket.assigns.name))
 
-  # Whatever the last click opened stands alone: the callers menu, the group menu and the
-  # rename form are closed together so that opening one is what closes the others.
-  defp close_overlays(socket),
-    do: assign(socket, callers_open: nil, group_menu_open: nil, renaming_group: nil)
+  # Whatever the last click opened stands alone: the callers menu and the rename form are
+  # closed together so that opening one is what closes the other.
+  defp close_overlays(socket), do: assign(socket, callers_open: nil, renaming_group: nil)
 
-  # A menu is addressed by the id of the card it hangs off, so one left open on a card that
-  # is closing would have nothing to render against.
-  defp forget_menus(socket, id) do
-    %{callers_open: callers, group_menu_open: menu} = socket.assigns
+  # The callers menu is addressed by the id of the card it hangs off, so one left open on a
+  # card that is closing would have nothing to render against.
+  defp forget_callers_menu(socket, id) do
+    callers = socket.assigns.callers_open
+    assign(socket, callers_open: if(callers == id, do: nil, else: callers))
+  end
 
-    assign(socket,
-      callers_open: if(callers == id, do: nil, else: callers),
-      group_menu_open: if(menu == id, do: nil, else: menu)
-    )
+  # What ⌘G and ⇧⌘G act on. An empty selection means the card in hand rather than nothing at
+  # all, so the chords work before anything has been picked out. The ids are sorted, so the
+  # card a new frame focuses is the first of them to have been opened rather than whichever
+  # was picked out last.
+  defp grouping_ids(socket) do
+    case Enum.sort(socket.assigns.selected) do
+      [] -> List.wrap(socket.assigns.forest.focus)
+      ids -> ids
+    end
+  end
+
+  # A drag of a card nobody selected moves that card alone, even while others are selected:
+  # the pointer is the more recent statement of what is being moved.
+  defp dragged_set(socket, id) do
+    if MapSet.member?(socket.assigns.selected, id),
+      do: Enum.sort(MapSet.put(socket.assigns.selected, id)),
+      else: [id]
   end
 
   # Only a modified function has two sides to swap between, so the keyboard passes over a
@@ -426,8 +468,12 @@ defmodule GraspWeb.ReviewLive do
   # The session broadcasts the new forest to every subscriber including this process, so
   # the returned forest is assigned here only to make the change visible before the
   # broadcast arrives (which matters in tests, where the view may not be connected).
+  # A card that closed is off the canvas and so out of the selection: left in, it would be
+  # the whole of what ⌘G frames while the reader sees nothing selected at all.
   defp mutate(socket, fun) do
-    {:noreply, assign(socket, forest: fun.(socket.assigns.name))}
+    forest = fun.(socket.assigns.name)
+    selected = MapSet.filter(socket.assigns.selected, &Map.has_key?(forest.cards, &1))
+    {:noreply, assign(socket, forest: forest, selected: selected)}
   end
 
   # What a PR-mode review is against, as the two ends of the comparison. A detached head has
@@ -484,10 +530,7 @@ defmodule GraspWeb.ReviewLive do
       |> Enum.group_by(& &1.from, &{&1.target, %{to: &1.to, color: &1.color}})
       |> Map.new(fn {from, calls} -> {from, Map.new(calls)} end)
 
-    groups = assigns.forest.groups |> Map.values() |> Enum.sort_by(& &1.id)
-
-    assigns =
-      assign(assigns, open_calls: open_calls, base: base_label(assigns.index), groups: groups)
+    assigns = assign(assigns, open_calls: open_calls, base: base_label(assigns.index))
 
     ~H"""
     <main
@@ -574,11 +617,15 @@ defmodule GraspWeb.ReviewLive do
               <header :if={section.group} class="flow__title">
                 <h3
                   :if={@renaming_group != section.group.id}
+                  class={[
+                    "flow__title-text",
+                    !section.group.title && "flow__title-text--empty"
+                  ]}
                   phx-click="edit_group_title"
                   phx-value-group={section.group.id}
                   title="Rename this group"
                 >
-                  {section.group.title}
+                  {section.group.title || "Untitled group"}
                 </h3>
                 <form
                   :if={@renaming_group == section.group.id}
@@ -619,8 +666,7 @@ defmodule GraspWeb.ReviewLive do
                     open_calls={Map.get(@open_calls, id, %{})}
                     editor={@editor}
                     callers_open={@callers_open}
-                    groups={@groups}
-                    group_menu_open={@group_menu_open}
+                    selected={MapSet.member?(@selected, id)}
                   />
                 </div>
               </div>

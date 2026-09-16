@@ -14,7 +14,8 @@
 //
 // A card is dragged by its header, or from anywhere on it with Ctrl held; holding Space turns
 // the whole canvas, cards included, into a pan surface. A card dropped inside another group's
-// frame joins that group, which is the drag half of the manual grouping the card menu drives.
+// frame joins that group, and Shift+click picks cards out into the selection ⌘G frames — the
+// two halves of grouping by hand.
 
 const MIN_SCALE = 0.25
 const MAX_SCALE = 2.5
@@ -178,6 +179,16 @@ const Canvas = {
       e.stopPropagation()
       e.preventDefault()
       this.suppressClick = false
+      return
+    }
+    // Shift+click anywhere on a card picks it out instead of focusing it. A control or a call
+    // site keeps what it already does, so Shift+clicking a call still opens the callee; the
+    // capture phase is where the card's own phx-click has to be taken before it fires.
+    const card = e.shiftKey && e.target.closest(".card")
+    if (card && !e.target.closest("button, a, input, .call, .also")) {
+      e.stopPropagation()
+      e.preventDefault()
+      this.pushEvent("toggle_select", {card: card.id.replace("card-", "")})
       return
     }
     const zoom = e.target.closest("#zoom-in, #zoom-out, #zoom-fit, #zoom-level")
@@ -365,11 +376,16 @@ const Canvas = {
     // stale suppression would eat this one.
     this.suppressClick = false
     if (this.spaceHeld) return this.beginPan(e)
+    // A Shift+press on a card is the start of a selection click, not of a drag: without the
+    // preventDefault the browser begins a text range that smears over every card the pointer
+    // crosses on the way to the next one.
+    if (e.shiftKey && e.target.closest(".card")) return e.preventDefault()
     const ctrlCard = e.ctrlKey && e.target.closest(".card")
     if (ctrlCard) return this.beginCardDrag(e, ctrlCard, true)
     const header = e.target.closest(".card__header")
-    // The header carries the group menu's own text field; a press there is aimed at the
-    // field, and the preventDefault a drag begins with would take the focus away from it.
+    // The header's own controls — the callers toggle, the file link, close — are pressed
+    // rather than dragged from, and the preventDefault a drag begins with would take the
+    // focus away from them.
     if (header && !e.target.closest("button, a, input")) {
       this.beginCardDrag(e, header.closest(".card"), false)
     } else if (!e.target.closest(".card, .toolbar, .chat, button, a, input")) {

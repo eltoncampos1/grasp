@@ -85,17 +85,23 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
   leaves the cards where they were. A title is a label rather than a requirement: a frame
   may stand with none. Cards in no group make a last, unframed section under the framed
   ones. An agent asked for several flows gives each one its own
-  group over MCP, and you make and edit them by hand with the three gestures below.
-- A card's `group` button opens a menu of every group on the canvas: pick one to move the
-  card into it, type a name to make a new group around it, or leave the one it is in. A
-  group whose last card left is gone with it.
-- Click a frame's title to rename it in place — Enter saves, a blank name leaves the frame
-  with none, Escape or clicking away leaves it as it was. The group keeps its id and its
-  cards, so a tour or an agent holding that id still finds it.
-- Drag a card into another group's frame to move it there. Dropping it anywhere else — the
-  unframed section, the bare canvas, its own frame — moves the card and nothing more. A card
-  that changes group keeps the offset the drag gave it and so lands beside its place in the
-  new frame rather than on it; "reset layout" puts every card back on the grid.
+  group over MCP, and you make and edit them by hand with the gestures below.
+- Shift+click a card to pick it out; Shift+click it again to put it back. Selected cards
+  wear a dashed outline, Escape lets them all go, and closing one takes it out of the
+  selection. The selection is this tab's own — another tab reading the same session sees
+  the frames you make, not the cards you are picking.
+- ⌘G frames the selected cards, or the focused card when nothing is selected. The frame
+  starts with no name. ⇧⌘G takes the selected cards back out of whatever frames they are
+  in, leaving them selected, so they can go straight into another one.
+- Click a frame's title to name or rename it in place — Enter saves, a blank name leaves the
+  frame with none and its heading reading "Untitled group", Escape or clicking away leaves it
+  as it was. The group keeps its id and its cards, so a tour or an agent holding that id
+  still finds it. `ungroup` in the frame's header dissolves the whole frame.
+- Drag a card into another group's frame to move it there; drag a selected card and the rest
+  of the selection goes with it. Dropping it anywhere else — the unframed section, the bare
+  canvas, its own frame — moves the card and nothing more. A card that changes group keeps
+  the offset the drag gave it and so lands beside its place in the new frame rather than on
+  it; "reset layout" puts every card back on the grid.
 
 ## PR mode
 

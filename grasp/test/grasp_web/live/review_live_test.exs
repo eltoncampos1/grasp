@@ -701,75 +701,118 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#flow-none .columns .column:nth-child(2) #card-2[data-depth='1']")
   end
 
-  test "a card's group menu makes a group and puts the card in it", %{view: view, name: name} do
-    Session.open_root(name, @greet)
-
-    refute has_element?(view, "#card-1 .card__group-menu")
-    assert has_element?(view, "#card-1 .card__group-toggle[aria-expanded='false']")
-
-    view |> element("#card-1 .card__group-toggle") |> render_click()
-
-    assert has_element?(view, "#card-1 .card__group-toggle[aria-expanded='true']")
-    refute has_element?(view, "#card-1 .card__group-menu button[phx-click='leave_group']")
-
-    view |> form("#card-1 form.group-new", %{"title" => "   "}) |> render_submit()
-
-    refute has_element?(view, ".flow[data-grouped]")
-
-    view |> element("#card-1 .card__group-toggle") |> render_click()
-    view |> form("#card-1 form.group-new", %{"title" => "  Greeting  "}) |> render_submit()
-
-    assert has_element?(view, "#flow-1[data-grouped][data-group='1'] .flow__title h3", "Greeting")
-    assert has_element?(view, "#flow-1 #card-1")
-    refute has_element?(view, "#card-1 .card__group-menu")
-  end
-
-  test "a second card joins the group from its own menu", %{view: view, name: name} do
-    Session.open_root(name, @greet)
-    Session.open_child(name, 1, @wrap)
-    Session.group_cards(name, "Greeting", [1])
-
-    view |> element("#card-2 .card__group-toggle") |> render_click()
-
-    assert has_element?(
-             view,
-             "#card-2 .card__group-menu button.group-option[phx-value-group='1']",
-             "Greeting"
-           )
-
-    refute has_element?(
-             view,
-             "#card-2 .card__group-menu button.group-option[aria-current='true']"
-           )
-
-    view
-    |> element("#card-2 .card__group-menu button.group-option[phx-value-group='1']")
-    |> render_click()
-
-    assert has_element?(view, "#flow-1 #card-1")
-    assert has_element?(view, "#flow-1 #card-2")
-    assert has_element?(view, "#flow-1 .flow__count", "2 cards")
-
-    view |> element("#card-2 .card__group-toggle") |> render_click()
-
-    assert has_element?(
-             view,
-             "#card-2 .card__group-menu button.group-option[phx-value-group='1'][aria-current='true']"
-           )
-  end
-
-  test "leaving a group returns the card and takes the emptied frame away", %{
+  test "Shift-clicked cards are marked selected, and ⌘G frames them without a name", %{
     view: view,
     name: name
   } do
     Session.open_root(name, @greet)
+    Session.open_child(name, 1, @wrap)
+
+    refute has_element?(view, ".card__group-toggle")
+    assert has_element?(view, "#card-1[data-selected='false']")
+
+    render_hook(view, "toggle_select", %{"card" => "1"})
+    render_hook(view, "toggle_select", %{"card" => "2"})
+
+    assert has_element?(view, "#card-1.card--selected[data-selected='true']")
+    assert has_element?(view, "#card-2.card--selected[data-selected='true']")
+
+    render_hook(view, "group_selected", %{})
+
+    assert has_element?(
+             view,
+             "#flow-1[data-grouped] .flow__title .flow__title-text--empty",
+             "Untitled group"
+           )
+
+    assert has_element?(view, "#flow-1 #card-1")
+    assert has_element?(view, "#flow-1 #card-2")
+    assert has_element?(view, "#flow-1 .flow__count", "2 cards")
+    refute has_element?(view, ".card--selected")
+  end
+
+  test "⌘G with nothing selected frames the focused card alone", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    Session.open_root(name, @perform)
+
+    render_hook(view, "group_selected", %{})
+
+    assert has_element?(view, "#flow-1[data-grouped] #card-2")
+    assert has_element?(view, "#flow-none #card-1")
+  end
+
+  test "⇧⌘G returns the selected cards to the unframed section and keeps them selected", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.open_child(name, 1, @wrap)
+    Session.group_cards(name, "Greeting", [1, 2])
+
+    render_hook(view, "toggle_select", %{"card" => "2"})
+    render_hook(view, "ungroup_selected", %{})
+
+    assert has_element?(view, "#flow-none #card-2")
+    assert has_element?(view, "#flow-1 #card-1")
+    assert has_element?(view, "#card-2.card--selected")
+  end
+
+  test "a card dragged into a frame takes the rest of the selection with it", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.open_root(name, @perform)
+    Session.open_root(name, @show)
     Session.group_cards(name, "Greeting", [1])
 
-    view |> element("#card-1 .card__group-toggle") |> render_click()
-    view |> element("#card-1 .card__group-menu button[phx-click='leave_group']") |> render_click()
+    render_hook(view, "toggle_select", %{"card" => "2"})
+    render_hook(view, "toggle_select", %{"card" => "3"})
+    render_hook(view, "move_card", %{"card" => 2, "dx" => 10, "dy" => 5, "group" => 1})
 
-    refute has_element?(view, "#flow-1")
-    assert has_element?(view, "#flow-none #card-1")
+    assert has_element?(view, "#flow-1 #card-2[data-dx='10'][data-dy='5']")
+    assert has_element?(view, "#flow-1 #card-3[data-dx='0'][data-dy='0']")
+  end
+
+  test "the selection is cleared by Escape and loses a card that closes", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.open_child(name, 1, @wrap)
+
+    render_hook(view, "toggle_select", %{"card" => "1"})
+    render_hook(view, "toggle_select", %{"card" => "2"})
+    render_hook(view, "clear_selection", %{})
+
+    refute has_element?(view, ".card--selected")
+
+    render_hook(view, "toggle_select", %{"card" => "1"})
+    view |> element("#card-1 .card__close") |> render_click()
+
+    # The closed card is out of the selection, so grouping falls back to the card focus fell
+    # to rather than framing a card nobody can see.
+    render_hook(view, "group_selected", %{})
+
+    assert has_element?(view, "#flow-1 #card-2")
+    assert has_element?(view, "#flow-1 .flow__count", "1 card")
+  end
+
+  test "an untitled frame is named by clicking its placeholder", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    Session.new_group(name, nil, [1])
+
+    assert has_element?(view, "#flow-1 .flow__title-text--empty", "Untitled group")
+
+    view |> element("#flow-1 .flow__title h3") |> render_click()
+
+    assert has_element?(view, "#flow-1 form.flow__rename input[name='title']")
+    refute has_element?(view, "#flow-1 form.flow__rename input[value='Untitled group']")
+
+    view |> form("#flow-1 form.flow__rename", %{"title" => "Greeting"}) |> render_submit()
+
+    assert has_element?(view, "#flow-1 .flow__title h3", "Greeting")
+    refute has_element?(view, "#flow-1 .flow__title-text--empty")
   end
 
   test "a frame's title is renamed in place", %{view: view, name: name} do
@@ -832,7 +875,7 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#flow-1 #card-2[data-dx='20'][data-dy='6']")
   end
 
-  test "opening one card menu closes the other and any rename under way", %{
+  test "opening the callers menu closes a rename under way, and a rename closes it", %{
     view: view,
     name: name
   } do
@@ -843,27 +886,18 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(view, "#card-1 .card__callers ul")
 
-    view |> element("#card-1 .card__group-toggle") |> render_click()
-
-    refute has_element?(view, "#card-1 .card__callers ul")
-    assert has_element?(view, "#card-1 .card__group-menu")
-
-    view |> element("#card-1 .card__callers-toggle") |> render_click()
-
-    refute has_element?(view, "#card-1 .card__group-menu")
-    assert has_element?(view, "#card-1 .card__callers ul")
-
     view |> element("#flow-1 .flow__title h3") |> render_click()
 
     assert has_element?(view, "#flow-1 form.flow__rename")
     refute has_element?(view, "#card-1 .card__callers ul")
 
-    view |> element("#card-1 .card__group-toggle") |> render_click()
+    view |> element("#card-1 .card__callers-toggle") |> render_click()
 
     refute has_element?(view, "#flow-1 form.flow__rename")
+    assert has_element?(view, "#card-1 .card__callers ul")
   end
 
-  test "a stub dropped into a frame leaves it from its own group menu", %{
+  test "a stub dropped into a frame leaves it with the selection", %{
     view: view,
     name: name
   } do
@@ -879,9 +913,11 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(view, "#flow-1 #card-2.stub")
 
-    view |> element("#card-2 .card__tools .card__group-toggle") |> render_click()
+    render_hook(view, "toggle_select", %{"card" => "2"})
 
-    view |> element("#card-2 .card__group-menu button[phx-click='leave_group']") |> render_click()
+    assert has_element?(view, "#card-2.stub.card--selected")
+
+    render_hook(view, "ungroup_selected", %{})
 
     assert has_element?(view, "#flow-none #card-2.stub")
   end
