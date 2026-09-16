@@ -169,6 +169,25 @@ defmodule Grasp.SessionTest do
     assert Session.get(name) == forest
   end
 
+  test "new_group makes an untitled group of its own and broadcasts", %{name: name} do
+    :ok = Session.subscribe(name)
+
+    forest = Session.open_root(name, "SampleApp.Greeter.greet/2")
+    root = forest.focus
+    assert_receive {:session, ^name, ^forest}
+
+    forest = Session.new_group(name, nil, [root])
+    group = Forest.group_of(forest, root)
+
+    assert group.title == nil
+    assert_receive {:session, ^name, ^forest}
+
+    forest = Session.new_group(name, nil, [root])
+
+    assert Forest.group_of(forest, root).id != group.id
+    assert Session.get(name) == forest
+  end
+
   test "rename_group and add_to_group mirror the forest and broadcast", %{name: name} do
     :ok = Session.subscribe(name)
 

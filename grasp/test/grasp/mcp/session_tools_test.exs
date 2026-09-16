@@ -387,13 +387,20 @@ defmodule Grasp.MCP.SessionToolsTest do
       assert [%{"text" => "unknown card: 7"}] = response.content
     end
 
-    test "a blank title is an error", %{session: session} do
+    test "no title frames the cards under a group of its own", %{session: session} do
       run(Tools.OpenCard, %{session: session, function_id: @show})
+      run(Tools.OpenCard, %{session: session, function_id: @mailer})
 
-      response = run(Tools.GroupCards, %{session: session, title: "   ", card_ids: [1]})
+      body = json!(run(Tools.GroupCards, %{session: session, card_ids: [1]}))
 
-      assert response.isError
-      assert [%{"text" => "title is required"}] = response.content
+      assert body["groups"] == [%{"id" => 1, "title" => nil, "cards" => [1]}]
+
+      body = json!(run(Tools.GroupCards, %{session: session, title: "   ", card_ids: [2]}))
+
+      assert body["groups"] == [
+               %{"id" => 1, "title" => nil, "cards" => [1]},
+               %{"id" => 2, "title" => nil, "cards" => [2]}
+             ]
     end
   end
 
@@ -408,7 +415,21 @@ defmodule Grasp.MCP.SessionToolsTest do
       assert card(body, 1)["group"] == 1
     end
 
-    test "an unknown group and a blank title are errors and nothing moves", %{session: session} do
+    test "a blank or absent title leaves the group untitled", %{session: session} do
+      run(Tools.OpenCard, %{session: session, function_id: @show})
+      run(Tools.GroupCards, %{session: session, title: "Request", card_ids: [1]})
+
+      body = json!(run(Tools.RenameGroup, %{session: session, group_id: 1, title: "   "}))
+
+      assert body["groups"] == [%{"id" => 1, "title" => nil, "cards" => [1]}]
+
+      run(Tools.RenameGroup, %{session: session, group_id: 1, title: "Deposits"})
+      body = json!(run(Tools.RenameGroup, %{session: session, group_id: 1}))
+
+      assert body["groups"] == [%{"id" => 1, "title" => nil, "cards" => [1]}]
+    end
+
+    test "an unknown group is an error and nothing moves", %{session: session} do
       run(Tools.OpenCard, %{session: session, function_id: @show})
       run(Tools.GroupCards, %{session: session, title: "Request", card_ids: [1]})
       before = Session.get(session)
@@ -417,11 +438,6 @@ defmodule Grasp.MCP.SessionToolsTest do
 
       assert response.isError
       assert [%{"text" => "unknown group: 7"}] = response.content
-
-      response = run(Tools.RenameGroup, %{session: session, group_id: 1, title: "   "})
-
-      assert response.isError
-      assert [%{"text" => "title is required"}] = response.content
       assert Session.get(session) == before
     end
   end
@@ -435,10 +451,9 @@ defmodule Grasp.MCP.SessionToolsTest do
       assert "card_id" in Tools.CloseCard.input_schema()["required"]
       assert "card_id" in Tools.SetView.input_schema()["required"]
       assert "view" in Tools.SetView.input_schema()["required"]
-      assert Tools.GroupCards.input_schema()["required"] == ["title", "card_ids"]
+      assert Tools.GroupCards.input_schema()["required"] == ["card_ids"]
       assert Tools.UngroupCards.input_schema()["required"] == ["card_ids"]
-      assert "group_id" in Tools.RenameGroup.input_schema()["required"]
-      assert "title" in Tools.RenameGroup.input_schema()["required"]
+      assert Tools.RenameGroup.input_schema()["required"] == ["group_id"]
       refute Tools.GetSession.input_schema()["required"]
     end
   end

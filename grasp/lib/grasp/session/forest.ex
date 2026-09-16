@@ -30,14 +30,16 @@ defmodule Grasp.Session.Forest do
 
   ## Groups
 
-  A card belongs to at most one titled group, and a group is laid out on its own: `sections/1`
+  A card belongs to at most one group, and a group is laid out on its own: `sections/1`
   runs the column algorithm over one group's visible cards at a time, seeing only the edges
   between them, so a member every caller of which sits in another section starts at column 0
   of its own. The sections read in group-id order and the cards in no group make a last,
-  untitled one; `layout/1` is those sections flattened, which is why a column in it never
+  groupless one; `layout/1` is those sections flattened, which is why a column in it never
   mixes two sections and `depth/2` counts columns from the start of the card's own section.
-  A group is a name over cards and nothing else: it changes no edge, hides nothing, and is
-  deleted the moment its last member leaves or is closed.
+  A group is a frame round cards and nothing else: it changes no edge, hides nothing, and is
+  deleted the moment its last member leaves or is closed. A title is a label on that frame
+  and may be absent — `new_group/3` makes a group of the cards in hand and asks for no name,
+  while `group_cards/3` addresses one by title and so reaches only a titled group.
 
   ## Collapse
 
@@ -83,8 +85,8 @@ defmodule Grasp.Session.Forest do
           group: group_id() | nil
         }
   @type group_id :: pos_integer()
-  @typedoc "A titled group of cards, laid out as a section of its own."
-  @type group :: %{id: group_id(), title: String.t()}
+  @typedoc "A group of cards, laid out as a section of its own; its title is nil when it has none."
+  @type group :: %{id: group_id(), title: String.t() | nil}
   @typedoc """
   One group's cards in columns, or the ungrouped cards when `group` is nil. `columns` holds
   only the section's own visible cards.
@@ -124,8 +126,8 @@ defmodule Grasp.Session.Forest do
   @type card_map :: %{String.t() => id() | String.t() | boolean() | highlight() | [id()]}
   @typedoc "An edge as `to_map/1` writes it: its ends, the call target and the palette index."
   @type edge_map :: %{String.t() => id() | String.t() | non_neg_integer()}
-  @typedoc "A group as `to_map/1` writes it: its id, its title and the cards in it."
-  @type group_map :: %{String.t() => group_id() | String.t() | [id()]}
+  @typedoc "A group as `to_map/1` writes it: its id, its title (null when it has none) and the cards in it."
+  @type group_map :: %{String.t() => group_id() | String.t() | nil | [id()]}
   @typedoc "A section as `to_map/1` writes it: the group it belongs to, and its columns."
   @type section_map :: %{String.t() => group_id() | nil | [[id()]]}
   @typedoc "The whole graph as `to_map/1` writes it: focus, cards, edges, groups and columns."
@@ -294,13 +296,30 @@ defmodule Grasp.Session.Forest do
   end
 
   @doc """
+  Puts every card in `ids` into a group made for them, titled `title` or untitled when that
+  is nil or blank. Returns the group's id.
+
+  A group made here is always new, whatever it is called, so two of them may carry the same
+  title and a group with no title at all is ordinary: the id is what names a group, and a
+  title is a label over the frame. Cards leave whatever group they were in, unknown ids are
+  ignored, and a group whose last member has left is deleted — so a call naming no card the
+  graph knows leaves no group behind, though its id is spent, as ids are never reused.
+  """
+  @spec new_group(t(), String.t() | nil, [id()]) :: {t(), group_id()}
+  def new_group(%__MODULE__{} = forest, title, ids) when is_list(ids) do
+    {forest, group_id} = add_group(forest, trimmed_title(title))
+    {forest |> regroup(ids, group_id) |> prune_groups(), group_id}
+  end
+
+  @doc """
   Puts every card in `ids` into the group titled `title`, creating it when no group carries
   that title. Returns the group's id.
 
   A card belongs to one group, so a card already in another leaves it; unknown ids are
   ignored, and a group whose last member has left is deleted. A call naming no card the
   graph knows therefore leaves no group behind, though its id is spent: group ids are never
-  reused.
+  reused. Addressing a group by title reaches only a titled one — an untitled group is
+  reached by its id, through `new_group/3`'s reply or `add_to_group/3`.
   """
   @spec group_cards(t(), String.t(), [id()]) :: {t(), group_id()}
   def group_cards(%__MODULE__{} = forest, title, ids) when is_binary(title) and is_list(ids) do
@@ -309,26 +328,24 @@ defmodule Grasp.Session.Forest do
   end
 
   @doc """
-  Retitles `group_id`, keeping its id and every card in it.
+  Retitles `group_id`, keeping its id and every card in it. A blank or nil title clears the
+  title, leaving the group untitled rather than deleting it.
 
-  An unknown group and a blank title both leave the graph as it was, so a frame is never
-  left standing with no name to draw. The title is stored trimmed, since `group_cards/3`
-  finds a group by an exact title match and a padded one could never be found again.
-  Renaming is what changes a title: naming the same
+  An unknown group leaves the graph as it was. The title is stored trimmed, since
+  `group_cards/3` finds a group by an exact title match and a padded one could never be
+  found again. Renaming is what changes a title: naming the same
   cards in `group_cards/3` under another one builds a different group, and any id held
   elsewhere then points at a group that has gone.
   """
-  @spec rename_group(t(), group_id(), String.t()) :: t()
-  def rename_group(%__MODULE__{} = forest, group_id, title) when is_binary(title) do
-    case {Map.get(forest.groups, group_id), String.trim(title)} do
-      {nil, _title} ->
+  @spec rename_group(t(), group_id(), String.t() | nil) :: t()
+  def rename_group(%__MODULE__{} = forest, group_id, title) do
+    case Map.get(forest.groups, group_id) do
+      nil ->
         forest
 
-      {_group, ""} ->
-        forest
-
-      {group, trimmed} ->
-        %{forest | groups: Map.put(forest.groups, group_id, %{group | title: trimmed})}
+      group ->
+        group = %{group | title: trimmed_title(title)}
+        %{forest | groups: Map.put(forest.groups, group_id, group)}
     end
   end
 
@@ -620,13 +637,25 @@ defmodule Grasp.Session.Forest do
 
   defp find_or_add_group(forest, title) do
     case Enum.find(forest.groups, fn {_id, group} -> group.title == title end) do
-      {id, _group} ->
-        {forest, id}
+      {id, _group} -> {forest, id}
+      nil -> add_group(forest, title)
+    end
+  end
 
-      nil ->
-        id = forest.next_group
-        group = %{id: id, title: title}
-        {%{forest | groups: Map.put(forest.groups, id, group), next_group: id + 1}, id}
+  defp add_group(forest, title) do
+    id = forest.next_group
+    group = %{id: id, title: title}
+    {%{forest | groups: Map.put(forest.groups, id, group), next_group: id + 1}, id}
+  end
+
+  # A title is stored trimmed and a blank one is no title at all, so a frame is never drawn
+  # with a name made of spaces and `group_cards/3`'s exact match has one spelling to find.
+  defp trimmed_title(nil), do: nil
+
+  defp trimmed_title(title) when is_binary(title) do
+    case String.trim(title) do
+      "" -> nil
+      trimmed -> trimmed
     end
   end
 

@@ -144,8 +144,8 @@ defmodule GraspWeb.ReviewLive do
     mutate(socket, &Session.add_to_group(&1, int(group), [int(card)]))
   end
 
-  # The title is what the reader typed into the menu, so it is trimmed here and a blank one
-  # answered by closing the menu: an unnamed frame is not a group anybody asked for.
+  # The menu's form makes a group by naming it, so a blank submission is nothing to act on
+  # and closes the menu; a frame is left with no name by clearing its title instead.
   def handle_event("new_group", %{"card" => card, "title" => title}, socket)
       when is_binary(title) do
     socket = close_overlays(socket)

@@ -791,14 +791,18 @@ defmodule GraspWeb.ReviewLiveTest do
     refute has_element?(view, "#flow-1 form.flow__rename")
   end
 
-  test "a blank rename keeps the title and Escape closes the form", %{view: view, name: name} do
+  test "a blank rename leaves the frame untitled and Escape closes the form", %{
+    view: view,
+    name: name
+  } do
     Session.open_root(name, @greet)
     Session.group_cards(name, "Greeting", [1])
 
     view |> element("#flow-1 .flow__title h3") |> render_click()
     view |> form("#flow-1 form.flow__rename", %{"title" => "   "}) |> render_submit()
 
-    assert has_element?(view, "#flow-1 .flow__title h3", "Greeting")
+    assert has_element?(view, "#flow-1 .flow__title h3")
+    refute has_element?(view, "#flow-1 .flow__title h3", "Greeting")
     refute has_element?(view, "#flow-1 form.flow__rename")
 
     view |> element("#flow-1 .flow__title h3") |> render_click()
@@ -807,8 +811,8 @@ defmodule GraspWeb.ReviewLiveTest do
     |> element("#flow-1 form.flow__rename input[name='title']")
     |> render_keydown(%{"key" => "Escape"})
 
-    assert has_element?(view, "#flow-1 .flow__title h3", "Greeting")
     refute has_element?(view, "#flow-1 form.flow__rename")
+    refute has_element?(view, "#flow-1 .flow__title h3", "Greeting")
   end
 
   test "a card dropped on a frame joins its group, and a plain drop keeps membership", %{

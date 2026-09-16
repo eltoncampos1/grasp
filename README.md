@@ -79,20 +79,21 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
 - Arrow keys walk the graph, `x` closes the focused card, `Shift+x` closes it together
   with everything that had no other way to be reached, `c` collapses it, ⌘K opens the
   palette.
-- **A group of cards is drawn as a titled frame** of its own, laid out from its own left
-  edge, so two flows on one canvas are read apart rather than run together. The frame's
-  header carries the title, how many cards are in it, and `ungroup`, which takes the frame
-  away and leaves the cards where they were. Cards in no group make a last, untitled
-  section under the framed ones. An agent asked for several flows gives each one its own
+- **A group of cards is drawn as a frame** of its own, laid out from its own left edge, so
+  two flows on one canvas are read apart rather than run together. The frame's header
+  carries its title, how many cards are in it, and `ungroup`, which takes the frame away and
+  leaves the cards where they were. A title is a label rather than a requirement: a frame
+  may stand with none. Cards in no group make a last, unframed section under the framed
+  ones. An agent asked for several flows gives each one its own
   group over MCP, and you make and edit them by hand with the three gestures below.
 - A card's `group` button opens a menu of every group on the canvas: pick one to move the
   card into it, type a name to make a new group around it, or leave the one it is in. A
   group whose last card left is gone with it.
-- Click a frame's title to rename it in place — Enter saves, Escape or clicking away
-  leaves it as it was. The group keeps its id and its cards, so a tour or an agent holding
-  that id still finds it.
+- Click a frame's title to rename it in place — Enter saves, a blank name leaves the frame
+  with none, Escape or clicking away leaves it as it was. The group keeps its id and its
+  cards, so a tour or an agent holding that id still finds it.
 - Drag a card into another group's frame to move it there. Dropping it anywhere else — the
-  untitled section, the bare canvas, its own frame — moves the card and nothing more. A card
+  unframed section, the bare canvas, its own frame — moves the card and nothing more. A card
   that changes group keeps the offset the drag gave it and so lands beside its place in the
   new frame rather than on it; "reset layout" puts every card back on the grid.
 
@@ -181,14 +182,16 @@ Arranging the cards:
 - `focus_card(name, card_id)` — scroll a card into view, to say "look here".
 - `highlight_card(name, card_id, highlight)` — point at one call inside a card, or shade a
   range of its lines.
-- `group_cards(name, title, card_ids)` — frame cards already open under a title, creating
-  the group when nothing carries that title yet. A card belongs to one group, so naming it
-  here takes it out of the one it was in, and a group left with no cards is gone.
-- `ungroup_cards(name, card_ids)` — take cards out of their groups, back to the untitled
+- `group_cards(name, title?, card_ids)` — frame cards already open, under `title` and
+  joining the group already carrying it, or under a frame with no title when `title` is
+  left out. A card belongs to one group, so naming it here takes it out of the one it was
+  in, and a group left with no cards is gone.
+- `ungroup_cards(name, card_ids)` — take cards out of their groups, back to the unframed
   section.
-- `rename_group(name, group_id, title)` — give a group another title, keeping its id and its
-  cards. Regrouping under a new title would draw the same picture but build a different
-  group, so a frame that outgrew its name is renamed rather than rebuilt.
+- `rename_group(name, group_id, title?)` — give a group another title, or none when `title`
+  is left out, keeping its id and its cards. Regrouping under a new title would draw the
+  same picture but build a different group, so a frame that outgrew its name is renamed
+  rather than rebuilt.
 - `set_view(name, card_id, view)` — show a card as its `source` or as its `diff` against
   the base, to point at what the branch did to a function rather than at the function.
   Only a modified function has a diff; asking for one of anything else is an error.

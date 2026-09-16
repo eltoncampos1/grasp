@@ -93,6 +93,15 @@ defmodule Grasp.Session do
   def reset_offsets(name), do: mutate(name, &Forest.reset_offsets/1)
 
   @doc """
+  Puts `card_ids` into a group of their own, titled `title` or untitled when that is nil or
+  blank. The group is always a new one, so two may share a title; each card leaves whatever
+  group it was in, and a group left with no members is gone.
+  """
+  @spec new_group(name(), String.t() | nil, [Forest.id()]) :: Forest.t()
+  def new_group(name, title, card_ids),
+    do: mutate(name, &Forest.new_group(&1, title, card_ids))
+
+  @doc """
   Puts `card_ids` into the group titled `title`, creating it when nothing carries that title
   yet. Each card leaves whatever group it was in, and a group left with no members is gone.
   """
@@ -105,9 +114,10 @@ defmodule Grasp.Session do
   def ungroup_cards(name, card_ids), do: mutate(name, &Forest.ungroup_cards(&1, card_ids))
 
   @doc """
-  Retitles `group_id`, keeping its cards. A blank title or an unknown group changes nothing.
+  Retitles `group_id`, keeping its cards. A blank or nil title leaves the group untitled;
+  an unknown group changes nothing.
   """
-  @spec rename_group(name(), Forest.group_id(), String.t()) :: Forest.t()
+  @spec rename_group(name(), Forest.group_id(), String.t() | nil) :: Forest.t()
   def rename_group(name, group_id, title),
     do: mutate(name, &Forest.rename_group(&1, group_id, title))
 

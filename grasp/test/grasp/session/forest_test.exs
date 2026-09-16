@@ -413,6 +413,33 @@ defmodule Grasp.Session.ForestTest do
   end
 
   describe "groups" do
+    test "new_group/3 builds a fresh group every time, titled or not" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, b} = Forest.open_child(forest, a, "B.g/0")
+      {forest, c} = Forest.open_child(forest, a, "C.h/2")
+
+      {forest, first} = Forest.new_group(forest, "Flow", [a])
+      {forest, second} = Forest.new_group(forest, "  Flow  ", [b])
+
+      assert second != first
+      assert Forest.group(forest, first) == %{id: first, title: "Flow"}
+      assert Forest.group_of(forest, b) == %{id: second, title: "Flow"}
+
+      {forest, untitled} = Forest.new_group(forest, nil, [c, 999])
+
+      assert Forest.group(forest, untitled) == %{id: untitled, title: nil}
+      assert Forest.group_of(forest, c) == %{id: untitled, title: nil}
+      {blank, blank_id} = Forest.new_group(forest, "   ", [c])
+
+      assert Forest.group(blank, blank_id) == %{id: blank_id, title: nil}
+      assert Forest.group(blank, untitled) == nil
+
+      {spent, empty} = Forest.new_group(forest, "Nobody", [999])
+
+      assert Forest.group(spent, empty) == nil
+      assert spent.next_group > empty
+    end
+
     test "group_cards/3 creates a group, reuses it by title and moves a card between groups" do
       {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
       {forest, b} = Forest.open_child(forest, a, "B.g/0")
@@ -469,7 +496,7 @@ defmodule Grasp.Session.ForestTest do
       assert Forest.dissolve_group(forest, 999) == forest
     end
 
-    test "rename_group/3 retitles a group, leaving unknown ids and blank titles alone" do
+    test "rename_group/3 retitles a group, clears a blank title and ignores unknown ids" do
       {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
       {forest, flow} = Forest.group_cards(forest, "Flow", [a])
 
@@ -483,8 +510,23 @@ defmodule Grasp.Session.ForestTest do
                "Deposits"
 
       assert Forest.rename_group(forest, 999, "Deposits") == forest
-      assert Forest.rename_group(forest, flow, "   ") == forest
-      assert Forest.rename_group(forest, flow, "") == forest
+
+      for cleared <- ["", "   ", nil] do
+        assert Forest.group(Forest.rename_group(forest, flow, cleared), flow) ==
+                 %{id: flow, title: nil}
+      end
+
+      assert Forest.group_of(Forest.rename_group(forest, flow, ""), a) == %{id: flow, title: nil}
+    end
+
+    test "to_map/1 writes an untitled group with a null title" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, untitled} = Forest.new_group(forest, nil, [a])
+
+      assert Forest.to_map(forest)["groups"] ==
+               [%{"id" => untitled, "title" => nil, "cards" => [a]}]
+
+      assert Forest.to_map(forest)["sections"] == [%{"group" => untitled, "columns" => [[a]]}]
     end
 
     test "add_to_group/3 joins an existing group and deletes the one it empties" do

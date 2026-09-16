@@ -263,10 +263,11 @@ broadcasts the reload.
   and `color` indexes an eight-entry palette handed out in creation order, so a call site
   and the edge leaving it are painted alike. At most one edge joins a given pair, so mutual
   recursion reads as two.
-- `groups`: map of group id to `%{id, title}`, a card carrying the id of the one group it
-  belongs to (`nil` for none). A group is a name over cards and the section drawn round
-  them: it changes no edge, hides nothing, and a card is in one at a time. A group whose
-  last card leaves, or is closed, is deleted; group ids are never reused.
+- `groups`: map of group id to `%{id, title}`, `title` being a string or `nil`, and a card
+  carrying the id of the one group it belongs to (`nil` for none). A group is the section
+  drawn round cards, with a name over it or without: it changes no edge, hides nothing, and
+  a card is in one at a time. A group whose last card leaves, or is closed, is deleted;
+  group ids are never reused.
 - `focus`: the focused card id.
 - `annotations`: keyed by function id, each `%{id, author, body, line}` with author
   `"agent"` or `"human"` and a markdown body.
@@ -315,21 +316,30 @@ Cards are laid out one section at a time, a section being a group's cards or, la
 cards in no group: `Forest.sections/1` runs the column algorithm over one section's cards
 at a time, seeing only the edges between them, so a member reached only from another
 section heads a column of its own and column indices count from the section's own left
-edge. Sections read in group-id order and stack down the stage, each a titled frame as
-wide as its own columns, with an `ungroup` button in its header that dissolves the group
+edge. Sections read in group-id order and stack down the stage, each a frame as wide as
+its own columns, with an `ungroup` button in its header that dissolves the group
 and leaves the cards. A group keeps its section while a collapse hides every member, so
-the frame does not blink out of the page; the untitled section appears only when a visible
-card is in no group.
+the frame does not blink out of the page; the section for the cards in no group appears
+only when a visible card is in none.
+
+A group is a frame round cards; its title is a label on that frame and may be absent. The
+forest makes one either way: `new_group/3` frames the cards in hand under a title or under
+none and always builds a fresh group, while `group_cards/3` addresses a group by title —
+reusing the one already carrying it — and so reaches only a titled group. `rename_group/3`
+is what names a group afterwards, and a blank title there clears the name rather than being
+refused, so a frame can be drawn first and named once the reader sees what it holds. The id
+is what names a group for certain: titles are neither required nor unique.
 
 Groups are made and edited on the canvas as well as over MCP. A frame's title is renamed in
 place: clicking it swaps the heading for a form over the same title, Enter saves through
 `Session.rename_group/3` — which keeps the group's id and its cards, so an id held elsewhere
-still names it — and Escape or a blur leaves it as it was. Which frame is being renamed is
-the LiveView's (`renaming_group`), not the browser's, so one rename is open at a time and a
+still names it, and takes a blank title as a frame left with no name — and Escape or a blur
+leaves it as it was. Which frame is being renamed is the LiveView's (`renaming_group`), not
+the browser's, so one rename is open at a time and a
 patch cannot lose it. A card is put into a group from its own header menu, or by being
 dragged into another group's frame: the drag hook finds the frame under the release with
 `elementFromPoint`, having taken the dragged node out of hit testing for the lookup, and
-sends its group id along with the move. A drop anywhere else — the untitled section, the
+sends its group id along with the move. A drop anywhere else — the groupless section, the
 bare canvas, the frame the card is already in — is a move and nothing more, so a card never
 changes group by being put down near one. A card that does change group keeps the offset the
 drag gave it, which was measured against where it sat in its old section, so it is drawn
@@ -596,31 +606,32 @@ first reference. Results are JSON text content, so any MCP client can read them.
   carries the entry's kind and label. A visit budget bounds the walk on large graphs and
   the result says when it was hit.
 - Session tools: `get_session(name)`, `set_cards(name, cards)`, `open_card(name,
-  function_id, parent_card_id?, highlight?)`, `close_card(name, card_id)`,
-  `focus_card(name, card_id)`, `highlight_card(name, card_id, highlight)`,
-  `group_cards(name, title, card_ids)`, `ungroup_cards(name, card_ids)`,
-  `rename_group(name, group_id, title)`. Every session
-  tool returns the resulting graph as JSON — `focus`, `cards` (each with its id,
-  `function_id`, `collapsed`, `highlight`, the `group` it is in and the ids in `callers`
-  and `callees`), `edges` (`from`, `to`, the call `target` and the palette `color`),
-  `groups` (`id`, `title` and the cards in each), `sections` (a group id or null, and its
-  columns) and `columns`, the ids in layout order — so the agent can address cards it just
-  created and see how they were laid out.
+  function_id, parent_card_id?, highlight?)`, `close_card(name, card_id)`, `focus_card(name,
+  card_id)`, `highlight_card(name, card_id, highlight)`, `group_cards(name, title?,
+  card_ids)`, `ungroup_cards(name, card_ids)`, `rename_group(name, group_id, title?)`. Every
+  session tool returns the resulting graph as JSON — `focus`, `cards` (each with its id,
+  `function_id`, `collapsed`, `highlight`, the `group` it is in and the ids in `callers` and
+  `callees`), `edges` (`from`, `to`, the call `target` and the palette `color`), `groups`
+  (`id`, `title` — null when the group has none — and the cards in each), `sections` (a
+  group id or null, and its columns) and `columns`, the ids in layout order — so the agent
+  can address cards it just created and see how they were laid out.
 - `group_cards` frames cards already open under a title, creating the group when nothing
-  carries that title yet, and `ungroup_cards` takes cards back out. A card belongs to one
-  group, so naming it in a second takes it out of the first, and a group left with no cards
-  is deleted. An unknown card id is a tool error naming it, and an empty title is refused,
-  so a group is never created with no name to draw.
+  carries that title yet, and `ungroup_cards` takes cards back out. With no title it frames
+  them under a group of its own with no name, so an agent that has a set of cards to draw
+  apart from the rest need not invent a heading for it. A card belongs to one group, so
+  naming it in a second takes it out of the first, and a group left with no cards is
+  deleted. An unknown card id is a tool error naming it.
 - `rename_group` names a group by its id and changes only its title: the cards stay put and
   the id stands, so a `group` or `sections` entry already quoted still names the same group.
-  An unknown group id is a tool error naming it and an empty title is refused, the way
-  `group_cards` refuses one; the title is stored trimmed, since `group_cards` matches one
-  exactly. Titles are not unique — a rename may give two groups the same one, and
-  `group_cards` and `set_cards`, which address a group by title, then reach whichever was
-  made first — so the id is the only handle that names one group for certain. The forest
-  carries the pair this is built on — `rename_group/3` and `add_to_group/3`, which joins
-  cards to a group by id rather than by title and creates none — and the viewer's manual
-  grouping drives the same two.
+  It is how an untitled frame is given a name and, with the title left out, how a frame
+  loses one. An unknown group id is a tool error naming it; the title is stored trimmed,
+  since `group_cards` matches one exactly. Titles are neither required nor unique — a rename
+  may give two groups the same one, and `group_cards` and `set_cards`, which address a group
+  by title, then reach whichever was made first — so the id is the only handle that names
+  one group for certain. The forest carries the operations this is built on — `new_group/3`,
+  which always makes a fresh group, titled or not, `rename_group/3` and `add_to_group/3`,
+  which joins cards to a group by id rather than by title and creates none — and the
+  viewer's manual grouping drives the same ones.
 - `set_cards` replaces the graph. `cards` is a flat list of `{key, function_id,
   parent_key?, group?, highlight?}`; `group` is a title rather than an id, so entries
   sharing one land in the same group and the groups are created in the order their titles

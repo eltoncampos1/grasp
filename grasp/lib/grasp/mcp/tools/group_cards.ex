@@ -1,13 +1,15 @@
 defmodule Grasp.MCP.Tools.GroupCards do
   @moduledoc """
-  Frame a set of cards already open under a title, so the canvas draws them apart from
-  everything else: the group gets a section of its own, laid out from its own left edge.
+  Frame a set of cards already open, so the canvas draws them apart from everything else:
+  the group gets a section of its own, laid out from its own left edge. A `title` is drawn
+  over the frame and joins these cards to the group already carrying it; without one the
+  cards are framed under a new group with no title, which `rename_group` can name later.
 
   Use one group per flow whenever the reader is being shown several — "the deposit path and
   the withdrawal path" is two groups, not one canvas of cards to be told apart by reading
   them. A card belongs to one group at a time, so naming a card here takes it out of
   whatever group it was in, and a group left with no cards is gone. Grouping moves no card
-  between callers and hides nothing: it is a name over cards and the frame drawn round them.
+  between callers and hides nothing: it is the frame drawn round cards, and the name over it.
   """
 
   use Anubis.Server.Component, type: :tool
@@ -23,8 +25,9 @@ defmodule Grasp.MCP.Tools.GroupCards do
     )
 
     field(:title, :string,
-      required: true,
-      description: "The name to draw over the group; cards already under it are joined by these"
+      description:
+        "The name to draw over the group; cards already under it are joined by these. " <>
+          "Omit to frame the cards under a group with no title"
     )
 
     field(:card_ids, {:list, :integer},
@@ -34,19 +37,24 @@ defmodule Grasp.MCP.Tools.GroupCards do
   end
 
   @impl true
-  def execute(%{session: session, title: title, card_ids: card_ids}, frame) do
-    with {:ok, title} <- title(title),
-         {:ok, _cards} <- Tools.fetch_cards(session, card_ids) do
-      Tools.reply(frame, Forest.to_map(Session.group_cards(session, title, card_ids)))
-    else
-      {:error, reason} -> Tools.error(frame, reason)
+  def execute(%{session: session, card_ids: card_ids} = params, frame) do
+    case Tools.fetch_cards(session, card_ids) do
+      {:ok, _cards} ->
+        Tools.reply(frame, Forest.to_map(group(session, Map.get(params, :title), card_ids)))
+
+      {:error, reason} ->
+        Tools.error(frame, reason)
     end
   end
 
-  defp title(title) do
+  # A title is trimmed before it reaches the session, since a group is found again by an
+  # exact title match and a padded one could never be found.
+  defp group(session, nil, card_ids), do: Session.new_group(session, nil, card_ids)
+
+  defp group(session, title, card_ids) when is_binary(title) do
     case String.trim(title) do
-      "" -> {:error, "title is required"}
-      trimmed -> {:ok, trimmed}
+      "" -> Session.new_group(session, nil, card_ids)
+      trimmed -> Session.group_cards(session, trimmed, card_ids)
     end
   end
 end
