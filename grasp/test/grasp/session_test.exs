@@ -125,6 +125,20 @@ defmodule Grasp.SessionTest do
     assert_receive {:session, ^name, ^forest}
   end
 
+  test "set_view and toggle_view broadcast the card's view", %{name: name} do
+    Session.subscribe(name)
+    %{focus: id} = Session.open_root(name, "A.f/1")
+
+    forest = Session.set_view(name, id, :diff)
+    assert Forest.card(forest, id).view == :diff
+    assert_receive {:session, ^name, ^forest}
+
+    forest = Session.toggle_view(name, id)
+    assert Forest.card(forest, id).view == :source
+    assert_receive {:session, ^name, ^forest}
+    assert Session.get(name) == forest
+  end
+
   test "list/0 names the running sessions", %{name: name} do
     assert name in Session.list()
   end

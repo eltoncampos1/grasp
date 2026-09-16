@@ -25,6 +25,11 @@ defmodule Grasp.Highlight do
 
   A card's `highlight` — the call to outline or the range of lines to shade — is applied
   as the HTML is built, after the cache, and so is never part of what is memoised.
+
+  `render_diff/2` renders the same lines against the record's `base_source`, interleaving
+  the lines the branch deleted. The base side is a second parse memoised under the function
+  id suffixed `@base`, so a card switched between its source and its diff parses each side
+  once.
   """
 
   require Logger
@@ -48,20 +53,10 @@ defmodule Grasp.Highlight do
   @doc "Highlighted HTML for `record` with clickable call spans; see the moduledoc."
   @spec render(map(), opts()) :: Phoenix.HTML.safe()
   def render(record, opts) do
-    card_id = Keyword.fetch!(opts, :card_id)
-    open = Keyword.get(opts, :open_calls, %{})
-    external? = Keyword.get(opts, :external?, fn _ -> false end)
-    highlight = Keyword.get(opts, :highlight)
-    highlighted_call = highlighted_call(highlight)
-    first_line = record["span"]["start_line"]
-
-    ranges =
-      for call <- record["calls"], %{"start" => [sl, sc], "end" => [el, ec]} = call["range"] do
-        %{target: call["target"], start: {sl, sc}, end: {el, ec}}
-      end
-
     source = record["source"]
-    by_line = source |> pieces(first_line, record["id"]) |> Enum.group_by(& &1.line)
+    first_line = record["span"]["start_line"]
+    highlight = Keyword.get(opts, :highlight)
+    body = body_builder(record, opts)
 
     # Lines are driven by the source, not by the tokens: a blank line carries no piece, and
     # numbering it from the token groups alone would drop it and skip a number in the gutter.
@@ -69,16 +64,93 @@ defmodule Grasp.Highlight do
 
     html =
       Enum.map_join(first_line..last_line, "", fn line ->
-        body =
-          by_line
-          |> Map.get(line, [])
-          |> Enum.flat_map(&split_at_ranges(&1, ranges))
-          |> wrap_calls(ranges, card_id, open, external?, highlighted_call)
-
-        ~s(<span class="line" data-line="#{line}"#{highlighted_line(highlight, line)}><span class="ln">#{line}</span>#{body}</span>)
+        ~s(<span class="line" data-line="#{line}"#{highlighted_line(highlight, line)}><span class="ln">#{line}</span>#{body.(line)}</span>)
       end)
 
     {:safe, html}
+  end
+
+  @doc """
+  The same HTML as `render/2`, with the record's `base_source` diffed against its current
+  source line by line.
+
+  Every line is marked `data-op="eq|ins|del"` and prefixed with a `span.op` reading a
+  space, `+` or `−`. A kept or inserted line is numbered as it is in the current file — the
+  count runs from the span's first line through the lines the current source has — and is
+  built exactly as `render/2` builds it, so an opened call keeps its colour and a highlight
+  still lands. A deleted line has no number in the current file and so carries no
+  `data-line`; its text is highlighted from `base_source` (parsed and memoised separately,
+  under the function id suffixed `@base`) and wraps no call span, since the ranges the
+  index recorded address the current source and nothing points at a line that is gone.
+
+  A record with no `base_source` — anything but a modified function — renders as
+  `render/2`.
+  """
+  @spec render_diff(map(), opts()) :: Phoenix.HTML.safe()
+  def render_diff(record, opts) do
+    case record["base_source"] do
+      nil -> render(record, opts)
+      base_source -> diff(record, base_source, opts)
+    end
+  end
+
+  defp diff(record, base_source, opts) do
+    highlight = Keyword.get(opts, :highlight)
+    body = body_builder(record, opts)
+    base_by_line = base_source |> pieces(1, record["id"] <> "@base") |> Enum.group_by(& &1.line)
+
+    {html, _current, _base} =
+      base_source
+      |> Grasp.Diff.lines(record["source"])
+      |> Enum.reduce({[], record["span"]["start_line"], 1}, fn
+        {:del, _text}, {acc, current, base} ->
+          text = base_by_line |> Map.get(base, []) |> Enum.map_join(&token_html/1)
+          {[line_html(:del, nil, "−", "", text) | acc], current, base + 1}
+
+        {op, _text}, {acc, current, base} ->
+          line =
+            line_html(op, current, mark(op), highlighted_line(highlight, current), body.(current))
+
+          {[line | acc], current + 1, if(op == :eq, do: base + 1, else: base)}
+      end)
+
+    {:safe, html |> Enum.reverse() |> Enum.join()}
+  end
+
+  defp mark(:eq), do: " "
+  defp mark(:ins), do: "+"
+
+  defp line_html(op, line, mark, highlight_attr, body) do
+    line_attr = if line, do: ~s( data-line="#{line}"), else: ""
+
+    ~s(<span class="line" data-op="#{op}"#{line_attr}#{highlight_attr}><span class="ln">#{line}</span><span class="op">#{mark}</span>#{body}</span>)
+  end
+
+  # The body of one line of the current source: the pieces that line holds, cut at the call
+  # ranges crossing it and wrapped in the clickable spans. Built once per render so both
+  # renderers pay for the parse and the grouping a single time.
+  defp body_builder(record, opts) do
+    card_id = Keyword.fetch!(opts, :card_id)
+    open = Keyword.get(opts, :open_calls, %{})
+    external? = Keyword.get(opts, :external?, fn _ -> false end)
+    highlighted_call = opts |> Keyword.get(:highlight) |> highlighted_call()
+
+    ranges =
+      for call <- record["calls"], %{"start" => [sl, sc], "end" => [el, ec]} = call["range"] do
+        %{target: call["target"], start: {sl, sc}, end: {el, ec}}
+      end
+
+    by_line =
+      record["source"]
+      |> pieces(record["span"]["start_line"], record["id"])
+      |> Enum.group_by(& &1.line)
+
+    fn line ->
+      by_line
+      |> Map.get(line, [])
+      |> Enum.flat_map(&split_at_ranges(&1, ranges))
+      |> wrap_calls(ranges, card_id, open, external?, highlighted_call)
+    end
   end
 
   @doc """

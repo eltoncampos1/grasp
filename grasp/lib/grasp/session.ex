@@ -76,6 +76,14 @@ defmodule Grasp.Session do
   @spec toggle_collapse(name(), Forest.id()) :: Forest.t()
   def toggle_collapse(name, card_id), do: mutate(name, &Forest.toggle_collapse(&1, card_id))
 
+  @doc "Shows `card_id` as its source or as its diff against the base."
+  @spec set_view(name(), Forest.id(), Forest.view()) :: Forest.t()
+  def set_view(name, card_id, view), do: mutate(name, &Forest.set_view(&1, card_id, view))
+
+  @doc "Swaps `card_id` between its source and its diff."
+  @spec toggle_view(name(), Forest.id()) :: Forest.t()
+  def toggle_view(name, card_id), do: mutate(name, &Forest.toggle_view(&1, card_id))
+
   @doc "Sets `card_id`'s layout offset in stage pixels."
   @spec move(name(), Forest.id(), {integer(), integer()}) :: Forest.t()
   def move(name, card_id, {dx, dy}), do: mutate(name, &Forest.move(&1, card_id, {dx, dy}))

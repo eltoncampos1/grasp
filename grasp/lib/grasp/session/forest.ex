@@ -12,7 +12,8 @@ defmodule Grasp.Session.Forest do
   so mutual recursion is visibly two edges.
   Focus is a single card id; `offset` is a card's displacement in stage pixels from where
   the layout puts it, so a card dragged by hand keeps its place; `highlight` marks what to
-  point at inside a card.
+  point at inside a card; `view` chooses whether a modified function reads as the source on
+  the branch or as the diff against the base.
 
   ## Layout
 
@@ -49,12 +50,15 @@ defmodule Grasp.Session.Forest do
   `%{"lines" => [first, last]}` shades a range of lines. `nil` marks nothing.
   """
   @type highlight :: nil | %{optional(String.t()) => String.t() | [integer()]}
+  @typedoc "Which side of a modified function a card shows: its source, or the diff against the base."
+  @type view :: :source | :diff
   @type card :: %{
           id: id(),
           function_id: String.t(),
           collapsed: boolean(),
           offset: {integer(), integer()},
-          highlight: highlight()
+          highlight: highlight(),
+          view: view()
         }
   @typedoc """
   A call from one card to another: `target` is the caller's own spelling of the call, and
@@ -352,6 +356,25 @@ defmodule Grasp.Session.Forest do
     end
   end
 
+  @doc "Shows `id` as its source or as its diff; unknown ids are ignored."
+  @spec set_view(t(), id(), view()) :: t()
+  def set_view(%__MODULE__{} = forest, id, view) when view in [:source, :diff] do
+    case card(forest, id) do
+      nil -> forest
+      card -> put_card(forest, %{card | view: view})
+    end
+  end
+
+  @doc "Swaps `id` between its source and its diff."
+  @spec toggle_view(t(), id()) :: t()
+  def toggle_view(%__MODULE__{} = forest, id) do
+    case card(forest, id) do
+      nil -> forest
+      %{view: :source} -> set_view(forest, id, :diff)
+      %{view: :diff} -> set_view(forest, id, :source)
+    end
+  end
+
   @doc """
   Builds a graph from an ordered flat spec. A `parent_key` names an earlier entry, and the
   first entry's card takes the focus.
@@ -398,6 +421,7 @@ defmodule Grasp.Session.Forest do
           "id" => card.id,
           "function_id" => card.function_id,
           "collapsed" => card.collapsed,
+          "view" => Atom.to_string(card.view),
           "highlight" => card.highlight,
           "callers" => callers(forest, card.id),
           "callees" => callees(forest, card.id)
@@ -443,7 +467,8 @@ defmodule Grasp.Session.Forest do
       function_id: function_id,
       collapsed: false,
       offset: {0, 0},
-      highlight: nil
+      highlight: nil,
+      view: :source
     }
 
     {%{forest | cards: Map.put(forest.cards, id, card), next_id: id + 1}, id}

@@ -255,7 +255,7 @@
         1
       ],
       "arity": 1,
-      "base_source": null,
+      "base_source": "  @doc \"Upcases text and adds an exclamation mark.\"\n  @spec shout(String.t()) :: String.t()\n    text",
       "calls": [
         {
           "kind": "remote",
@@ -272,7 +272,7 @@
           "target": "String.upcase/1"
         }
       ],
-      "change": "unchanged",
+      "change": "modified",
       "file": "lib/sample_app/formatter.ex",
       "hidden_calls": [],
       "id": "SampleApp.Formatter.shout/1",
@@ -415,7 +415,7 @@
           "target": "SampleApp.Greeter.greet/1"
         }
       ],
-      "change": "unchanged",
+      "change": "added",
       "file": "lib/sample_app/greeter.ex",
       "hidden_calls": [],
       "id": "SampleApp.Greeter.Nested.hello/0",
@@ -885,10 +885,36 @@
         "end_line": 7,
         "start_line": 7
       }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": "  def whisper(text) do\n    String.downcase(text)\n  end",
+      "calls": [],
+      "change": "removed",
+      "file": "lib/sample_app/formatter.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Formatter.whisper/1",
+      "kind": "def",
+      "module": "SampleApp.Formatter",
+      "name": "whisper",
+      "removed": true,
+      "source": "  def whisper(text) do\n    String.downcase(text)\n  end",
+      "span": {
+        "end_line": 22,
+        "start_line": 20
+      }
     }
   ],
   "generated_at": "2026-09-15T00:00:00Z",
-  "git": null,
+  "git": {
+    "base_ref": "main",
+    "base_sha": "1111111",
+    "branch": "feature",
+    "head": "0000000"
+  },
   "modules": [
     {
       "behaviours": [

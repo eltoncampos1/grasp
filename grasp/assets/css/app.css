@@ -32,6 +32,11 @@
   --edge-5: #1b7c83;
   --edge-6: #cf222e;
   --edge-7: #9a6700;
+  /* The two sides of a diff, and the colours a change badge borrows from them. */
+  --diff-ins-bg: #dafbe1;
+  --diff-del-bg: #ffebe9;
+  --diff-ins-fg: #1a7f37;
+  --diff-del-fg: #cf222e;
   --sidebar-width: 18rem;
   --code-size: 13px;
   --code-leading: 1.45;
@@ -101,6 +106,10 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .badge { padding: 1px var(--space-s); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-family: var(--mono); font-size: 11px; white-space: nowrap; }
 .badge--oban_worker, .badge--genserver, .badge--supervisor, .badge--application { background: color-mix(in oklch, var(--focus) 14%, transparent); color: var(--focus); }
 .badge--plug { background: color-mix(in oklch, var(--fg-muted) 14%, transparent); color: var(--fg-muted); }
+.badge--change[data-change="added"] { background: var(--diff-ins-bg); color: var(--diff-ins-fg); }
+.badge--change[data-change="modified"] { background: var(--accent-soft); color: var(--accent); }
+.badge--change[data-change="removed"] { background: var(--diff-del-bg); color: var(--diff-del-fg); }
+.card--removed .card__header { background: var(--diff-del-bg); }
 .card__title { margin: 0; font-size: 15px; font-weight: 600; }
 .card__module { color: var(--fg-muted); font-weight: 400; }
 .card__kind { margin-inline-start: var(--space-s); color: var(--fg-muted); font-weight: 400; font-size: 12px; }
@@ -113,7 +122,9 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .card__callers ul { position: absolute; z-index: 2; margin: var(--space-xs) 0 0; padding: var(--space-xs); list-style: none; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); max-height: 16rem; overflow: auto; }
 .caller { display: block; width: 100%; text-align: start; padding: 2px var(--space-s); white-space: nowrap; }
 .caller:hover { color: var(--accent); }
-.card__collapse, .card__close { padding: 0 var(--space-xs); color: var(--fg-muted); }
+.card__stats { color: var(--fg-muted); font-size: 12px; white-space: nowrap; }
+.card__view, .card__collapse, .card__close { padding: 0 var(--space-xs); color: var(--fg-muted); }
+.card__view:hover { color: var(--accent); }
 .card__close:hover { color: var(--danger); }
 .card .card__body { user-select: text; margin: 0; padding: var(--space-xs) 0; overflow-x: auto; line-height: var(--code-leading); background: var(--code-bg); }
 .line { display: block; padding-inline: var(--space-s); white-space: pre; }
@@ -134,6 +145,11 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
    has only one outline box, and it belongs to the edge leaving the call. */
 .call[data-highlight="true"] { box-shadow: 0 0 0 2px var(--accent); border-radius: 2px; }
 .line[data-highlight="true"] { background: var(--accent-soft); }
+.line[data-op="ins"] { background: var(--diff-ins-bg); }
+.line[data-op="del"] { background: var(--diff-del-bg); }
+.op { display: inline-block; width: 1ch; margin-inline-end: var(--space-xs); color: var(--fg-faint); }
+.line[data-op="ins"] .op { color: var(--diff-ins-fg); }
+.line[data-op="del"] .op { color: var(--diff-del-fg); }
 .card__also { display: flex; flex-wrap: wrap; gap: var(--space-xs); padding: var(--space-s) var(--space-m); border-top: 1px solid var(--border); font-size: 12px; }
 .card__also-label { color: var(--fg-muted); }
 .also { color: var(--accent); }

@@ -11,6 +11,7 @@ defmodule GraspWeb.CardComponents do
 
   use GraspWeb, :html
 
+  alias Grasp.Diff
   alias Grasp.Index
   alias Grasp.Session.Forest
 
@@ -71,6 +72,26 @@ defmodule GraspWeb.CardComponents do
     end
   end
 
+  attr :change, :string, default: nil
+
+  @doc """
+  The badge naming what a pull request did to a function: added, modified or removed.
+
+  Renders nothing for a function the branch left alone, so a caller can hand it every
+  record it lists without asking first.
+  """
+  def change_badge(assigns) do
+    ~H"""
+    <span
+      :if={@change in ~w(added modified removed)}
+      class="badge badge--change"
+      data-change={@change}
+    >
+      {@change}
+    </span>
+    """
+  end
+
   defp function_card(assigns) do
     %{forest: forest, index: index, card: card, record: record} = assigns
 
@@ -78,21 +99,34 @@ defmodule GraspWeb.CardComponents do
 
     {dx, dy} = card.offset
 
+    change = record["change"] || "unchanged"
+    # A modified record always carries the base it was compared against; anything else has
+    # only one side, and nothing to swap the body between.
+    diffable? = change == "modified" and is_binary(record["base_source"])
+
+    highlight_opts = [
+      card_id: card.id,
+      open_calls: assigns.open_calls,
+      external?: external?,
+      highlight: card.highlight
+    ]
+
     assigns =
       assign(assigns,
         focused?: forest.focus == card.id,
         dx: dx,
         dy: dy,
+        change: change,
+        diffable?: diffable?,
+        stats: diffable? && Diff.stats(record["base_source"], record["source"]),
         callers: Index.callers(index, record["id"]),
         entries: Index.entry_points_for(index, record["id"]),
         callees: Forest.callees(forest, card.id),
         hidden_count: Forest.hidden_count(forest, card.id),
         body:
-          Grasp.Highlight.render(record,
-            card_id: card.id,
-            open_calls: assigns.open_calls,
-            external?: external?,
-            highlight: card.highlight
+          if(card.view == :diff,
+            do: Grasp.Highlight.render_diff(record, highlight_opts),
+            else: Grasp.Highlight.render(record, highlight_opts)
           ),
         editor_href:
           editor_url(
@@ -106,15 +140,17 @@ defmodule GraspWeb.CardComponents do
     ~H"""
     <article
       id={"card-#{@card.id}"}
-      class={["card", @focused? && "card--focused"]}
+      class={["card", @focused? && "card--focused", @record["removed"] && "card--removed"]}
       data-function-id={@record["id"]}
       data-focused={to_string(@focused?)}
+      data-view={to_string(@card.view)}
       data-highlight-key={highlight_key(@card.highlight)}
       data-depth={@column}
       data-dx={@dx}
       data-dy={@dy}
     >
       <header class="card__header" phx-click="focus_card" phx-value-card={@card.id}>
+        <.change_badge change={@change} />
         <span
           :for={entry <- @entries}
           class={["badge", "badge--#{entry["kind"]}"]}
@@ -128,6 +164,7 @@ defmodule GraspWeb.CardComponents do
           ]}/{@record["arity"]}</span>
           <span class="card__kind">{@record["kind"]}</span>
         </h2>
+        <span :if={@stats} class="card__stats">+{@stats.added} −{@stats.removed}</span>
         <div class="card__tools">
           <a :if={@editor_href} class="card__file" href={@editor_href}>
             {@record["file"]}:{@record["span"]["start_line"]}
@@ -157,6 +194,16 @@ defmodule GraspWeb.CardComponents do
               </li>
             </ul>
           </div>
+          <button
+            :if={@diffable?}
+            id={"view-#{@card.id}"}
+            class="card__view"
+            phx-click="toggle_view"
+            phx-value-card={@card.id}
+            title="Show the diff against the base (d)"
+          >
+            {if @card.view == :source, do: "diff", else: "source"}
+          </button>
           <button
             :if={@callees != []}
             class="card__collapse"

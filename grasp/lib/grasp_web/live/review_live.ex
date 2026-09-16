@@ -140,6 +140,12 @@ defmodule GraspWeb.ReviewLive do
   def handle_event("toggle_collapse", %{"card" => card}, socket),
     do: mutate(socket, &Session.toggle_collapse(&1, int(card)))
 
+  def handle_event("toggle_view", %{"card" => card}, socket),
+    do: toggle_view(socket, int(card))
+
+  def handle_event("toggle_view_focused", _params, socket),
+    do: toggle_view(socket, socket.assigns.forest.focus)
+
   def handle_event("move_card", %{"card" => card, "dx" => dx, "dy" => dy}, socket) do
     case {int(card), int(dx), int(dy)} do
       {id, dx, dy} when is_integer(id) and is_integer(dx) and is_integer(dy) ->
@@ -258,6 +264,25 @@ defmodule GraspWeb.ReviewLive do
   end
 
   defp refresh_agent(socket), do: assign(socket, agent: Grasp.Agent.get(socket.assigns.name))
+
+  # Only a modified function has two sides to swap between, so the keyboard passes over a
+  # card that has nothing to compare rather than putting it in a view that would render the
+  # source back unchanged.
+  defp toggle_view(socket, card_id) do
+    if diffable?(socket, card_id),
+      do: mutate(socket, &Session.toggle_view(&1, card_id)),
+      else: {:noreply, socket}
+  end
+
+  defp diffable?(socket, card_id) do
+    with %Index{} = index <- socket.assigns.index,
+         %{function_id: function_id} <- Forest.card(socket.assigns.forest, card_id),
+         {:ok, record} <- Index.fetch_function(index, function_id) do
+      record["change"] == "modified" and is_binary(record["base_source"])
+    else
+      _no_diff -> false
+    end
+  end
 
   # The form submit carries the query rather than a child flag, so a missing key is a plain
   # root open; the hook sends the boolean and the result buttons the string.

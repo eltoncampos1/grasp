@@ -12,6 +12,8 @@ defmodule GraspWeb.ReviewLiveTest do
   @perform "SampleApp.Workers.Mailer.perform/1"
   @create "SampleAppWeb.GreetController.create/2"
   @greet_alias "SampleApp.Greeter.greet/1"
+  @nested "SampleApp.Greeter.Nested.hello/0"
+  @whisper "SampleApp.Formatter.whisper/1"
 
   setup %{conn: conn} do
     name = "t-#{System.unique_integer([:positive])}"
@@ -538,6 +540,74 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert render(view) =~ "card-1"
     assert has_element?(view, "#card-1")
+  end
+
+  test "a modified card says so, counts its lines and offers the diff", %{view: view, name: name} do
+    Session.open_root(name, @shout)
+
+    assert has_element?(view, "#card-1 .badge--change[data-change='modified']", "modified")
+    assert has_element?(view, "#card-1 .card__stats", "+1 \u22121")
+    assert has_element?(view, "#card-1[data-view='source']")
+    assert has_element?(view, "#view-1[phx-click='toggle_view'][phx-value-card='1']", "diff")
+    refute has_element?(view, "#card-1 .line[data-op]")
+
+    view |> element("#view-1") |> render_click()
+
+    assert has_element?(view, "#card-1[data-view='diff']")
+    assert has_element?(view, "#view-1", "source")
+    assert has_element?(view, "#card-1 .card__body .line[data-op='del']", "text")
+    assert has_element?(view, "#card-1 .card__body .line[data-op='ins'][data-line='10']")
+
+    view |> element("#view-1") |> render_click()
+
+    assert has_element?(view, "#card-1[data-view='source']")
+    refute has_element?(view, "#card-1 .line[data-op]")
+  end
+
+  test "an added card wears the added badge and has nothing to diff", %{view: view, name: name} do
+    Session.open_root(name, @nested)
+
+    assert has_element?(view, "#card-1 .badge--change[data-change='added']", "added")
+    refute has_element?(view, "#card-1 .card__stats")
+    refute has_element?(view, "#view-1")
+  end
+
+  test "an unchanged card wears no change badge", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+
+    refute has_element?(view, "#card-1 .badge--change")
+    refute has_element?(view, "#view-1")
+  end
+
+  test "a removed function opens as a removed card showing what the base had", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @whisper)
+
+    assert has_element?(view, "#card-1.card--removed[data-function-id='#{@whisper}']")
+    assert has_element?(view, "#card-1 .badge--change[data-change='removed']", "removed")
+    assert has_element?(view, "#card-1 .card__body", "String.downcase")
+    refute has_element?(view, "#view-1")
+    refute has_element?(view, "#card-1 .card__also")
+  end
+
+  test "d toggles the focused card's view and passes over a card with no diff", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @shout)
+    Session.open_root(name, @greet)
+
+    render_hook(view, "toggle_view_focused", %{})
+    assert has_element?(view, "#card-2[data-view='source']")
+
+    Session.focus(name, 1)
+    render_hook(view, "toggle_view_focused", %{})
+    assert has_element?(view, "#card-1[data-view='diff']")
+
+    render_hook(view, "toggle_view_focused", %{})
+    assert has_element?(view, "#card-1[data-view='source']")
   end
 
   defp open_caller(view, card_id, caller) do

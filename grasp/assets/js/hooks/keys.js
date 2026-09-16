@@ -39,6 +39,8 @@ const Keys = {
         this.pushEvent(e.shiftKey ? "close_focused_chain" : "close_focused", {})
       } else if (e.key === "c") {
         this.pushEvent("collapse_focused", {})
+      } else if (e.key === "d") {
+        this.pushEvent("toggle_view_focused", {})
       }
     }
     window.addEventListener("keydown", this.onKeydown)

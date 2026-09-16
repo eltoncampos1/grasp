@@ -345,10 +345,35 @@ defmodule Grasp.Session.ForestTest do
     end
   end
 
+  test "a card starts on its source and toggle_view/2 flips it back and forth" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+
+    assert Forest.card(forest, a).view == :source
+
+    forest = Forest.toggle_view(forest, a)
+    assert Forest.card(forest, a).view == :diff
+
+    forest = Forest.toggle_view(forest, a)
+    assert Forest.card(forest, a).view == :source
+  end
+
+  test "set_view/3 takes one of the two views and ignores an unknown card" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+
+    assert Forest.set_view(forest, a, :diff) |> Forest.card(a) |> Map.fetch!(:view) == :diff
+    assert Forest.set_view(forest, a, :source) |> Forest.card(a) |> Map.fetch!(:view) == :source
+    assert Forest.set_view(forest, 999, :diff) == forest
+    assert Forest.toggle_view(forest, 999) == forest
+
+    # Through apply/3, so the type checker does not read the deliberate bad call as a bug.
+    assert_raise FunctionClauseError, fn -> apply(Forest, :set_view, [forest, a, :unified]) end
+  end
+
   test "to_map/1 is the JSON shape with cards sorted by id" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_child(forest, a, "B.g/0")
     forest = Forest.set_highlight(forest, b, %{"call" => "C.h/0"})
+    forest = Forest.set_view(forest, b, :diff)
 
     assert Forest.to_map(forest) == %{
              "focus" => b,
@@ -357,6 +382,7 @@ defmodule Grasp.Session.ForestTest do
                  "id" => a,
                  "function_id" => "A.f/1",
                  "collapsed" => false,
+                 "view" => "source",
                  "highlight" => nil,
                  "callers" => [],
                  "callees" => [b]
@@ -365,6 +391,7 @@ defmodule Grasp.Session.ForestTest do
                  "id" => b,
                  "function_id" => "B.g/0",
                  "collapsed" => false,
+                 "view" => "diff",
                  "highlight" => %{"call" => "C.h/0"},
                  "callers" => [a],
                  "callees" => []

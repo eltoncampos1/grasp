@@ -36,6 +36,25 @@ defmodule Grasp.HighlightTest do
     record |> Highlight.render(opts) |> Phoenix.HTML.safe_to_string()
   end
 
+  @diff_record %{
+    "id" => "Sample.renamed/1",
+    "span" => %{"start_line" => 5, "end_line" => 7},
+    "source" => "def run(x) do\n  Enum.map(x, & &1)\nend",
+    "base_source" => "def run(y) do\n  Enum.map(x, & &1)\nend",
+    "calls" => [
+      %{
+        "target" => "Enum.map/2",
+        "kind" => "remote",
+        "range" => %{"start" => [6, 3], "end" => [6, 11]}
+      }
+    ]
+  }
+
+  defp render_diff(record, opts \\ []) do
+    opts = Keyword.merge([card_id: 3, open_calls: %{}, external?: fn _ -> false end], opts)
+    record |> Highlight.render_diff(opts) |> Phoenix.HTML.safe_to_string()
+  end
+
   test "numbers lines from the span start and escapes source text" do
     html = render()
     assert LazyHTML.query(html, "span.line[data-line='10'] .ln") |> LazyHTML.text() == "10"
@@ -233,5 +252,97 @@ defmodule Grasp.HighlightTest do
   test "no highlight, no attribute" do
     html = render()
     assert LazyHTML.query(html, "[data-highlight]") |> Enum.count() == 0
+  end
+
+  describe "render_diff/2" do
+    test "a deleted line carries its text, no number and a minus" do
+      html = @diff_record |> render_diff() |> LazyHTML.from_fragment()
+      [del] = html |> LazyHTML.query(".line[data-op='del']") |> Enum.to_list()
+
+      assert LazyHTML.text(del) =~ "def run(y) do"
+      assert LazyHTML.attribute(del, "data-line") == []
+      assert LazyHTML.query(del, ".ln") |> LazyHTML.text() == ""
+      assert LazyHTML.query(del, ".op") |> LazyHTML.text() == "\u2212"
+    end
+
+    test "an inserted line is numbered from the span start" do
+      html = @diff_record |> render_diff() |> LazyHTML.from_fragment()
+      [ins] = html |> LazyHTML.query(".line[data-op='ins']") |> Enum.to_list()
+
+      assert LazyHTML.attribute(ins, "data-line") == ["5"]
+      assert LazyHTML.text(ins) =~ "def run(x) do"
+      assert LazyHTML.query(ins, ".ln") |> LazyHTML.text() == "5"
+      assert LazyHTML.query(ins, ".op") |> LazyHTML.text() == "+"
+    end
+
+    test "an unchanged line keeps its current number, its call span and a blank marker" do
+      html = @diff_record |> render_diff() |> LazyHTML.from_fragment()
+
+      assert html |> LazyHTML.query(".line[data-op='eq']") |> LazyHTML.attribute("data-line") ==
+               ~w(6 7)
+
+      [call] =
+        html
+        |> LazyHTML.query(".line[data-op='eq'][data-line='6'] span.call")
+        |> Enum.to_list()
+
+      assert LazyHTML.attribute(call, "data-target") == ["Enum.map/2"]
+      assert LazyHTML.text(call) == "Enum.map"
+
+      assert html |> LazyHTML.query(".line[data-op='eq'][data-line='6'] .op") |> LazyHTML.text() ==
+               " "
+    end
+
+    test "the deleted line is highlighted from the base source and wraps no call" do
+      html = @diff_record |> render_diff() |> LazyHTML.from_fragment()
+      del = LazyHTML.query(html, ".line[data-op='del']")
+
+      assert LazyHTML.query(del, "span.call") |> Enum.count() == 0
+      assert LazyHTML.query(del, "span.l-keyword-function") |> LazyHTML.text() == "def"
+    end
+
+    test "an open call and a highlight still reach the lines the current source kept" do
+      html =
+        @diff_record
+        |> render_diff(
+          open_calls: %{"Enum.map/2" => %{to: 9, color: 4}},
+          highlight: %{"lines" => [6, 6]}
+        )
+        |> LazyHTML.from_fragment()
+
+      call = LazyHTML.query(html, "span.call[data-target='Enum.map/2']")
+      assert LazyHTML.attribute(call, "data-open") == ["true"]
+      assert LazyHTML.attribute(call, "data-edge-to") == ["9"]
+
+      assert html
+             |> LazyHTML.query(~s(.line[data-highlight="true"]))
+             |> LazyHTML.attribute("data-line") ==
+               ["6"]
+    end
+
+    test "a record with no base source renders exactly as render/2 does" do
+      string = render_diff(@record)
+
+      assert string == render_string(@record, card_id: 3)
+      refute string =~ ~s(data-op=)
+    end
+
+    test "the real modified fixture record reads as one deletion and one insertion" do
+      {:ok, index} = Grasp.Index.load(@fixture)
+      {:ok, record} = Grasp.Index.fetch_function(index, "SampleApp.Formatter.shout/1")
+
+      html = record |> render_diff() |> LazyHTML.from_fragment()
+
+      assert html |> LazyHTML.query(".line[data-op='del']") |> Enum.count() == 1
+      assert html |> LazyHTML.query(".line[data-op='ins']") |> Enum.count() == 1
+
+      assert html |> LazyHTML.query(".line[data-op='eq']") |> LazyHTML.attribute("data-line") ==
+               ~w(8 9)
+
+      assert html
+             |> LazyHTML.query(".line[data-op='ins'] span.call")
+             |> LazyHTML.attribute("data-target") ==
+               ["String.upcase/1"]
+    end
   end
 end
