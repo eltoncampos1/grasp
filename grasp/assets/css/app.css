@@ -125,3 +125,27 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .palette__item { display: flex; justify-content: space-between; gap: var(--space-m); width: 100%; padding: var(--space-xs) var(--space-m); text-align: start; font-family: var(--mono); font-size: 13px; }
 .palette__results li[aria-selected="true"] .palette__item { background: var(--accent-soft); }
 .palette__meta { color: var(--fg-muted); font-size: 12px; white-space: nowrap; }
+
+/* The canvas suppresses selection and offers the pan cursor; inside the panel the pointer
+   is for reading and typing, so both are handed back. */
+.chat { position: absolute; inset-block-end: var(--space-m); inset-inline-end: var(--space-m); z-index: 4; width: 28rem; max-height: 60vh; display: flex; flex-direction: column; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-size: 13px; user-select: text; cursor: auto; }
+/* A display of its own outranks the user agent's [hidden] rule, so the closed panel needs
+   its own. */
+.chat[hidden] { display: none; }
+.chat__log { overflow-y: auto; padding: var(--space-s) var(--space-m); display: flex; flex-direction: column; gap: var(--space-xs); }
+.msg[data-type="user"] { align-self: flex-end; background: var(--accent-soft); border-radius: var(--radius); padding: var(--space-xs) var(--space-s); }
+.msg[data-type="assistant"] { white-space: pre-wrap; }
+.msg[data-type="tool"] { font-family: var(--mono); font-size: 12px; color: var(--fg-muted); }
+.msg[data-type="tool"][data-status="running"]::before { content: "… "; }
+.msg[data-type="tool"][data-status="done"]::before { content: "✓ "; }
+.msg[data-type="tool"][data-status="error"]::before { content: "✗ "; color: var(--danger); }
+.msg[data-type="error"] { color: var(--danger); }
+.msg[data-type="done"] { color: var(--fg-subtle); font-size: 12px; }
+.chat__debug { margin: 0 var(--space-m) var(--space-s); color: var(--fg-muted); font-family: var(--mono); font-size: 12px; }
+.chat__debug p { margin: var(--space-xs) 0 0; white-space: pre-wrap; }
+.chat__debug summary { cursor: pointer; }
+.chat form { display: flex; gap: var(--space-xs); padding: var(--space-s); border-top: 1px solid var(--border); }
+.chat input { flex: 1; font: inherit; padding: var(--space-xs) var(--space-s); border: 1px solid var(--border); border-radius: 4px; background: var(--bg-sunken); color: var(--fg); }
+.chat button { color: var(--fg-muted); padding: var(--space-xs) var(--space-s); }
+.chat button:hover:not(:disabled) { color: var(--accent); }
+.chat button:disabled { color: var(--fg-faint); cursor: default; }

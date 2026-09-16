@@ -15,6 +15,9 @@ const Keys = {
         if (e.key === "m" || e.key === "\\") {
           e.preventDefault()
           this.pushEvent("toggle_sidebar", {})
+        } else if (e.key === "i") {
+          e.preventDefault()
+          this.pushEvent("chat_toggle", {})
         } else if (e.key === "0") {
           e.preventDefault()
           // The zoom lives entirely in the Canvas hook, so this is hook to hook through the DOM

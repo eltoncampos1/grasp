@@ -11,6 +11,7 @@ defmodule GraspWeb.ReviewLive do
   use GraspWeb, :live_view
 
   import GraspWeb.CardComponents
+  import GraspWeb.ChatPanel
   import GraspWeb.Palette
   import GraspWeb.Sidebar
 
@@ -18,14 +19,17 @@ defmodule GraspWeb.ReviewLive do
   alias Grasp.Session.Forest
 
   @groups GraspWeb.Sidebar.group_kinds()
+  @no_command "claude command not found; set GRASP_AGENT_COMMAND"
 
   @impl true
   def mount(params, _session, socket) do
     name = Map.get(params, "name", "default")
     :ok = Session.ensure(name)
+    :ok = Grasp.Agent.ensure(name)
 
     if connected?(socket) do
       :ok = Session.subscribe(name)
+      :ok = Grasp.Agent.subscribe(name)
       :ok = IndexStore.subscribe()
     end
 
@@ -46,6 +50,9 @@ defmodule GraspWeb.ReviewLive do
        palette_results: [],
        palette_selected: 0,
        sidebar_open?: true,
+       chat_open?: false,
+       chat_error: nil,
+       agent: Grasp.Agent.get(name),
        editor: Application.get_env(:grasp, :editor)
      )}
   end
@@ -54,6 +61,9 @@ defmodule GraspWeb.ReviewLive do
   def handle_info({:session, name, %Forest{} = forest}, %{assigns: %{name: name}} = socket) do
     {:noreply, socket |> assign(forest: forest) |> push_event("focus", %{id: forest.focus})}
   end
+
+  def handle_info({:agent, name, view}, %{assigns: %{name: name}} = socket),
+    do: {:noreply, assign(socket, agent: view)}
 
   def handle_info(:index_reloaded, socket),
     do:
@@ -151,6 +161,26 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
+  def handle_event("chat_toggle", _params, socket),
+    do: {:noreply, update(socket, :chat_open?, &(not &1))}
+
+  def handle_event("chat_send", %{"prompt" => prompt}, socket) when is_binary(prompt) do
+    case String.trim(prompt) do
+      "" -> {:noreply, socket}
+      trimmed -> {:noreply, ask(socket, trimmed)}
+    end
+  end
+
+  def handle_event("chat_stop", _params, socket) do
+    :ok = Grasp.Agent.stop(socket.assigns.name)
+    {:noreply, refresh_agent(socket)}
+  end
+
+  def handle_event("chat_reset", _params, socket) do
+    :ok = Grasp.Agent.reset(socket.assigns.name)
+    {:noreply, socket |> assign(chat_error: nil) |> refresh_agent()}
+  end
+
   def handle_event("palette_show", _params, socket),
     do: {:noreply, assign(socket, palette_open?: true, palette_selected: 0, callers_open: nil)}
 
@@ -186,6 +216,19 @@ defmodule GraspWeb.ReviewLive do
   # Events are addressed by name and card id from the DOM, so a stale tab or a hand-made
   # message must be dropped rather than take the whole page down with it.
   def handle_event(_event, _params, socket), do: {:noreply, socket}
+
+  # A prompt sent while a run is live is the Send button having been pressed from a stale
+  # DOM, where it was still enabled; the panel already says what is happening, so the refusal
+  # needs nothing said about it.
+  defp ask(socket, prompt) do
+    case Grasp.Agent.send_prompt(socket.assigns.name, prompt) do
+      :ok -> socket |> assign(chat_error: nil) |> refresh_agent()
+      {:error, :running} -> socket
+      {:error, :no_command} -> assign(socket, chat_error: @no_command)
+    end
+  end
+
+  defp refresh_agent(socket), do: assign(socket, agent: Grasp.Agent.get(socket.assigns.name))
 
   # The form submit carries the query rather than a child flag, so a missing key is a plain
   # root open; the hook sends the boolean and the result buttons the string.
@@ -290,6 +333,14 @@ defmodule GraspWeb.ReviewLive do
           <button type="button" id="zoom-in" title="Zoom in">+</button>
           <button
             type="button"
+            id="toggle-chat"
+            phx-click="chat_toggle"
+            title="Ask the agent (⌘I)"
+          >
+            ask
+          </button>
+          <button
+            type="button"
             id="reset-layout"
             phx-click="reset_layout"
             title="Return cards to the automatic layout"
@@ -300,6 +351,7 @@ defmodule GraspWeb.ReviewLive do
         <p :if={@forest.roots == []} class="empty">
           Pick a function from the sidebar or press <kbd>⌘K</kbd>.
         </p>
+        <.chat_panel open?={@chat_open?} agent={@agent} error={@chat_error} />
         <div id="stage" class="stage">
           <svg id="connectors" class="connectors" phx-update="ignore" aria-hidden="true"></svg>
           <div class="roots">

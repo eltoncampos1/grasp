@@ -327,7 +327,7 @@ const Canvas = {
     const header = e.target.closest(".card__header")
     if (header && !e.target.closest("button, a")) {
       this.beginCardDrag(e, header.closest(".card"), false)
-    } else if (!e.target.closest(".card, .toolbar, button, a, input")) {
+    } else if (!e.target.closest(".card, .toolbar, .chat, button, a, input")) {
       this.beginPan(e)
     }
   },
