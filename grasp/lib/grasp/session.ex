@@ -80,6 +80,26 @@ defmodule Grasp.Session do
   @spec move_focus(name(), Forest.direction()) :: Forest.t()
   def move_focus(name, direction), do: mutate(name, &Forest.move_focus(&1, direction))
 
+  @doc """
+  Replaces the whole forest with the cards `specs` describes. The session keeps its current
+  forest, and nothing is broadcast, when the spec does not build.
+  """
+  @spec set_cards(name(), [Forest.spec()]) :: {:ok, Forest.t()} | {:error, term()}
+  def set_cards(name, specs), do: GenServer.call(via(name), {:replace, specs})
+
+  @doc "Sets what `card_id` points at: a call, a line range, or nothing."
+  @spec set_highlight(name(), Forest.id(), Forest.highlight()) :: Forest.t()
+  def set_highlight(name, card_id, highlight),
+    do: mutate(name, &Forest.set_highlight(&1, card_id, highlight))
+
+  @doc "Names of the sessions currently running, sorted."
+  @spec list() :: [String.t()]
+  def list do
+    Grasp.SessionRegistry
+    |> Registry.select([{{:"$1", :_, :_}, [], [:"$1"]}])
+    |> Enum.sort()
+  end
+
   @impl true
   def init(name), do: {:ok, %{name: name, forest: Forest.new()}}
 
@@ -93,9 +113,23 @@ defmodule Grasp.Session do
         %Forest{} = forest -> forest
       end
 
-    Phoenix.PubSub.broadcast(Grasp.PubSub, topic(state.name), {:session, state.name, forest})
+    broadcast(state.name, forest)
     {:reply, forest, %{state | forest: forest}}
   end
+
+  def handle_call({:replace, specs}, _from, state) do
+    case Forest.replace(specs) do
+      {:ok, forest} ->
+        broadcast(state.name, forest)
+        {:reply, {:ok, forest}, %{state | forest: forest}}
+
+      {:error, _reason} = error ->
+        {:reply, error, state}
+    end
+  end
+
+  defp broadcast(name, forest),
+    do: Phoenix.PubSub.broadcast(Grasp.PubSub, topic(name), {:session, name, forest})
 
   defp mutate(name, fun), do: GenServer.call(via(name), {:mutate, fun})
   defp via(name), do: {:via, Registry, {Grasp.SessionRegistry, name}}

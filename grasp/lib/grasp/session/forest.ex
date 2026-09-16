@@ -9,12 +9,18 @@ defmodule Grasp.Session.Forest do
   it. Opening a caller from a root re-parents the root under the caller; from a non-root
   card it starts a new root tree so the original branch is left intact. `offset` is a
   card's displacement in stage pixels from where the automatic layout puts it, so a card
-  dragged by hand keeps its place as the tree around it grows.
+  dragged by hand keeps its place as the tree around it grows. `highlight` marks what to
+  point at inside a card — a call to outline or a range of lines to shade.
   """
 
   defstruct roots: [], cards: %{}, focus: nil, next_id: 1
 
   @type id :: pos_integer()
+  @typedoc """
+  What to point at inside a card: `%{"call" => function_id}` outlines a call, and
+  `%{"lines" => [first, last]}` shades a range of lines. `nil` marks nothing.
+  """
+  @type highlight :: nil | %{optional(String.t()) => String.t() | [integer()]}
   @type card :: %{
           id: id(),
           function_id: String.t(),
@@ -22,7 +28,20 @@ defmodule Grasp.Session.Forest do
           children: [id()],
           opened_by: String.t() | nil,
           collapsed: boolean(),
-          offset: {integer(), integer()}
+          offset: {integer(), integer()},
+          highlight: highlight()
+        }
+  @typedoc """
+  One card in a flat forest description. `key` names the entry so a later entry can point
+  at it through `parent_key`; the keys are the caller's own and mean nothing to the forest
+  beyond that linking.
+  """
+  @type spec :: %{
+          key: String.t(),
+          function_id: String.t(),
+          parent_key: String.t() | nil,
+          opened_by: String.t() | nil,
+          highlight: highlight()
         }
   @type t :: %__MODULE__{
           roots: [id()],
@@ -95,9 +114,7 @@ defmodule Grasp.Session.Forest do
         {%{forest | focus: existing}, existing}
 
       true ->
-        {forest, id} = add_card(forest, function_id, parent_id, opened_by || function_id)
-        parent = %{parent | children: parent.children ++ [id]}
-        {%{forest | cards: Map.put(forest.cards, parent_id, parent), focus: id}, id}
+        add_child(forest, parent_id, function_id, opened_by || function_id)
     end
   end
 
@@ -209,6 +226,77 @@ defmodule Grasp.Session.Forest do
     if target, do: %{forest | focus: target}, else: forest
   end
 
+  @doc "Sets `highlight` on `id`; unknown ids are ignored."
+  @spec set_highlight(t(), id(), highlight()) :: t()
+  def set_highlight(%__MODULE__{} = forest, id, highlight) do
+    case card(forest, id) do
+      nil -> forest
+      card -> %{forest | cards: Map.put(forest.cards, id, %{card | highlight: highlight})}
+    end
+  end
+
+  @doc """
+  Builds a forest from an ordered flat spec. A `parent_key` names an earlier entry; the
+  first entry with no parent becomes the focus. A child is always added, so a spec may
+  repeat a function under one parent.
+  """
+  @spec replace([spec()]) :: {:ok, t()} | {:error, {:unknown_parent, String.t()}}
+  def replace(specs) when is_list(specs) do
+    Enum.reduce_while(specs, {:ok, new(), %{}}, fn spec, {:ok, forest, keys} ->
+      case spec.parent_key do
+        nil ->
+          {forest, id} = open_root(forest, spec.function_id)
+          {:cont, {:ok, highlight(forest, id, spec), Map.put(keys, spec.key, id)}}
+
+        parent_key ->
+          case Map.fetch(keys, parent_key) do
+            {:ok, parent_id} ->
+              {forest, id} =
+                add_child(forest, parent_id, spec.function_id, spec.opened_by || spec.function_id)
+
+              {:cont, {:ok, highlight(forest, id, spec), Map.put(keys, spec.key, id)}}
+
+            :error ->
+              {:halt, {:error, {:unknown_parent, parent_key}}}
+          end
+      end
+    end)
+    |> case do
+      {:ok, forest, _keys} -> {:ok, %{forest | focus: List.first(forest.roots)}}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  @doc "The forest as plain maps with string keys, the shape the MCP tools return."
+  @spec to_map(t()) :: map()
+  def to_map(%__MODULE__{} = forest) do
+    cards =
+      forest.cards
+      |> Map.values()
+      |> Enum.sort_by(& &1.id)
+      |> Enum.map(fn card ->
+        %{
+          "id" => card.id,
+          "function_id" => card.function_id,
+          "parent_id" => card.parent_id,
+          "children" => card.children,
+          "opened_by" => card.opened_by,
+          "collapsed" => card.collapsed,
+          "highlight" => card.highlight
+        }
+      end)
+
+    %{"roots" => forest.roots, "focus" => forest.focus, "cards" => cards}
+  end
+
+  defp highlight(forest, id, spec), do: set_highlight(forest, id, spec.highlight)
+
+  defp add_child(forest, parent_id, function_id, opened_by) do
+    {forest, id} = add_card(forest, function_id, parent_id, opened_by)
+    cards = Map.update!(forest.cards, parent_id, &%{&1 | children: &1.children ++ [id]})
+    {%{forest | cards: cards, focus: id}, id}
+  end
+
   defp siblings(forest, %{parent_id: nil}), do: forest.roots
   defp siblings(forest, %{parent_id: parent_id}), do: Map.fetch!(forest.cards, parent_id).children
 
@@ -232,7 +320,8 @@ defmodule Grasp.Session.Forest do
       children: [],
       opened_by: opened_by,
       collapsed: false,
-      offset: {0, 0}
+      offset: {0, 0},
+      highlight: nil
     }
 
     {%{forest | cards: Map.put(forest.cards, id, card), next_id: id + 1}, id}

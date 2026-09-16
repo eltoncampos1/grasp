@@ -142,4 +142,90 @@ defmodule Grasp.Session.ForestTest do
     assert {^forest, nil} = Forest.open_caller(forest, 999, "Other.k/0")
     assert forest.roots == [a]
   end
+
+  describe "highlights" do
+    test "set_highlight stores a call or a line range and ignores unknown ids" do
+      {forest, id} = Forest.open_root(Forest.new(), "A.f/1")
+      forest = Forest.set_highlight(forest, id, %{"call" => "B.g/0"})
+      assert Forest.card(forest, id).highlight == %{"call" => "B.g/0"}
+      forest = Forest.set_highlight(forest, id, %{"lines" => [3, 5]})
+      assert Forest.card(forest, id).highlight == %{"lines" => [3, 5]}
+      assert Forest.set_highlight(forest, 999, nil) == forest
+    end
+
+    test "a new card has no highlight" do
+      {forest, id} = Forest.open_root(Forest.new(), "A.f/1")
+      assert Forest.card(forest, id).highlight == nil
+    end
+  end
+
+  describe "replace/1" do
+    test "builds the forest in order, linking children to parents by key" do
+      spec = [
+        %{key: "a", function_id: "A.f/1", parent_key: nil, opened_by: nil, highlight: nil},
+        %{
+          key: "b",
+          function_id: "B.g/0",
+          parent_key: "a",
+          opened_by: "B.g/0",
+          highlight: %{"lines" => [1, 2]}
+        },
+        %{key: "c", function_id: "C.h/0", parent_key: "a", opened_by: nil, highlight: nil},
+        %{key: "d", function_id: "D.i/0", parent_key: nil, opened_by: nil, highlight: nil}
+      ]
+
+      assert {:ok, forest} = Forest.replace(spec)
+      assert forest.roots == [1, 4]
+      assert forest.focus == 1
+      assert Forest.card(forest, 1).children == [2, 3]
+      assert Forest.card(forest, 2).parent_id == 1
+      assert Forest.card(forest, 2).opened_by == "B.g/0"
+      assert Forest.card(forest, 2).highlight == %{"lines" => [1, 2]}
+      assert Forest.card(forest, 3).opened_by == "C.h/0"
+      assert Forest.card(forest, 4).parent_id == nil
+    end
+
+    test "an unknown parent key is an error" do
+      spec = [
+        %{key: "b", function_id: "B.g/0", parent_key: "zzz", opened_by: nil, highlight: nil}
+      ]
+
+      assert Forest.replace(spec) == {:error, {:unknown_parent, "zzz"}}
+    end
+
+    test "an empty spec is an empty forest" do
+      assert {:ok, %Forest{roots: [], cards: %{}, focus: nil}} = Forest.replace([])
+    end
+  end
+
+  test "to_map/1 is the JSON shape with cards sorted by id" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+    forest = Forest.set_highlight(forest, b, %{"call" => "C.h/0"})
+
+    assert Forest.to_map(forest) == %{
+             "roots" => [a],
+             "focus" => b,
+             "cards" => [
+               %{
+                 "id" => a,
+                 "function_id" => "A.f/1",
+                 "parent_id" => nil,
+                 "children" => [b],
+                 "opened_by" => nil,
+                 "collapsed" => false,
+                 "highlight" => nil
+               },
+               %{
+                 "id" => b,
+                 "function_id" => "B.g/0",
+                 "parent_id" => a,
+                 "children" => [],
+                 "opened_by" => "B.g/0",
+                 "collapsed" => false,
+                 "highlight" => %{"call" => "C.h/0"}
+               }
+             ]
+           }
+  end
 end

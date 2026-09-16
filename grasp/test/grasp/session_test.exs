@@ -67,4 +67,34 @@ defmodule Grasp.SessionTest do
     assert Session.open_child(name, 999, "X.y/0") == forest
     assert Session.get(name) == forest
   end
+
+  test "set_cards replaces the forest and broadcasts once; an error leaves it untouched", %{
+    name: name
+  } do
+    Session.subscribe(name)
+    Session.open_root(name, "Old.f/0")
+    assert_receive {:session, ^name, _}
+
+    spec = [%{key: "a", function_id: "A.f/1", parent_key: nil, opened_by: nil, highlight: nil}]
+    assert {:ok, forest} = Session.set_cards(name, spec)
+    assert [%{function_id: "A.f/1"}] = Map.values(forest.cards)
+    assert_receive {:session, ^name, ^forest}
+
+    bad = [%{key: "b", function_id: "B.g/0", parent_key: "nope", opened_by: nil, highlight: nil}]
+    assert {:error, {:unknown_parent, "nope"}} = Session.set_cards(name, bad)
+    refute_receive {:session, ^name, _}, 50
+    assert Session.get(name) == forest
+  end
+
+  test "set_highlight broadcasts the highlighted forest", %{name: name} do
+    Session.subscribe(name)
+    %{roots: [id]} = Session.open_root(name, "A.f/1")
+    forest = Session.set_highlight(name, id, %{"lines" => [2, 3]})
+    assert Forest.card(forest, id).highlight == %{"lines" => [2, 3]}
+    assert_receive {:session, ^name, ^forest}
+  end
+
+  test "list/0 names the running sessions", %{name: name} do
+    assert name in Session.list()
+  end
 end
