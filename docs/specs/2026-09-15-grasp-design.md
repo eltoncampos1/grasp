@@ -408,6 +408,41 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   invisible to the extractor, so a callback implemented there is neither a card nor an
   entry point. Unchanged from milestone 1.
 
+### Known gaps (milestone 4)
+
+- **One agent run at a time per session.** The CLI takes a single prompt per invocation,
+  so the runner refuses a second prompt while one is in flight rather than queueing it.
+  Nothing stops a reviewer from opening a second session name and running there.
+- **The chat panel needs the Claude Code CLI on the machine.** It is spawned as an
+  executable, found on `PATH` as `claude` or named by `GRASP_AGENT_COMMAND` /
+  `--agent-command`; `GRASP_AGENT_MODEL` / `--agent-model` picks the model. With no such
+  executable the panel reports that and the rest of the viewer is unaffected. A shell
+  alias or function is not an executable and will not be found.
+- **Transcripts are in memory.** A conversation lives in its runner process, so it
+  survives a browser reload and is gone when the viewer stops. Sessions on disk
+  (milestone 6) are where a transcript would be persisted, if it is worth persisting.
+- **The agent can only read.** Its built-in tools are `Read`, `Grep` and `Glob`, and
+  Grasp is its only MCP server, so it cannot edit a file or run a command. That is the
+  intended boundary rather than a gap to close: the review loop is arranging cards, not
+  changing code.
+- **No annotations and no tours.** The agent can open, close, focus and highlight cards,
+  which is enough to walk a chain, but it cannot leave a note on a card or author an
+  ordered tour a reviewer steps through. Both are later milestones (6 and 7) and both add
+  MCP tools rather than changing the ones here.
+- **`find_paths` is bounded three ways and says so only for one of them.** `max_depth`
+  above 8 or `limit` above 20 is a schema violation the call is rejected for, not a value
+  clamped down to the cap, so a client that asks for more gets an error to fix rather
+  than a silently smaller answer. The third bound, a 20 000-node visit budget, is the one
+  that can bite a caller who asked for nothing unusual; an exhausted budget comes back as
+  `truncated?: true`, which says the answer is partial but not which part is missing.
+- **The browser page is not behind the local-only check.** `GraspWeb.Plugs.LocalOnly`
+  guards `/mcp`, where the whole index is one call away. The review page is guarded one
+  step later, by the LiveView socket's `check_origin` list, so a page served to a rebound
+  DNS name gets the static first render and no live socket: the sidebar's names and
+  whatever cards the session already holds, with no way to open another. Running the plug
+  on the page as well costs nothing and is worth doing when the viewer stops being a
+  localhost-only tool.
+
 ## Part 3 — MCP
 
 Served by `anubis_mcp` at `/mcp` over Streamable HTTP, on the same endpoint as the viewer.

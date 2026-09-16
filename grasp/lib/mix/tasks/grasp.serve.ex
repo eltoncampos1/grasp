@@ -5,6 +5,7 @@ defmodule Mix.Tasks.Grasp.Serve do
   Starts the Grasp viewer.
 
       mix grasp.serve --index PATH [--port 4040] [--editor vscode]
+                      [--agent-command claude] [--agent-model MODEL]
 
   The index is the file `mix grasp.index` wrote in the target project. The viewer binds
   to 127.0.0.1 and reloads the index whenever the file changes.
@@ -12,14 +13,25 @@ defmodule Mix.Tasks.Grasp.Serve do
   ## Options
 
     * `--index` - path to the index JSON (or set `GRASP_INDEX`). Required.
-    * `--port` - HTTP port, default 4040.
+    * `--port` - HTTP port, default 4040 (or set `GRASP_PORT`).
     * `--editor` - one of `vscode`, `cursor`, `zed` or `idea`; turns `file:line` into a
-      deep link. Any other value is rejected.
+      deep link (or set `GRASP_EDITOR`). Any other value is rejected.
+    * `--agent-command` - the Claude Code CLI the chat panel runs, default `claude` (or
+      set `GRASP_AGENT_COMMAND`). A name is looked up on `PATH`; a path is taken as given.
+      A value that resolves to no executable is rejected.
+    * `--agent-model` - the model that CLI runs with, e.g. a model name or alias it
+      accepts (or set `GRASP_AGENT_MODEL`). Omit to leave the CLI on its own default.
   """
 
   use Mix.Task
 
-  @switches [index: :string, port: :integer, editor: :string]
+  @switches [
+    index: :string,
+    port: :integer,
+    editor: :string,
+    agent_command: :string,
+    agent_model: :string
+  ]
   @editors ~w(vscode cursor zed idea)
 
   @impl Mix.Task
@@ -44,6 +56,18 @@ defmodule Mix.Tasks.Grasp.Serve do
       Mix.raise("grasp.serve: --editor must be one of #{Enum.join(@editors, ", ")}")
     end
 
+    agent_command = opts[:agent_command]
+
+    if agent_command && is_nil(System.find_executable(agent_command)) do
+      Mix.raise("grasp.serve: --agent-command #{agent_command} is not an executable")
+    end
+
+    agent_model = opts[:agent_model]
+
+    if agent_model == "" do
+      Mix.raise("grasp.serve: --agent-model must name a model")
+    end
+
     # The store loads the index again at boot; one extra decode buys a readable error here
     # instead of a viewer that comes up empty and explains nothing.
     case Grasp.Index.load(index) do
@@ -54,6 +78,8 @@ defmodule Mix.Tasks.Grasp.Serve do
     System.put_env("GRASP_INDEX", index)
     if opts[:port], do: System.put_env("GRASP_PORT", Integer.to_string(opts[:port]))
     if editor, do: System.put_env("GRASP_EDITOR", editor)
+    if agent_command, do: System.put_env("GRASP_AGENT_COMMAND", agent_command)
+    if agent_model, do: System.put_env("GRASP_AGENT_MODEL", agent_model)
 
     Application.put_env(:phoenix, :serve_endpoints, true, persistent: true)
     Mix.shell().info("Grasp viewer: http://127.0.0.1:#{opts[:port] || 4040}  (index: #{index})")

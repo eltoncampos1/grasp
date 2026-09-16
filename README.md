@@ -12,9 +12,12 @@ with the module list a group below. A card wears a badge for the entry point it 
 card's callers menu opens the other way up the chain, Cmd+K finds any function, and every
 card links its `file:line` into your editor.
 
+A coding agent can drive the same canvas over MCP: it searches the index, traces the
+paths into a function, and lays the cards out for the human reviewer. The viewer can run
+that agent for you from a panel beside the canvas.
+
 Planned: the function's diff against a base branch on the card, sessions saved to disk,
-and an MCP server letting coding agents arrange the cards, annotate them and author
-guided tours for the human reviewer.
+and annotations and guided tours the agent can author.
 
 Grasp exists because agents now write more code than humans can comfortably review with
 a text editor and a unified diff.
@@ -65,6 +68,93 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
 - Arrow keys walk the tree, `x` closes the focused card, `c` collapses it, ⌘K opens the
   palette.
 
+## MCP
+
+The viewer serves an MCP endpoint at `/mcp` on the same port as the page, over Streamable
+HTTP. An agent connected to it reads the index and arranges the cards the human is looking
+at. Register it with Claude Code:
+
+```
+claude mcp add --transport http grasp http://127.0.0.1:4040/mcp
+```
+
+Only requests addressed to loopback are served: the endpoint checks the `Host` it was
+asked for and the `Origin` the browser declares, so a page on someone else's domain cannot
+reach it even if its DNS points at `127.0.0.1`.
+
+Reading the code:
+
+- `search_functions(query, limit)` — find functions by name. An exact `Module.fun/arity`
+  ranks first, then ids containing the query, then a fuzzy match, so `walcre` still finds
+  `SampleApp.Wallets.credit/3`.
+- `get_function(id)` — one function's source, span, calls, callers, callees and the entry
+  points that reach it.
+- `get_callers(id)` / `get_callees(id)` — one hop up or down the call graph.
+- `find_paths(to, from?, max_depth, limit)` — shortest call paths down to a function, from
+  another function or, with `from` omitted, from whatever entry points reach it. Each path
+  reads in call order and carries the entry point it starts at.
+- `list_entry_points(kind?, query?, limit)` — routes, LiveView and GenServer callbacks,
+  Oban workers, each with the function it dispatches to.
+- `list_modules(query?, limit)` — modules with their file and the behaviours they
+  implement.
+- `list_sessions()` — the review sessions the viewer is running.
+
+Arranging the cards:
+
+- `get_session(name)` — every open card, its parent, what it points at, and which card has
+  focus. The ids it returns are what the other card tools address.
+- `set_cards(name, cards)` — replace the whole canvas with a tree described in one call.
+  Each card is `{key, function_id, parent_key?, highlight?}`; a card hangs under an earlier
+  one by naming its `key`. Nothing changes unless every card is good.
+- `open_card(name, function_id, parent_card_id?, highlight?)` — add one card, under
+  another or as a new tree.
+- `close_card(name, card_id)` — close a card and everything under it.
+- `focus_card(name, card_id)` — scroll a card into view, to say "look here".
+- `highlight_card(name, card_id, highlight)` — point at one call inside a card, or shade a
+  range of its lines.
+
+A session name defaults to `default`, which is the canvas at `/`; any other name is the
+canvas at `/s/<name>` and is created on first mention.
+
+Arranging a flow, end to end. Asked "show me what happens when SampleApp accepts an
+order", an agent calls `list_entry_points(query: "order")` to find the route,
+`find_paths(to: "SampleApp.Orders.insert_order/1")` to get the hops between the two, and
+then one `set_cards` with a card per hop — the route's action as the root, each callee
+under its caller, and a `highlight` on the call that writes the row. The browser redraws
+as the call lands, so the reviewer watches the chain assemble instead of clicking it out.
+
+## Ask the agent
+
+Press ⌘I, or the `ask` button in the toolbar, for a chat panel over the canvas. Type what
+you want to understand and the agent opens the cards that answer it.
+
+The panel runs the [Claude Code](https://claude.com/claude-code) CLI headless, with the
+indexed project's root as its working directory and Grasp as its only MCP server. Its
+built-in tools are `Read`, `Grep` and `Glob`, so it reads the project's files and reaches
+the index through Grasp's own tools, and it edits no file and runs no command. The
+transcript shows each tool call as it happens; Stop kills the run, and New conversation
+starts over.
+
+One run at a time per session: a second prompt while one is in flight is refused rather
+than queued. A follow-up continues the same CLI conversation, so the agent remembers what
+it just opened. Transcripts live in memory and are gone when the viewer stops.
+
+The CLI has to be installed and signed in already — the panel runs whatever `claude` your
+`PATH` resolves to. Two settings change that:
+
+- `--agent-command PATH` or `GRASP_AGENT_COMMAND` — the executable to run instead of
+  `claude`.
+- `--agent-model NAME` or `GRASP_AGENT_MODEL` — the model that CLI runs with. Omit it to
+  leave the CLI on its own default.
+
+```
+cd grasp && mix grasp.serve --index /path/to/project/.grasp/index.json \
+  --agent-command /opt/homebrew/bin/claude --agent-model opus
+```
+
 ## License
 
 Apache-2.0.
+
+The MCP endpoint is served by [Anubis MCP](https://hex.pm/packages/anubis_mcp), which is
+LGPL-3.0. Grasp uses it as an unmodified dependency, resolved from Hex at build time.
