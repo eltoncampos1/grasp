@@ -547,21 +547,22 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(view, "#card-1 .badge--change[data-change='modified']", "modified")
     assert has_element?(view, "#card-1 .card__stats", "+1 \u22121")
-    assert has_element?(view, "#card-1[data-view='source']")
-    assert has_element?(view, "#view-1[phx-click='toggle_view'][phx-value-card='1']", "diff")
-    refute has_element?(view, "#card-1 .line[data-op]")
-
-    view |> element("#view-1") |> render_click()
-
+    # A changed function opens on what changed.
     assert has_element?(view, "#card-1[data-view='diff']")
-    assert has_element?(view, "#view-1", "source")
+    assert has_element?(view, "#view-1[phx-click='toggle_view'][phx-value-card='1']", "source")
     assert has_element?(view, "#card-1 .card__body .line[data-op='del']", "text")
     assert has_element?(view, "#card-1 .card__body .line[data-op='ins'][data-line='10']")
 
     view |> element("#view-1") |> render_click()
 
     assert has_element?(view, "#card-1[data-view='source']")
+    assert has_element?(view, "#view-1", "diff")
     refute has_element?(view, "#card-1 .line[data-op]")
+
+    view |> element("#view-1") |> render_click()
+
+    assert has_element?(view, "#card-1[data-view='diff']")
+    assert has_element?(view, "#card-1 .line[data-op='del']")
   end
 
   test "an added card wears the added badge and has nothing to diff", %{view: view, name: name} do
@@ -603,11 +604,12 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#card-2[data-view='source']")
 
     Session.focus(name, 1)
-    render_hook(view, "toggle_view_focused", %{})
     assert has_element?(view, "#card-1[data-view='diff']")
-
     render_hook(view, "toggle_view_focused", %{})
     assert has_element?(view, "#card-1[data-view='source']")
+
+    render_hook(view, "toggle_view_focused", %{})
+    assert has_element?(view, "#card-1[data-view='diff']")
   end
 
   test "the Changes group lists what the branch touched and opens it", %{view: view} do

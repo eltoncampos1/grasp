@@ -50,8 +50,12 @@ defmodule Grasp.Session.Forest do
   `%{"lines" => [first, last]}` shades a range of lines. `nil` marks nothing.
   """
   @type highlight :: nil | %{optional(String.t()) => String.t() | [integer()]}
-  @typedoc "Which side of a modified function a card shows: its source, or the diff against the base."
-  @type view :: :source | :diff
+  @typedoc """
+  How a card shows its function: `:auto` reads as the diff when the function has one and as
+  the source otherwise, so a changed function opens on what changed; `:source` and `:diff`
+  are the reviewer's explicit picks.
+  """
+  @type view :: :auto | :source | :diff
   @type card :: %{
           id: id(),
           function_id: String.t(),
@@ -356,24 +360,33 @@ defmodule Grasp.Session.Forest do
     end
   end
 
-  @doc "Shows `id` as its source or as its diff; unknown ids are ignored."
+  @doc "Picks how `id` is shown; unknown ids are ignored."
   @spec set_view(t(), id(), view()) :: t()
-  def set_view(%__MODULE__{} = forest, id, view) when view in [:source, :diff] do
+  def set_view(%__MODULE__{} = forest, id, view) when view in [:auto, :source, :diff] do
     case card(forest, id) do
       nil -> forest
       card -> put_card(forest, %{card | view: view})
     end
   end
 
-  @doc "Swaps `id` between its source and its diff."
+  @doc """
+  Swaps `id` between its source and its diff. Only a card with a diff is ever toggled, so
+  `:auto` counts as the diff it resolves to and flips to the source.
+  """
   @spec toggle_view(t(), id()) :: t()
   def toggle_view(%__MODULE__{} = forest, id) do
     case card(forest, id) do
       nil -> forest
       %{view: :source} -> set_view(forest, id, :diff)
-      %{view: :diff} -> set_view(forest, id, :source)
+      %{view: _diff_or_auto} -> set_view(forest, id, :source)
     end
   end
+
+  @doc "The view a card renders in: `:auto` becomes the diff when `diffable?`, else the source."
+  @spec effective_view(view(), boolean()) :: :source | :diff
+  def effective_view(:auto, true), do: :diff
+  def effective_view(:auto, false), do: :source
+  def effective_view(view, _diffable?), do: view
 
   @doc """
   Builds a graph from an ordered flat spec. A `parent_key` names an earlier entry, and the
@@ -468,7 +481,7 @@ defmodule Grasp.Session.Forest do
       collapsed: false,
       offset: {0, 0},
       highlight: nil,
-      view: :source
+      view: :auto
     }
 
     {%{forest | cards: Map.put(forest.cards, id, card), next_id: id + 1}, id}

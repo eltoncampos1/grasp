@@ -102,7 +102,9 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 /* A card is as wide as its widest line, up to a ceiling, so a column of one-line helpers
    does not reserve the width of the longest function on the canvas. */
 .card { cursor: auto; position: relative; width: max-content; min-width: 24rem; max-width: var(--card-max-width); flex: none; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-family: var(--mono); font-size: var(--code-size); }
-.card--focused { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus), var(--shadow); }
+.card--focused { border-color: var(--focus); box-shadow: 0 0 0 2px var(--focus), var(--shadow); animation: focus-pulse 700ms ease-out; }
+/* Replays whenever a card gains the class, so the eye is drawn to the card that was just picked. */
+@keyframes focus-pulse { from { box-shadow: 0 0 0 2px var(--focus), 0 0 0 14px color-mix(in srgb, var(--focus) 40%, transparent), var(--shadow); } to { box-shadow: 0 0 0 2px var(--focus), var(--shadow); } }
 .card__header { cursor: grab; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-s); padding: var(--space-s) var(--space-m); border-bottom: 1px solid var(--border); }
 .card__header > .card__tools, .card__header > .card__close { margin-inline-start: auto; }
 .badge { padding: 1px var(--space-s); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-family: var(--mono); font-size: 11px; white-space: nowrap; }

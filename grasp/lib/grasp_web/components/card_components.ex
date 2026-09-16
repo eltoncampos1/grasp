@@ -106,7 +106,7 @@ defmodule GraspWeb.CardComponents do
     # diff itself — a rebase, or a base ref that moved. Nothing is left to show, and the
     # toggle that would switch back is gone with the diff, so the card reads as source
     # again rather than reporting a view it is not in.
-    view = if diffable?, do: card.view, else: :source
+    view = Forest.effective_view(card.view, diffable?)
 
     highlight_opts = [
       card_id: card.id,

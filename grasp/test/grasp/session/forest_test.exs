@@ -345,9 +345,15 @@ defmodule Grasp.Session.ForestTest do
     end
   end
 
-  test "a card starts on its source and toggle_view/2 flips it back and forth" do
+  test "a card starts on :auto, which reads as the diff when there is one" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
 
+    assert Forest.card(forest, a).view == :auto
+    assert Forest.effective_view(:auto, true) == :diff
+    assert Forest.effective_view(:auto, false) == :source
+    assert Forest.effective_view(:source, true) == :source
+
+    forest = Forest.toggle_view(forest, a)
     assert Forest.card(forest, a).view == :source
 
     forest = Forest.toggle_view(forest, a)
@@ -382,7 +388,7 @@ defmodule Grasp.Session.ForestTest do
                  "id" => a,
                  "function_id" => "A.f/1",
                  "collapsed" => false,
-                 "view" => "source",
+                 "view" => "auto",
                  "highlight" => nil,
                  "callers" => [],
                  "callees" => [b]
