@@ -124,9 +124,12 @@ defmodule Grasp.Agent.Runner do
     {:noreply, broadcast(%{state | stream: stream, port: nil, buffer: "", running?: false})}
   end
 
-  # A port that was closed by `stop/1` can still have output or its exit status in flight, and
-  # trapping exits adds an `{:EXIT, port, _}` for every port that closes.
-  def handle_info(_message, state), do: {:noreply, state}
+  # Trapping exits turns a linked process's death into a message; only a port's is routine.
+  def handle_info({:EXIT, port, _reason}, state) when is_port(port), do: {:noreply, state}
+  def handle_info({:EXIT, _pid, reason}, state), do: {:stop, reason, state}
+
+  # A port that was closed by `stop/1` can still have output or its exit status in flight.
+  def handle_info({port, _payload}, state) when is_port(port), do: {:noreply, state}
 
   defp halt(%{port: nil} = state, _reason), do: state
 

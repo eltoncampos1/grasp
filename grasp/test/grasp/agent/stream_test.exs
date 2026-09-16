@@ -37,6 +37,12 @@ defmodule Grasp.Agent.StreamTest do
     assert state.entries == [%{type: :assistant, text: "one two three"}]
   end
 
+  test "a text block in a user event is not the agent speaking" do
+    echo = ~s({"type":"user","message":{"content":[{"type":"text","text":"show me greet"}]}})
+    state = fold([echo])
+    assert state.entries == []
+  end
+
   test "a non-JSON line goes to the log" do
     state = fold(["something went wrong on stderr", @init])
 
