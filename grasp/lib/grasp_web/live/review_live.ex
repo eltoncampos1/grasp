@@ -161,8 +161,9 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
-  def handle_event("chat_toggle", _params, socket),
-    do: {:noreply, update(socket, :chat_open?, &(not &1))}
+  def handle_event("chat_toggle", _params, socket) do
+    {:noreply, socket |> update(:chat_open?, &(not &1)) |> assign(chat_error: nil)}
+  end
 
   def handle_event("chat_send", %{"prompt" => prompt}, socket) when is_binary(prompt) do
     case String.trim(prompt) do

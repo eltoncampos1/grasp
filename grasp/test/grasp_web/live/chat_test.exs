@@ -12,6 +12,8 @@ defmodule GraspWeb.ChatTest do
     view |> element("#toggle-chat") |> render_click()
     refute has_element?(view, "#chat[hidden]")
     assert has_element?(view, "#chat input#chat-prompt")
+    view |> element("#toggle-chat") |> render_click()
+    assert has_element?(view, "#chat[hidden]")
   end
 
   test "sending a prompt streams the transcript into the panel", %{view: view, name: name} do

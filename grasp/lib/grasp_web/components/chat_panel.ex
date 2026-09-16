@@ -4,9 +4,10 @@ defmodule GraspWeb.ChatPanel do
 
   Everything it draws comes from the agent view the LiveView holds — whether the panel is
   open, the entries, whether a run is live — so a reload or a second tab rejoins the
-  conversation mid-run rather than starting from an empty box. The only thing the client
-  owns is the text being typed, which is why the input is uncontrolled and the `Chat` hook,
-  not a re-render, clears it after a submit.
+  conversation mid-run rather than starting from an empty box. The one thing the client owns
+  is the text being typed: the prompt carries `phx-update="ignore"` so that a patch landing
+  while it is unfocused — one arrives per line of CLI output — cannot reset a half-written
+  draft, and the `Chat` hook, not a re-render, clears it after a submit.
 
   A failed run is the one case where the transcript is not enough: the CLI explains itself
   on stderr, which the runner collects into `log`, so the log is offered beside an error.
@@ -20,9 +21,9 @@ defmodule GraspWeb.ChatPanel do
 
   def chat_panel(assigns) do
     ~H"""
-    <aside id="chat" class="chat" phx-hook="Chat" hidden={!@open?}>
-      <div class="chat__log" id="chat-log">
-        <%= for entry <- @agent.entries do %>
+    <aside id="chat" class="chat" phx-hook="Chat" hidden={!@open?} aria-label="Agent chat">
+      <div class="chat__log" id="chat-log" aria-live="polite">
+        <%= for entry <- @agent.entries, body(entry) != "" do %>
           <div class="msg" data-type={entry.type} data-status={entry[:status]}>{body(entry)}</div>
         <% end %>
       </div>
@@ -37,7 +38,9 @@ defmodule GraspWeb.ChatPanel do
           name="prompt"
           id="chat-prompt"
           autocomplete="off"
+          aria-label="Prompt"
           placeholder="Ask about a flow…"
+          phx-update="ignore"
         />
         <button type="submit" disabled={@agent.running?}>Send</button>
         <button :if={@agent.running?} type="button" phx-click="chat_stop">Stop</button>
@@ -49,7 +52,9 @@ defmodule GraspWeb.ChatPanel do
 
   # Assistant text keeps the line breaks the model wrote (`white-space: pre-wrap`), so the
   # body is one interpolation sitting flush against its tags: any indentation the template
-  # put around it would be indentation the reader sees.
+  # put around it would be indentation the reader sees. An entry with nothing to say — a
+  # result that reported no cost — is skipped rather than drawn as an empty row with a gap
+  # above it.
   defp body(%{type: :tool} = entry), do: String.trim("#{entry.name} #{entry.summary}")
   defp body(%{type: :done} = entry), do: done_text(entry)
   defp body(entry), do: entry.text
