@@ -193,6 +193,29 @@ defmodule Grasp.Session.ForestTest do
       assert Forest.replace(spec) == {:error, {:unknown_parent, "zzz"}}
     end
 
+    test "repeats a function under one parent instead of reusing the sibling" do
+      spec = [
+        %{key: "a", function_id: "A.f/1", parent_key: nil, opened_by: nil, highlight: nil},
+        %{key: "b1", function_id: "B.g/0", parent_key: "a", opened_by: nil, highlight: nil},
+        %{key: "b2", function_id: "B.g/0", parent_key: "a", opened_by: nil, highlight: nil}
+      ]
+
+      assert {:ok, forest} = Forest.replace(spec)
+      assert Forest.card(forest, 1).children == [2, 3]
+      assert Forest.card(forest, 3).function_id == "B.g/0"
+    end
+
+    test "a repeated key points at its last entry" do
+      spec = [
+        %{key: "a", function_id: "A.f/1", parent_key: nil, opened_by: nil, highlight: nil},
+        %{key: "a", function_id: "C.h/0", parent_key: nil, opened_by: nil, highlight: nil},
+        %{key: "b", function_id: "B.g/0", parent_key: "a", opened_by: nil, highlight: nil}
+      ]
+
+      assert {:ok, forest} = Forest.replace(spec)
+      assert Forest.card(forest, 3).parent_id == 2
+    end
+
     test "an empty spec is an empty forest" do
       assert {:ok, %Forest{roots: [], cards: %{}, focus: nil}} = Forest.replace([])
     end
