@@ -338,15 +338,23 @@ element.
 
 Zoom out past 0.6 and the canvas reads semantically rather than optically: the hook puts
 `grasp-far` on `<body>`, and every card drops its body, its "Also calls" footer, its title,
-its badges, its stats and its tools, keeping one line — the function's head, which
-`CardComponents.signature/1` takes from the record's source (the first `def`, `defp`,
-`defmacro`, `defguard` or `defdelegate` line, past whatever `@doc` and `@spec` sit above it,
-without its trailing `do`), falling back to `Mod.fun/arity` for a stub or a record with no
-definition in it. That line and a group's title are sized as `14px / --zoom`, `--zoom` being
-the scale the hook writes on the stage beside the transform, so they hold their size on
-screen while everything around them shrinks; the card's width floor and ceiling go with the
-body, leaving each card exactly as wide as its signature. The header stays, emptied, because
-its tint is what marks a removed function.
+its badges, its stats, its tools and, on a stub, its prose and its hexdocs link, keeping one
+line — the function's head, which `CardComponents.signature/1` takes from the record's source
+(the first line opening with any of `def`, `defp`, `defmacro`, `defmacrop`, `defguard`,
+`defguardp` or `defdelegate`, past whatever `@doc` and `@spec` sit above it, without its
+trailing `do`), falling back to `Mod.fun/arity` for a stub or a record with no definition in
+it. That line and a section's header are sized as `--far-size / --zoom` — 14px divided by the
+scale the hook writes on the stage beside the transform — so they measure 14px on screen at
+every zoom while everything around them shrinks. The card's width floor and ceiling go with
+the body, leaving each card exactly as wide as its signature; the header stays, emptied,
+because its tint is what marks a removed function. Nothing in a far-out card is clickable:
+the close button goes with the tools, so acting on a card means zooming back in to it.
+
+Because the class decides how big the cards are, "fit" fits in two passes: the first applies
+a scale and so lays out the canvas the second measures. Two passes that land on opposite
+sides of the threshold have no fixed point — each scale produces the box the other measured —
+so the fit is pinned at the threshold, the one scale both layouts agree on, rather than
+alternating between them on repeated presses.
 
 Each card carries a persistent offset from its automatic position, set by dragging its
 header or by Ctrl-dragging anywhere on it. The drag shows an inline translate at once and

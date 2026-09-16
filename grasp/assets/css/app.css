@@ -39,6 +39,8 @@
   --diff-del-fg: #cf222e;
   --sidebar-width: 18rem;
   --code-size: 13px;
+  /* What a counter-scaled label measures on screen at any zoom: see body.grasp-far. */
+  --far-size: 14px;
   --code-leading: 1.45;
   --mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
   --sans: system-ui, sans-serif;
@@ -175,14 +177,18 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
    held at a legible size says more than a whole body rendered too small to read. The
    counter-scaling divides by --zoom, which the hook writes on #stage beside the transform,
    so each of these rules has to match inside the stage to see it. */
-body.grasp-far #stage .card__body, body.grasp-far #stage .card__also, body.grasp-far #stage .card__tools, body.grasp-far #stage .card__title, body.grasp-far #stage .card__stats, body.grasp-far #stage .badge { display: none; }
-body.grasp-far #stage .card__signature { display: block; font-size: calc(14px / var(--zoom, 1)); padding: calc(var(--space-s) / var(--zoom, 1)) calc(var(--space-m) / var(--zoom, 1)); }
+body.grasp-far #stage .card__body, body.grasp-far #stage .card__also, body.grasp-far #stage .card__tools, body.grasp-far #stage .card__title, body.grasp-far #stage .card__stats, body.grasp-far #stage .badge, body.grasp-far #stage .stub__text, body.grasp-far #stage .stub__docs, body.grasp-far #stage .card__close { display: none; }
+body.grasp-far #stage .card__signature { display: block; font-size: calc(var(--far-size) / var(--zoom, 1)); padding: calc(var(--space-s) / var(--zoom, 1)) calc(var(--space-m) / var(--zoom, 1)); }
 /* Nothing inside the card asks for width any more, so the ceiling and the floor both go and
    the card is exactly as wide as its signature. */
 body.grasp-far #stage .card { min-width: 0; max-width: none; }
-/* The header is emptied rather than hidden: its tint is what marks a removed function. */
+/* The header is emptied rather than hidden: its tint is what marks a removed function. Its
+   buttons go with the rest — a stub's close sits in the header rather than in .card__tools,
+   so it is named here to keep every card one line and no card half-interactive. */
 body.grasp-far #stage .card__header { padding-block: calc(var(--space-xs) / var(--zoom, 1)); }
-body.grasp-far #stage .flow__title h3 { font-size: calc(14px / var(--zoom, 1)); }
+/* The whole section header holds its size, not only the heading: a legible title beside a
+   3px card count and a 3px ungroup button would be the same unreadability one step along. */
+body.grasp-far #stage .flow__title, body.grasp-far #stage .flow__title h3 { font-size: calc(var(--far-size) / var(--zoom, 1)); }
 
 .palette-backdrop { position: fixed; inset: 0; background: var(--backdrop); z-index: 9; }
 .palette { position: fixed; inset-block-start: 12vh; inset-inline: 0; margin-inline: auto; z-index: 10; width: min(48rem, 90vw); padding: 0; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); background: var(--bg-raised); color: var(--fg); }

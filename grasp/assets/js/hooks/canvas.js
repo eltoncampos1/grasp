@@ -22,7 +22,8 @@ const MAX_SCALE = 2.5
 const FAR_SCALE = 0.6
 const DRAG_THRESHOLD = 4
 const MARGIN = 24
-// Half a card header, so an edge arrives at the callee's title rather than at its corner.
+// Half a card header near 1:1, so an edge arrives at the callee's title rather than at
+// its corner; far out the header is a thin strip and the port lands just under it.
 const PORT_Y = 18
 // A Ctrl-drag's release is still a context-menu gesture; long enough to cover the menu the
 // browser opens just after the drag has ended.
@@ -120,7 +121,13 @@ const Canvas = {
     // The scale is published as a custom property so the far-out rules can divide by it and
     // keep a signature the same size on screen; the class lives on <body>, which the server
     // never renders, so a patch mid-gesture cannot drop it.
-    document.body.classList.toggle("grasp-far", scale < FAR_SCALE)
+    const far = scale < FAR_SCALE
+    if (document.body.classList.contains("grasp-far") !== far) {
+      document.body.classList.toggle("grasp-far", far)
+      // Every card changes size on the flip, so every edge now ends somewhere else. The
+      // stage's ResizeObserver only reports that when the stage's own box moves with them.
+      this.drawConnectors()
+    }
     if (this.zoomLevel) this.zoomLevel.textContent = `${Math.round(scale * 100)}%`
   },
 
@@ -264,11 +271,32 @@ const Canvas = {
     this.applyView()
   },
 
+  // A fit that crosses the far threshold measures one layout and lands in another, because
+  // the scale it picks is what decides how big the cards are. The first pass puts that
+  // layout on screen, so a second one measures the box the chosen scale actually produces —
+  // one is enough, since a pass that does not cross the threshold is already a fixed point.
+  // Two passes that land on opposite sides of it have none: each scale lays the canvas out
+  // into the box the other measured, which is what makes repeated presses alternate. The
+  // threshold itself is the one scale both layouts agree on, so the fit is pinned there.
+  // The pan the second pass computed is kept rather than fitted a third time: it is out by
+  // the stage's own padding times the change in scale, which is a few pixels.
   fit() {
+    const first = this.fitOnce()
+    if (first === null) return
+    const second = this.fitOnce()
+    if (second !== null && (first < FAR_SCALE) !== (second < FAR_SCALE)) {
+      this.view.scale = FAR_SCALE
+      this.applyView()
+    }
+  },
+
+  // Fits the cards as they are laid out at this moment, answering the scale it applied, or
+  // null when there is nothing on the canvas to fit.
+  fitOnce() {
     const cards = Array.from(this.el.querySelectorAll(".card"))
-    if (cards.length === 0) return
+    if (cards.length === 0) return null
     const box = this.stageBox(cards)
-    if (!(box.width > 0) || !(box.height > 0)) return
+    if (!(box.width > 0) || !(box.height > 0)) return null
     const r = this.el.getBoundingClientRect()
     const scale = Math.min(
       MAX_SCALE,
@@ -279,6 +307,7 @@ const Canvas = {
     )
     this.view = {x: MARGIN - box.left * scale, y: MARGIN - box.top * scale, scale}
     this.applyView()
+    return scale
   },
 
   // Bounding box of elements in unscaled stage coordinates.
@@ -306,8 +335,12 @@ const Canvas = {
     const card = document.getElementById(`card-${id}`)
     if (!card) return
     // A card carrying a highlight is revealed at what it points at, which on a long body
-    // is nowhere near the card's own top-left corner.
-    const target = card.querySelector('[data-highlight="true"]') || card
+    // is nowhere near the card's own top-left corner. Far out the body is not displayed and
+    // the marked span has no box at all; a rect of zeros reads as the viewport's own corner
+    // and would pan the canvas away from the card rather than onto it.
+    const marked = card.querySelector('[data-highlight="true"]')
+    const markedBox = marked && marked.getBoundingClientRect()
+    const target = markedBox && (markedBox.width || markedBox.height) ? marked : card
     const r = this.el.getBoundingClientRect()
     const b = target.getBoundingClientRect()
     let dx = 0,
