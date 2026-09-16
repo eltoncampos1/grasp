@@ -48,6 +48,25 @@ defmodule GraspWeb.MCPTest do
     assert conn.resp_body == "forbidden"
   end
 
+  test "host and origin checks ignore case, and a refusal is plain text", %{conn: conn} do
+    conn =
+      %{conn | host: "LOCALHOST"}
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("accept", "application/json, text/event-stream")
+      |> put_req_header("origin", "http://LocalHost:4040")
+      |> post("/mcp", Jason.encode!(%{"jsonrpc" => "2.0", "id" => 1, "method" => "tools/list"}))
+
+    refute conn.status == 403
+
+    conn =
+      %{Phoenix.ConnTest.build_conn() | host: "evil.example"}
+      |> put_req_header("content-type", "application/json")
+      |> post("/mcp", "{}")
+
+    assert conn.status == 403
+    assert ["text/plain" <> _] = get_resp_header(conn, "content-type")
+  end
+
   test "the review page is served to any host", %{conn: conn} do
     assert %{conn | host: "evil.example"} |> get("/") |> html_response(200)
   end
