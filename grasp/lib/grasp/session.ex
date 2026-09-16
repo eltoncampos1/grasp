@@ -92,6 +92,22 @@ defmodule Grasp.Session do
   @spec reset_offsets(name()) :: Forest.t()
   def reset_offsets(name), do: mutate(name, &Forest.reset_offsets/1)
 
+  @doc """
+  Puts `card_ids` into the group titled `title`, creating it when nothing carries that title
+  yet. Each card leaves whatever group it was in, and a group left with no members is gone.
+  """
+  @spec group_cards(name(), String.t(), [Forest.id()]) :: Forest.t()
+  def group_cards(name, title, card_ids),
+    do: mutate(name, &Forest.group_cards(&1, title, card_ids))
+
+  @doc "Takes `card_ids` out of their groups, deleting a group left with no members."
+  @spec ungroup_cards(name(), [Forest.id()]) :: Forest.t()
+  def ungroup_cards(name, card_ids), do: mutate(name, &Forest.ungroup_cards(&1, card_ids))
+
+  @doc "Deletes `group_id`, leaving its cards in the graph with no group."
+  @spec dissolve_group(name(), Forest.group_id()) :: Forest.t()
+  def dissolve_group(name, group_id), do: mutate(name, &Forest.dissolve_group(&1, group_id))
+
   @doc "Moves focus in `direction`."
   @spec move_focus(name(), Forest.direction()) :: Forest.t()
   def move_focus(name, direction), do: mutate(name, &Forest.move_focus(&1, direction))

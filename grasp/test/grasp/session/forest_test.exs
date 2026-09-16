@@ -390,6 +390,7 @@ defmodule Grasp.Session.ForestTest do
                  "collapsed" => false,
                  "view" => "auto",
                  "highlight" => nil,
+                 "group" => nil,
                  "callers" => [],
                  "callees" => [b]
                },
@@ -399,13 +400,182 @@ defmodule Grasp.Session.ForestTest do
                  "collapsed" => false,
                  "view" => "diff",
                  "highlight" => %{"call" => "C.h/0"},
+                 "group" => nil,
                  "callers" => [a],
                  "callees" => []
                }
              ],
              "edges" => [%{"from" => a, "to" => b, "target" => "B.g/0", "color" => 0}],
-             "columns" => [[a], [b]]
+             "columns" => [[a], [b]],
+             "groups" => [],
+             "sections" => [%{"group" => nil, "columns" => [[a], [b]]}]
            }
+  end
+
+  describe "groups" do
+    test "group_cards/3 creates a group, reuses it by title and moves a card between groups" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, b} = Forest.open_child(forest, a, "B.g/0")
+      {forest, c} = Forest.open_child(forest, a, "C.h/2")
+
+      {forest, flow} = Forest.group_cards(forest, "Flow", [a])
+      {forest, same} = Forest.group_cards(forest, "Flow", [b])
+
+      assert same == flow
+      assert Forest.group_of(forest, a) == %{id: flow, title: "Flow"}
+      assert Forest.group_of(forest, b) == %{id: flow, title: "Flow"}
+      assert Forest.group_of(forest, c) == nil
+      assert Forest.group_of(forest, 999) == nil
+      assert Forest.card(forest, a).group == flow
+      assert Forest.card(forest, c).group == nil
+
+      {forest, edges} = Forest.group_cards(forest, "Edges", [b])
+
+      assert edges != flow
+      assert Forest.group_of(forest, b) == %{id: edges, title: "Edges"}
+      assert forest.groups |> Map.keys() |> Enum.sort() == Enum.sort([flow, edges])
+    end
+
+    test "group_cards/3 ignores unknown ids and deletes a group left empty" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, flow} = Forest.group_cards(forest, "Flow", [a, 999])
+
+      assert Map.keys(forest.groups) == [flow]
+      assert map_size(forest.cards) == 1
+
+      {forest, edges} = Forest.group_cards(forest, "Edges", [a])
+
+      assert Map.keys(forest.groups) == [edges]
+      assert Forest.group_of(forest, a).title == "Edges"
+    end
+
+    test "ungroup_cards/2 and dissolve_group/2 take cards out and delete the empty group" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, b} = Forest.open_child(forest, a, "B.g/0")
+      {forest, flow} = Forest.group_cards(forest, "Flow", [a, b])
+
+      ungrouped = Forest.ungroup_cards(forest, [a, 999])
+
+      assert Forest.group_of(ungrouped, a) == nil
+      assert Forest.group_of(ungrouped, b).id == flow
+      assert Map.keys(ungrouped.groups) == [flow]
+      assert ungrouped |> Forest.ungroup_cards([b]) |> Map.fetch!(:groups) == %{}
+
+      dissolved = Forest.dissolve_group(forest, flow)
+
+      assert dissolved.groups == %{}
+      assert Forest.group_of(dissolved, a) == nil
+      assert Forest.group_of(dissolved, b) == nil
+      assert Forest.dissolve_group(forest, 999) == forest
+    end
+
+    test "sections/1 lays every group out on its own, ungrouped cards last" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, b} = Forest.open_child(forest, a, "B.g/0")
+      {forest, c} = Forest.open_root(forest, "C.h/2")
+      {forest, d} = Forest.open_child(forest, c, "D.i/0")
+      {forest, flow} = Forest.group_cards(forest, "Flow", [c, d])
+
+      assert flow == 1
+
+      assert Forest.sections(forest) == [
+               %{group: %{id: flow, title: "Flow"}, columns: [[c], [d]]},
+               %{group: nil, columns: [[a], [b]]}
+             ]
+
+      assert Forest.layout(forest) == [[c], [d], [a], [b]]
+      assert Forest.columns_of(forest) == %{c => 0, d => 1, a => 0, b => 1}
+      assert Forest.depth(forest, b) == 1
+      assert Forest.sections(Forest.new()) == []
+    end
+
+    test "sections/1 makes a member its own source when every caller sits outside" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, b} = Forest.open_child(forest, a, "B.g/0")
+      {forest, _flow} = Forest.group_cards(forest, "Flow", [b])
+
+      assert [%{group: %{title: "Flow"}, columns: [[^b]]}, %{group: nil, columns: [[^a]]}] =
+               Forest.sections(forest)
+
+      assert Forest.depth(forest, b) == 0
+    end
+
+    test "move_focus/2 stays inside the focused card's section" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, b} = Forest.open_root(forest, "B.g/0")
+      {forest, c} = Forest.open_root(forest, "C.h/2")
+      {forest, _flow} = Forest.group_cards(forest, "Flow", [c])
+
+      assert Forest.layout(forest) == [[c], [a, b]]
+      assert forest |> Forest.focus(c) |> Forest.move_focus(:next) |> Map.fetch!(:focus) == c
+      assert forest |> Forest.focus(a) |> Forest.move_focus(:next) |> Map.fetch!(:focus) == b
+    end
+
+    test "closing the last member of a group deletes the group" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, b} = Forest.open_child(forest, a, "B.g/0")
+      {forest, c} = Forest.open_child(forest, b, "C.h/2")
+      {forest, flow} = Forest.group_cards(forest, "Flow", [b, c])
+
+      kept = Forest.close(forest, b)
+
+      assert Map.keys(kept.groups) == [flow]
+      assert Forest.group_of(kept, c).id == flow
+      assert kept |> Forest.close(c) |> Map.fetch!(:groups) == %{}
+      assert forest |> Forest.close_chain(b) |> Map.fetch!(:groups) == %{}
+      assert Forest.group_of(Forest.close(forest, b), a) == nil
+    end
+
+    test "replace/1 groups cards by title, in first-appearance order" do
+      spec = [
+        spec("a", "A.f/1", nil, nil),
+        spec("b", "B.g/0", "a", "Writes"),
+        spec("c", "C.h/2", "a", "Reads"),
+        spec("d", "D.i/0", "c", "Writes")
+      ]
+
+      assert {:ok, forest} = Forest.replace(spec)
+      assert forest.groups == %{1 => %{id: 1, title: "Writes"}, 2 => %{id: 2, title: "Reads"}}
+      assert Forest.group_of(forest, 1) == nil
+      assert Forest.group_of(forest, 2).title == "Writes"
+      assert Forest.group_of(forest, 4).title == "Writes"
+
+      assert Forest.sections(forest) == [
+               %{group: %{id: 1, title: "Writes"}, columns: [[2, 4]]},
+               %{group: %{id: 2, title: "Reads"}, columns: [[3]]},
+               %{group: nil, columns: [[1]]}
+             ]
+    end
+
+    test "to_map/1 carries each card's group, the groups and the sections" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, b} = Forest.open_child(forest, a, "B.g/0")
+      {forest, flow} = Forest.group_cards(forest, "Flow", [b])
+
+      map = Forest.to_map(forest)
+
+      assert Enum.map(map["cards"], & &1["group"]) == [nil, flow]
+      assert map["groups"] == [%{"id" => flow, "title" => "Flow", "cards" => [b]}]
+
+      assert map["sections"] == [
+               %{"group" => flow, "columns" => [[b]]},
+               %{"group" => nil, "columns" => [[a]]}
+             ]
+
+      assert map["columns"] == [[b], [a]]
+    end
+  end
+
+  # A `replace/1` entry with nothing to say about call targets or highlights.
+  defp spec(key, function_id, parent_key, group) do
+    %{
+      key: key,
+      function_id: function_id,
+      parent_key: parent_key,
+      opened_by: nil,
+      highlight: nil,
+      group: group
+    }
   end
 
   # S calls X and C; X calls H, which also calls C. Collapsing X hides H alone: C keeps its

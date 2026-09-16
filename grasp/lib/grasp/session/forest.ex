@@ -28,6 +28,17 @@ defmodule Grasp.Session.Forest do
   its callers in the column immediately left, so an edge crosses as little as possible. A
   card whose callers all sit further left has no mean and sorts last, by id.
 
+  ## Groups
+
+  A card belongs to at most one titled group, and a group is laid out on its own: `sections/1`
+  runs the column algorithm over one group's visible cards at a time, seeing only the edges
+  between them, so a member every caller of which sits in another section starts at column 0
+  of its own. The sections read in group-id order and the cards in no group make a last,
+  untitled one; `layout/1` is those sections flattened, which is why a column in it never
+  mixes two sections and `depth/2` counts columns from the start of the card's own section.
+  A group is a name over cards and nothing else: it changes no edge, hides nothing, and is
+  deleted the moment its last member leaves or is closed.
+
   ## Collapse
 
   Collapsing a card hides what only that card reaches. `hidden/1` walks from the sources
@@ -40,7 +51,13 @@ defmodule Grasp.Session.Forest do
   something it reached, and stays even when a cycle puts it downstream as well.
   """
 
-  defstruct cards: %{}, edges: [], focus: nil, next_id: 1, next_color: 0
+  defstruct cards: %{},
+            edges: [],
+            groups: %{},
+            focus: nil,
+            next_id: 1,
+            next_color: 0,
+            next_group: 1
 
   @palette_size 8
 
@@ -62,8 +79,17 @@ defmodule Grasp.Session.Forest do
           collapsed: boolean(),
           offset: {integer(), integer()},
           highlight: highlight(),
-          view: view()
+          view: view(),
+          group: group_id() | nil
         }
+  @type group_id :: pos_integer()
+  @typedoc "A titled group of cards, laid out as a section of its own."
+  @type group :: %{id: group_id(), title: String.t()}
+  @typedoc """
+  One group's cards in columns, or the ungrouped cards when `group` is nil. `columns` holds
+  only the section's own visible cards.
+  """
+  @type section :: %{group: group() | nil, columns: [[id()]]}
   @typedoc """
   A call from one card to another: `target` is the caller's own spelling of the call, and
   `color` indexes the eight-colour palette the renderer paints the edge and its call site
@@ -77,26 +103,36 @@ defmodule Grasp.Session.Forest do
   edges.
   """
   @type spec :: %{
-          key: String.t(),
-          function_id: String.t(),
-          parent_key: String.t() | nil,
-          opened_by: String.t() | nil,
-          highlight: highlight()
+          :key => String.t(),
+          :function_id => String.t(),
+          :parent_key => String.t() | nil,
+          :opened_by => String.t() | nil,
+          :highlight => highlight(),
+          optional(:group) => String.t() | nil
         }
   @type t :: %__MODULE__{
           cards: %{id() => card()},
           edges: [edge()],
+          groups: %{group_id() => group()},
           focus: id() | nil,
           next_id: id(),
-          next_color: non_neg_integer()
+          next_color: non_neg_integer(),
+          next_group: group_id()
         }
   @type direction :: :parent | :child | :next | :prev
   @typedoc "A card as `to_map/1` writes it: its own fields, plus the ids at the far end of its edges."
   @type card_map :: %{String.t() => id() | String.t() | boolean() | highlight() | [id()]}
   @typedoc "An edge as `to_map/1` writes it: its ends, the call target and the palette index."
   @type edge_map :: %{String.t() => id() | String.t() | non_neg_integer()}
-  @typedoc "The whole graph as `to_map/1` writes it: focus, cards, edges and columns."
-  @type graph_map :: %{String.t() => id() | nil | [card_map()] | [edge_map()] | [[id()]]}
+  @typedoc "A group as `to_map/1` writes it: its id, its title and the cards in it."
+  @type group_map :: %{String.t() => group_id() | String.t() | [id()]}
+  @typedoc "A section as `to_map/1` writes it: the group it belongs to, and its columns."
+  @type section_map :: %{String.t() => group_id() | nil | [[id()]]}
+  @typedoc "The whole graph as `to_map/1` writes it: focus, cards, edges, groups and columns."
+  @type graph_map :: %{
+          String.t() =>
+            id() | nil | [card_map()] | [edge_map()] | [group_map()] | [section_map()] | [[id()]]
+        }
 
   @doc "An empty graph."
   @spec new() :: t()
@@ -257,6 +293,41 @@ defmodule Grasp.Session.Forest do
     end
   end
 
+  @doc """
+  Puts every card in `ids` into the group titled `title`, creating it when no group carries
+  that title. Returns the group's id.
+
+  A card belongs to one group, so a card already in another leaves it; unknown ids are
+  ignored, and a group whose last member has left is deleted. A call naming no card the
+  graph knows therefore leaves no group behind, though its id is spent: group ids are never
+  reused.
+  """
+  @spec group_cards(t(), String.t(), [id()]) :: {t(), group_id()}
+  def group_cards(%__MODULE__{} = forest, title, ids) when is_binary(title) and is_list(ids) do
+    {forest, group_id} = find_or_add_group(forest, title)
+    {forest |> regroup(ids, group_id) |> prune_groups(), group_id}
+  end
+
+  @doc "Takes every card in `ids` out of its group, deleting a group left with no members."
+  @spec ungroup_cards(t(), [id()]) :: t()
+  def ungroup_cards(%__MODULE__{} = forest, ids) when is_list(ids),
+    do: forest |> regroup(ids, nil) |> prune_groups()
+
+  @doc "Deletes `group_id`, leaving its members in the graph with no group."
+  @spec dissolve_group(t(), group_id()) :: t()
+  def dissolve_group(%__MODULE__{} = forest, group_id) do
+    forest |> regroup(members(forest, group_id), nil) |> prune_groups()
+  end
+
+  @doc "The group `id` belongs to; nil when it belongs to none, or is not a known card."
+  @spec group_of(t(), id()) :: group() | nil
+  def group_of(%__MODULE__{} = forest, id) do
+    case card(forest, id) do
+      %{group: group_id} when is_integer(group_id) -> Map.get(forest.groups, group_id)
+      _ungrouped_or_unknown -> nil
+    end
+  end
+
   @doc "The cards calling `id`, in the order their edges were opened."
   @spec callers(t(), id()) :: [id()]
   def callers(%__MODULE__{} = forest, id),
@@ -274,41 +345,54 @@ defmodule Grasp.Session.Forest do
   end
 
   @doc """
-  The visible cards in columns, callers left of what they call and each column in row
-  order.
+  The visible cards as one section per group, in group-id order, then the cards in no group.
+
+  A section is laid out on its own: the columns come from its own cards and the edges
+  between them, so a member reached only from another section heads a column of its own.
+  The last section is left out when every visible card belongs to a group; a group keeps its
+  section even when a collapse elsewhere hides all its members, and reads as having no
+  columns at all.
   """
-  @spec layout(t()) :: [[id()]]
-  def layout(%__MODULE__{} = forest) do
+  @spec sections(t()) :: [section()]
+  def sections(%__MODULE__{} = forest) do
     visible = MapSet.difference(id_set(forest), hidden(forest))
+    members = Enum.group_by(visible, &card(forest, &1).group)
 
-    columns =
-      forest
-      |> sources(visible)
-      |> Enum.reduce(%{}, &column(forest, visible, &1, 0, MapSet.new(), &2))
-      |> Enum.group_by(fn {_id, column} -> column end, fn {id, _column} -> id end)
+    sections =
+      forest.groups
+      |> Map.values()
+      |> Enum.sort_by(& &1.id)
+      |> Enum.map(&%{group: &1, columns: columns(forest, Map.get(members, &1.id, []))})
 
-    columns
-    |> Map.keys()
-    |> Enum.sort()
-    |> Enum.reduce([], &order(forest, columns, &1, &2))
-    |> Enum.reverse()
+    case Map.get(members, nil, []) do
+      [] -> sections
+      ungrouped -> sections ++ [%{group: nil, columns: columns(forest, ungrouped)}]
+    end
   end
 
   @doc """
-  Every visible card's column index, for a caller that would otherwise ask `depth/2` once
-  per card and lay the whole graph out again each time.
+  The visible cards in columns, callers left of what they call and each column in row
+  order: the sections one after another, so a column belongs to one section only.
+  """
+  @spec layout(t()) :: [[id()]]
+  def layout(%__MODULE__{} = forest), do: forest |> sections() |> Enum.flat_map(& &1.columns)
+
+  @doc """
+  Every visible card's column index within its own section, for a caller that would
+  otherwise ask `depth/2` once per card and lay the whole graph out again each time.
   """
   @spec columns_of(t()) :: %{id() => non_neg_integer()}
   def columns_of(%__MODULE__{} = forest) do
-    forest
-    |> layout()
-    |> Enum.with_index()
-    |> Enum.reduce(%{}, fn {ids, index}, columns ->
-      Enum.reduce(ids, columns, &Map.put(&2, &1, index))
+    Enum.reduce(sections(forest), %{}, fn section, columns ->
+      section.columns
+      |> Enum.with_index()
+      |> Enum.reduce(columns, fn {ids, index}, columns ->
+        Enum.reduce(ids, columns, &Map.put(&2, &1, index))
+      end)
     end)
   end
 
-  @doc "The column `id` is laid out in; 0 when it is hidden or unknown."
+  @doc "The column `id` is laid out in inside its section; 0 when it is hidden or unknown."
   @spec depth(t(), id()) :: non_neg_integer()
   def depth(%__MODULE__{} = forest, id), do: Map.get(columns_of(forest), id, 0)
 
@@ -395,6 +479,9 @@ defmodule Grasp.Session.Forest do
   Entries naming the same function describe one card, so a spec listing a helper under each
   of its callers draws one card with an edge from each, and the card keeps the highlight of
   whichever entry asked for one.
+
+  An entry's `group` is a title rather than an id: entries carrying the same title land in
+  one group, and the groups are created in the order the titles first appear.
   """
   @spec replace([spec()]) :: {:ok, t()} | {:error, {:unknown_parent, String.t()}}
   def replace(specs) when is_list(specs) do
@@ -404,6 +491,7 @@ defmodule Grasp.Session.Forest do
           # A later entry for the same function marks nothing of its own, so the highlight
           # an earlier entry asked for survives the card being named again.
           forest = if spec.highlight, do: set_highlight(forest, id, spec.highlight), else: forest
+          forest = join_group(forest, id, Map.get(spec, :group))
           {:cont, {:ok, forest, Map.put(keys, spec.key, id), first || id}}
 
         {:error, _reason} = error ->
@@ -419,9 +507,10 @@ defmodule Grasp.Session.Forest do
   @doc """
   The graph as plain maps with string keys, the shape the MCP tools return.
 
-  Cards read in id order and carry the ids they call and are called by; `edges` and
-  `columns` describe only what is visible, so a collapsed card's hidden part is absent from
-  both.
+  Cards read in id order and carry the ids they call and are called by; `edges`, `columns`
+  and `sections` describe only what is visible, so a collapsed card's hidden part is absent
+  from all three. `groups` reads in id order and names every member, hidden ones included,
+  because a group is a fact about the cards rather than about the layout.
   """
   @spec to_map(t()) :: graph_map()
   def to_map(%__MODULE__{} = forest) do
@@ -436,6 +525,7 @@ defmodule Grasp.Session.Forest do
           "collapsed" => card.collapsed,
           "view" => Atom.to_string(card.view),
           "highlight" => card.highlight,
+          "group" => card.group,
           "callers" => callers(forest, card.id),
           "callees" => callees(forest, card.id)
         }
@@ -446,7 +536,88 @@ defmodule Grasp.Session.Forest do
         %{"from" => edge.from, "to" => edge.to, "target" => edge.target, "color" => edge.color}
       end)
 
-    %{"focus" => forest.focus, "cards" => cards, "edges" => edges, "columns" => layout(forest)}
+    groups =
+      forest.groups
+      |> Map.values()
+      |> Enum.sort_by(& &1.id)
+      |> Enum.map(
+        &%{"id" => &1.id, "title" => &1.title, "cards" => forest |> members(&1.id) |> Enum.sort()}
+      )
+
+    sections = sections(forest)
+
+    %{
+      "focus" => forest.focus,
+      "cards" => cards,
+      "edges" => edges,
+      "groups" => groups,
+      "sections" =>
+        Enum.map(sections, &%{"group" => &1.group && &1.group.id, "columns" => &1.columns}),
+      "columns" => Enum.flat_map(sections, & &1.columns)
+    }
+  end
+
+  # The column algorithm over `ids` alone: a card is a source when no caller of it is in
+  # `ids`, so a section reads as if the rest of the graph were not there.
+  defp columns(forest, ids) do
+    ids = MapSet.new(ids)
+
+    columns =
+      forest
+      |> sources(ids)
+      |> Enum.reduce(%{}, &column(forest, ids, &1, 0, MapSet.new(), &2))
+      |> Enum.group_by(fn {_id, column} -> column end, fn {id, _column} -> id end)
+
+    columns
+    |> Map.keys()
+    |> Enum.sort()
+    |> Enum.reduce([], &order(forest, columns, &1, &2))
+    |> Enum.reverse()
+  end
+
+  defp find_or_add_group(forest, title) do
+    case Enum.find(forest.groups, fn {_id, group} -> group.title == title end) do
+      {id, _group} ->
+        {forest, id}
+
+      nil ->
+        id = forest.next_group
+        group = %{id: id, title: title}
+        {%{forest | groups: Map.put(forest.groups, id, group), next_group: id + 1}, id}
+    end
+  end
+
+  defp regroup(forest, ids, group_id) do
+    cards =
+      Enum.reduce(ids, forest.cards, fn id, cards ->
+        case Map.fetch(cards, id) do
+          {:ok, card} -> Map.put(cards, id, %{card | group: group_id})
+          :error -> cards
+        end
+      end)
+
+    %{forest | cards: cards}
+  end
+
+  defp members(forest, group_id),
+    do: for({id, %{group: ^group_id}} <- forest.cards, do: id)
+
+  defp prune_groups(forest) do
+    taken = MapSet.new(Map.values(forest.cards), & &1.group)
+
+    %{
+      forest
+      | groups: Map.filter(forest.groups, fn {id, _group} -> MapSet.member?(taken, id) end)
+    }
+  end
+
+  # An entry naming no group says nothing about the card's group, the way an entry with no
+  # highlight leaves standing the one an earlier entry asked for.
+  defp join_group(forest, _id, nil), do: forest
+
+  defp join_group(forest, id, title) do
+    {forest, _group_id} = group_cards(forest, title, [id])
+    forest
   end
 
   defp open(forest, _keys, %{parent_key: nil} = spec) do
@@ -481,7 +652,8 @@ defmodule Grasp.Session.Forest do
       collapsed: false,
       offset: {0, 0},
       highlight: nil,
-      view: :auto
+      view: :auto,
+      group: nil
     }
 
     {%{forest | cards: Map.put(forest.cards, id, card), next_id: id + 1}, id}
@@ -506,7 +678,7 @@ defmodule Grasp.Session.Forest do
   defp drop(forest, ids) do
     dropped = MapSet.new(ids)
 
-    %{
+    prune_groups(%{
       forest
       | cards: Map.drop(forest.cards, ids),
         edges:
@@ -514,7 +686,7 @@ defmodule Grasp.Session.Forest do
             forest.edges,
             &(MapSet.member?(dropped, &1.from) or MapSet.member?(dropped, &1.to))
           )
-    }
+    })
   end
 
   defp refocus_after(forest, before, id) do

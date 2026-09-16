@@ -56,7 +56,8 @@ defmodule Grasp.MCP.SessionToolsTest do
                "callees" => [],
                "collapsed" => false,
                "view" => "auto",
-               "highlight" => %{"call" => @wrap}
+               "highlight" => %{"call" => @wrap},
+               "group" => nil
              }
 
       assert body["edges"] == [
@@ -251,7 +252,14 @@ defmodule Grasp.MCP.SessionToolsTest do
       session: session
     } do
       assert json!(run(Tools.GetSession, %{session: session})) ==
-               %{"focus" => nil, "cards" => [], "edges" => [], "columns" => []}
+               %{
+                 "focus" => nil,
+                 "cards" => [],
+                 "edges" => [],
+                 "groups" => [],
+                 "sections" => [],
+                 "columns" => []
+               }
     end
 
     test "an unknown card is an error for both", %{session: session} do

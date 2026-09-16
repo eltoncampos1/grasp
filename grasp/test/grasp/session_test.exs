@@ -139,6 +139,36 @@ defmodule Grasp.SessionTest do
     assert Session.get(name) == forest
   end
 
+  test "group_cards, ungroup_cards and dissolve_group mirror the forest and broadcast", %{
+    name: name
+  } do
+    :ok = Session.subscribe(name)
+
+    forest = Session.open_root(name, "SampleApp.Greeter.greet/2")
+    root = forest.focus
+    assert_receive {:session, ^name, ^forest}
+
+    forest = Session.group_cards(name, "Greeting", [root])
+    assert %{title: "Greeting"} = Forest.group_of(forest, root)
+    assert Forest.sections(forest) == [%{group: Forest.group_of(forest, root), columns: [[root]]}]
+    assert_receive {:session, ^name, ^forest}
+
+    forest = Session.ungroup_cards(name, [root])
+    assert Forest.group_of(forest, root) == nil
+    assert forest.groups == %{}
+    assert_receive {:session, ^name, ^forest}
+
+    forest = Session.group_cards(name, "Greeting", [root])
+    group_id = Forest.group_of(forest, root).id
+    assert_receive {:session, ^name, ^forest}
+
+    forest = Session.dissolve_group(name, group_id)
+    assert forest.groups == %{}
+    assert Forest.group_of(forest, root) == nil
+    assert_receive {:session, ^name, ^forest}
+    assert Session.get(name) == forest
+  end
+
   test "list/0 names the running sessions", %{name: name} do
     assert name in Session.list()
   end
