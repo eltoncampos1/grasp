@@ -1,8 +1,11 @@
 defmodule Grasp.Application do
   @moduledoc """
-  Supervision tree of the Grasp viewer: PubSub, the index store, the session and agent
-  registries and supervisors, the endpoint, and the MCP server the endpoint forwards
-  `/mcp` to.
+  Supervision tree of the Grasp viewer: PubSub, the index store, the review comments
+  store, the session and agent registries and supervisors, the endpoint, and the MCP
+  server the endpoint forwards `/mcp` to.
+
+  The comments store follows the index store, whose project root it derives its file from
+  and whose reloads it subscribes to.
 
   The MCP server starts explicitly rather than following the endpoint, so it also runs
   under `mix test`, where the endpoint does not serve. It starts before the endpoint, so
@@ -23,6 +26,7 @@ defmodule Grasp.Application do
     children = [
       {Phoenix.PubSub, name: Grasp.PubSub},
       {Grasp.IndexStore, []},
+      {Grasp.Comments, []},
       {Registry, keys: :unique, name: Grasp.SessionRegistry},
       {DynamicSupervisor, name: Grasp.SessionSupervisor, strategy: :one_for_one},
       {Registry, keys: :unique, name: Grasp.AgentRegistry},
