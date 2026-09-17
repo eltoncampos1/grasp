@@ -268,6 +268,9 @@ broadcasts the reload.
   drawn round cards, with a name over it or without: it changes no edge, hides nothing, and
   a card is in one at a time. A group whose last card leaves, or is closed, is deleted;
   group ids are never reused.
+- a card also carries `context`: `:auto`, `:hunks` or `:full` — whether its diff view shows
+  every line or only the changed hunks with three lines of context, `:auto` resolving to
+  `:hunks` when the function is longer than 100 lines and to `:full` otherwise.
 - `focus`: the focused card id.
 - Review comments are not session state: they belong to the code under review and live in
   `Grasp.Comments` (see [Comments](#comments)), so every session on the project reads the
@@ -576,6 +579,17 @@ The diff view runs `List.myers_difference/2` over the lines of `base_source` and
 calls; removed lines are highlighted only. Removed functions show their base source in a
 red-tinted card.
 
+In diff view a card can show the change alone, the way a pull request does:
+`Grasp.Diff.Hunks.fold/2` takes the per-line list, keeps every changed line, every line a
+comment thread sits on, and three lines of context on either side of those, and folds each
+remaining stretch of unchanged lines longer than one into a row — `⋯ n unchanged lines` —
+that expands when clicked (which folds a tab has opened is that tab's own). The card's
+preference is `context` on the card: `:auto` folds a function longer than 100 lines and
+shows a shorter one whole, and the header's `all lines` / `changes only` toggle (or `h`)
+sets it by hand; `set_view` takes it over MCP. The source view ignores it. An edge from a
+call site inside a fold leaves the card at its port, as it does for any call site without
+a box.
+
 ### Command palette
 
 A JS hook opens a `<dialog>` on Cmd+K or Ctrl+K. The input's debounced `phx-change`
@@ -785,7 +799,9 @@ first reference. Results are JSON text content, so any MCP client can read them.
   from which each id is traced to its entry points with `find_paths`. `set_view(name,
   card_id, view)` shows a card as its `"source"` or its `"diff"` and answers the graph like
   every other session tool; only a modified function has two sides, so a diff of anything
-  else is a tool error naming the function.
+  else is a tool error naming the function. `set_view` also takes `context` — `"hunks"`,
+  `"full"` or `"auto"` — deciding whether the diff shows every line or only the changed
+  hunks with context (see [Highlighting and diffs](#highlighting-and-diffs)).
 - Comments add four tools, none of which takes a session: `list_comments(function_id?,
   include_resolved?)` answers `total` and the threads sorted by id — each with its fields,
   the function's `file`, its `status` (`anchored`, `outdated` or `orphan`) and the
