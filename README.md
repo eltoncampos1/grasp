@@ -228,7 +228,7 @@ Arranging the cards:
   is left out, keeping its id and its cards. Regrouping under a new title would draw the
   same picture but build a different group, so a frame that outgrew its name is renamed
   rather than rebuilt.
-- `set_view(name, card_id, view, context \\ nil)` — show a card as its `source` or as its
+- `set_view(name, card_id, view, context?)` — show a card as its `source` or as its
   `diff` against the base, to point at what the branch did to a function rather than at the
   function. Only a modified function has a diff; asking for one of anything else is an
   error. `context` says how much of that diff is drawn — `hunks` for the changed lines with

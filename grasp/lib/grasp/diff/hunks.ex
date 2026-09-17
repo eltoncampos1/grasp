@@ -69,12 +69,14 @@ defmodule Grasp.Diff.Hunks do
   end
 
   defp visible_indexes(lines, context, keep) do
+    count = length(lines)
+
     lines
     |> Enum.with_index()
     |> Enum.reduce(MapSet.new(), fn {line, index}, acc ->
       if anchor?(line, keep) do
         index
-        |> around(context, length(lines))
+        |> around(context, count)
         |> Enum.into(acc)
       else
         acc
