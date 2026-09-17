@@ -172,7 +172,7 @@ defmodule Grasp.HighlightTest do
     assert LazyHTML.query(html, "span.line[data-line='12']") |> LazyHTML.text() == "12"
   end
 
-  test "emits nothing between line spans, since a newline inside the <pre> would render as an empty line" do
+  test "emits nothing between line spans, since whitespace between them would widen the body" do
     record = %{
       "id" => "S.tight/0",
       "span" => %{"start_line" => 1, "end_line" => 2},
@@ -181,6 +181,78 @@ defmodule Grasp.HighlightTest do
     }
 
     refute render_string(record, []) =~ ~r{</span>\s+<span class="line"}
+  end
+
+  describe "lines/2" do
+    test "gives one entry per source line, numbered from the span" do
+      {:ok, index} = Grasp.Index.load(@fixture)
+      {:ok, record} = Grasp.Index.fetch_function(index, "SampleApp.Greeter.greet/2")
+
+      lines = Highlight.lines(record, card_id: 7, open_calls: %{}, external?: fn _ -> false end)
+
+      assert Enum.map(lines, & &1.side) |> Enum.uniq() == [:new]
+      assert Enum.map(lines, & &1.line) == Enum.to_list(6..11)
+      assert length(lines) == record["source"] |> String.split("\n") |> length()
+    end
+
+    test "every line's gutter is the comment control for that line" do
+      {:ok, index} = Grasp.Index.load(@fixture)
+      {:ok, record} = Grasp.Index.fetch_function(index, "SampleApp.Greeter.greet/2")
+
+      for line <-
+            Highlight.lines(record, card_id: 7, open_calls: %{}, external?: fn _ -> false end) do
+        gutter = line.html |> LazyHTML.from_fragment() |> LazyHTML.query(".ln")
+
+        assert LazyHTML.attribute(gutter, "phx-click") == ["comment_start"]
+        assert LazyHTML.attribute(gutter, "phx-value-card") == ["7"]
+        assert LazyHTML.attribute(gutter, "phx-value-side") == ["new"]
+        assert LazyHTML.attribute(gutter, "phx-value-line") == [to_string(line.line)]
+        assert LazyHTML.attribute(gutter, "role") == ["button"]
+      end
+    end
+
+    test "render/2 is the lines joined" do
+      opts = [card_id: 7, open_calls: %{}, external?: fn _ -> false end]
+
+      assert render_string(@record, opts) ==
+               @record |> Highlight.lines(opts) |> Enum.map_join("", & &1.html)
+    end
+  end
+
+  describe "diff_lines/2" do
+    test "a deleted line is an old-side entry addressing its base line" do
+      {:ok, index} = Grasp.Index.load(@fixture)
+      {:ok, record} = Grasp.Index.fetch_function(index, "SampleApp.Formatter.shout/1")
+
+      lines =
+        Highlight.diff_lines(record, card_id: 3, open_calls: %{}, external?: fn _ -> false end)
+
+      [deleted] = Enum.filter(lines, &(&1.side == :old))
+
+      doc = LazyHTML.from_fragment(deleted.html)
+
+      assert LazyHTML.query(doc, ".line") |> LazyHTML.attribute("data-base-line") == [
+               to_string(deleted.line)
+             ]
+
+      assert LazyHTML.query(doc, ".line") |> LazyHTML.attribute("data-line") == []
+      assert LazyHTML.query(doc, ".ln") |> LazyHTML.attribute("phx-value-side") == ["old"]
+
+      assert LazyHTML.query(doc, ".ln") |> LazyHTML.attribute("phx-value-line") == [
+               to_string(deleted.line)
+             ]
+
+      assert LazyHTML.query(doc, ".ln") |> LazyHTML.text() == ""
+
+      assert Enum.filter(lines, &(&1.side == :new)) |> Enum.map(& &1.line) == [8, 9, 10]
+    end
+
+    test "render_diff/2 is the lines joined" do
+      opts = [card_id: 3, open_calls: %{}, external?: fn _ -> false end]
+
+      assert render_diff(@diff_record, opts) ==
+               @diff_record |> Highlight.diff_lines(opts) |> Enum.map_join("", & &1.html)
+    end
   end
 
   test "renders a real indexed record with the indexer's own columns" do

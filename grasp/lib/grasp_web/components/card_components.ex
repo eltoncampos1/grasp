@@ -244,7 +244,7 @@ defmodule GraspWeb.CardComponents do
         </div>
       </header>
       <p class="card__signature lumis" title={@signature}>{@signature_html}</p>
-      <pre class="card__body lumis">{@body}</pre>
+      <div class="card__body lumis">{@body}</div>
       <footer :if={@record["hidden_calls"] != []} class="card__also">
         <span class="card__also-label">Also calls</span>
         <button

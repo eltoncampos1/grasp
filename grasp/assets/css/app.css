@@ -155,7 +155,10 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .card__signature { display: none; margin: 0; padding: var(--space-s) var(--space-m); font-weight: 600; white-space: nowrap; }
 .card .card__body { user-select: text; margin: 0; padding: var(--space-xs) 0; overflow-x: auto; line-height: var(--code-leading); background: var(--code-bg); }
 .line { display: block; padding-inline: var(--space-s); white-space: pre; }
-.ln { display: inline-block; width: 3ch; margin-inline-end: var(--space-s); text-align: end; color: var(--fg-faint); user-select: none; }
+.ln { position: relative; display: inline-block; width: 4ch; margin-inline-end: var(--space-s); text-align: end; color: var(--fg-faint); user-select: none; cursor: pointer; }
+/* The gutter is wide enough to hold the + beside the number, so the affordance appearing on
+   hover leaves the code where it was. */
+.line:hover .ln::after { content: "+"; position: absolute; inset-inline-start: 0; color: var(--accent); }
 .call { cursor: pointer; border-bottom: 1px dashed var(--accent); }
 .call:hover { background: var(--accent-soft); }
 [data-color="0"] { --edge-color: var(--edge-0); }

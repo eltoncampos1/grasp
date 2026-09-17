@@ -14,6 +14,13 @@ defmodule Grasp.Highlight do
   same line are wrapped together. Output is one `span.line` per source line so the viewer
   can address lines, with Lumis' classes on highlighted runs and bare text elsewhere.
 
+  `lines/2` and `diff_lines/2` hand those lines back one at a time as `%{side, line, html}`,
+  the side telling a line of the current source from one the branch deleted, so a caller can
+  place markup of its own between them; `render/2` and `render_diff/2` join the same list.
+  Every line's gutter is the comment control: the `span.ln` holding the number carries
+  `phx-click="comment_start"` with the card, the side and the line number, so clicking a
+  number starts a comment against that line.
+
   tree-sitter is super-linear on deeply nested binary-operator trees — a twenty-step `|>`
   pipeline parses in tens of milliseconds, a forty-step one in hundreds — and a card
   re-renders on every LiveView pass, so the parse is memoised per function id in the
@@ -63,9 +70,26 @@ defmodule Grasp.Highlight do
           highlight: nil | %{optional(String.t()) => String.t() | [integer()]}
         ]
 
+  @typedoc """
+  One rendered line: its `html`, the line number it is addressed by and which side of the
+  diff that number belongs to. `:new` numbers a line of the current source, `:old` a line
+  the branch deleted, numbered as the base commit numbers it.
+  """
+  @type line :: %{side: :new | :old, line: pos_integer(), html: String.t()}
+
   @doc "Highlighted HTML for `record` with clickable call spans; see the moduledoc."
   @spec render(map(), opts()) :: Phoenix.HTML.safe()
-  def render(record, opts) do
+  def render(record, opts), do: {:safe, record |> lines(opts) |> join()}
+
+  @doc """
+  The lines `render/2` joins, each as a `t:line/0`.
+
+  Every line of the current source is one entry, numbered from the span's first line, so a
+  caller placing markup between lines has the numbers it needs to address them.
+  """
+  @spec lines(map(), opts()) :: [line()]
+  def lines(record, opts) do
+    card_id = Keyword.fetch!(opts, :card_id)
     source = record["source"]
     first_line = record["span"]["start_line"]
     highlight = Keyword.get(opts, :highlight)
@@ -75,12 +99,12 @@ defmodule Grasp.Highlight do
     # numbering it from the token groups alone would drop it and skip a number in the gutter.
     last_line = first_line + length(String.split(source, "\n")) - 1
 
-    html =
-      Enum.map_join(first_line..last_line, "", fn line ->
-        ~s(<span class="line" data-line="#{line}"#{highlighted_line(highlight, line)}><span class="ln">#{line}</span>#{body.(line)}</span>)
-      end)
+    for line <- first_line..last_line do
+      html =
+        ~s(<span class="line" data-line="#{line}"#{highlighted_line(highlight, line)}>#{gutter(card_id, :new, line, line)}#{body.(line)}</span>)
 
-    {:safe, html}
+      %{side: :new, line: line, html: html}
+    end
   end
 
   @doc """
@@ -92,50 +116,70 @@ defmodule Grasp.Highlight do
   count runs from the span's first line through the lines the current source has — and is
   built exactly as `render/2` builds it, so an opened call keeps its colour and a highlight
   still lands. A deleted line has no number in the current file and so carries no
-  `data-line`; its text is highlighted from `base_source` (parsed and memoised separately,
-  under the function id suffixed `@base`) and wraps no call span, since the ranges the
-  index recorded address the current source and nothing points at a line that is gone.
+  `data-line`; it carries `data-base-line` instead, the number the base commit gives it. Its
+  text is highlighted from `base_source` (parsed and memoised separately, under the function
+  id suffixed `@base`) and wraps no call span, since the ranges the index recorded address
+  the current source and nothing points at a line that is gone.
 
   A record with no `base_source` — an added or unchanged function — renders as `render/2`.
   """
   @spec render_diff(map(), opts()) :: Phoenix.HTML.safe()
-  def render_diff(record, opts) do
+  def render_diff(record, opts), do: {:safe, record |> diff_lines(opts) |> join()}
+
+  @doc """
+  The lines `render_diff/2` joins, each as a `t:line/0`.
+
+  A kept or inserted line is `:new`, numbered as the current file numbers it; a deleted line
+  is `:old`, numbered as the base commit numbers it. A record with no `base_source` gives the
+  lines of `lines/2`.
+  """
+  @spec diff_lines(map(), opts()) :: [line()]
+  def diff_lines(record, opts) do
     case record["base_source"] do
-      nil -> render(record, opts)
+      nil -> lines(record, opts)
       base_source -> diff(record, base_source, opts)
     end
   end
 
   defp diff(record, base_source, opts) do
+    card_id = Keyword.fetch!(opts, :card_id)
     highlight = Keyword.get(opts, :highlight)
     body = body_builder(record, opts)
     base_by_line = base_source |> pieces(1, record["id"] <> "@base") |> Enum.group_by(& &1.line)
 
-    {html, _current, _base} =
+    {lines, _current, _base} =
       base_source
       |> Grasp.Diff.lines(record["source"])
       |> Enum.reduce({[], record["span"]["start_line"], 1}, fn
         {:del, _text}, {acc, current, base} ->
           text = base_by_line |> Map.get(base, []) |> Enum.map_join(&token_html/1)
-          {[line_html(:del, nil, "−", "", text) | acc], current, base + 1}
+
+          html =
+            ~s(<span class="line" data-op="del" data-base-line="#{base}">#{gutter(card_id, :old, base, "")}<span class="op">−</span>#{text}</span>)
+
+          {[%{side: :old, line: base, html: html} | acc], current, base + 1}
 
         {op, _text}, {acc, current, base} ->
-          line =
-            line_html(op, current, mark(op), highlighted_line(highlight, current), body.(current))
+          html =
+            ~s(<span class="line" data-op="#{op}" data-line="#{current}"#{highlighted_line(highlight, current)}>#{gutter(card_id, :new, current, current)}<span class="op">#{mark(op)}</span>#{body.(current)}</span>)
 
-          {[line | acc], current + 1, if(op == :eq, do: base + 1, else: base)}
+          {[%{side: :new, line: current, html: html} | acc], current + 1,
+           if(op == :eq, do: base + 1, else: base)}
       end)
 
-    {:safe, html |> Enum.reverse() |> Enum.join()}
+    Enum.reverse(lines)
   end
+
+  defp join(lines), do: Enum.map_join(lines, "", & &1.html)
 
   defp mark(:eq), do: " "
   defp mark(:ins), do: "+"
 
-  defp line_html(op, line, mark, highlight_attr, body) do
-    line_attr = if line, do: ~s( data-line="#{line}"), else: ""
-
-    ~s(<span class="line" data-op="#{op}"#{line_attr}#{highlight_attr}><span class="ln">#{line}</span><span class="op">#{mark}</span>#{body}</span>)
+  # The gutter is the comment control as well as the number: clicking it asks the view to
+  # open a composer against `line` on `side`. A deleted line shows no number — the current
+  # file has none for it — but still addresses its base line.
+  defp gutter(card_id, side, line, text) do
+    ~s(<span class="ln" role="button" title="Comment on this line" phx-click="comment_start" phx-value-card="#{card_id}" phx-value-side="#{side}" phx-value-line="#{line}">#{text}</span>)
   end
 
   # The body of one line of the current source: the pieces that line holds, cut at the call
