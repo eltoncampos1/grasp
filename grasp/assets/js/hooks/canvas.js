@@ -12,16 +12,21 @@
 // has to be in the document before a path can point at it. The zoom readout is ignored by
 // patches for the same reason the edges are: the hook writes it on every view change.
 //
+// A group's frame is drawn by the hook too, into another ignored layer. The cards inside a
+// section are dragged about freely, so the frame is measured from where they ended up rather
+// than being the section's own box, and the section's header is moved to sit above it.
+//
 // A card is dragged by its header, or from anywhere on it with Ctrl held; holding Space turns
-// the whole canvas, cards included, into a pan surface. A card dropped inside another group's
-// frame joins that group, and Shift+click picks cards out into the selection ⌘G frames — the
-// two halves of grouping by hand.
+// the whole canvas, cards included, into a pan surface. A card dropped anywhere inside another
+// group's frame joins that group — the drop is decided against the rectangles the hook drew —
+// and Shift+click picks cards out into the selection ⌘G frames: the two halves of grouping by
+// hand.
 
 const MIN_SCALE = 0.25
 const MAX_SCALE = 2.5
 // Below this the code in a card is a grey smear whatever the font size, so the canvas
 // switches to the semantic zoom `body.grasp-far` describes in app.css.
-const FAR_SCALE = 0.6
+const FAR_SCALE = 0.5
 const DRAG_THRESHOLD = 4
 const MARGIN = 24
 // Half a card header near 1:1, so an edge arrives at the callee's title rather than at
@@ -30,6 +35,11 @@ const PORT_Y = 18
 // A Ctrl-drag's release is still a context-menu gesture; long enough to cover the menu the
 // browser opens just after the drag has ended.
 const CTRL_MENU_GRACE = 300
+// The frame's padding round the cards it holds, and the gap between it and the header above
+// them. The gap matches the header's own bottom margin, so a section nobody has dragged keeps
+// its header exactly where the layout put it.
+const FRAME_PAD = 16
+const FRAME_TITLE_GAP = 8
 
 const Canvas = {
   mounted() {
@@ -37,6 +47,7 @@ const Canvas = {
     this.svg = this.el.querySelector("#connectors")
     this.zoomLevel = this.el.querySelector("#zoom-level")
     this.view = {x: MARGIN, y: MARGIN, scale: 1}
+    this.frames = []
     this.lastReveal = null
     this.style =
       document.getElementById("grasp-canvas-style") ||
@@ -71,7 +82,7 @@ const Canvas = {
     window.addEventListener("blur", this.onSpaceRelease)
     document.addEventListener("visibilitychange", this.onSpaceRelease)
 
-    this.resizeObserver = new ResizeObserver(() => this.drawConnectors())
+    this.resizeObserver = new ResizeObserver(() => this.draw())
     this.resizeObserver.observe(this.stage)
     // Every session mutation pushes the focus, a move_card included, so revealing on each
     // one would pan away from the card just dropped; only a change of focus is a reveal.
@@ -84,7 +95,7 @@ const Canvas = {
       this.lastReveal = `${id}:${key}`
       this.revealCard(id)
     })
-    this.drawConnectors()
+    this.draw()
   },
 
   updated() {
@@ -92,7 +103,7 @@ const Canvas = {
     this.el
       .querySelectorAll(".node[style*='translate']")
       .forEach((node) => (node.style.translate = ""))
-    this.drawConnectors()
+    this.draw()
   },
 
   destroyed() {
@@ -126,9 +137,9 @@ const Canvas = {
     const far = scale < FAR_SCALE
     if (document.body.classList.contains("grasp-far") !== far) {
       document.body.classList.toggle("grasp-far", far)
-      // Every card changes size on the flip, so every edge now ends somewhere else. The
-      // stage's ResizeObserver only reports that when the stage's own box moves with them.
-      this.drawConnectors()
+      // Every card changes size on the flip, so every frame and every edge now ends somewhere
+      // else. The stage's ResizeObserver only reports that when the stage's box moves with them.
+      this.draw()
     }
     if (this.zoomLevel) this.zoomLevel.textContent = `${Math.round(scale * 100)}%`
   },
@@ -305,7 +316,9 @@ const Canvas = {
   // Fits the cards as they are laid out at this moment, answering the scale it applied, or
   // null when there is nothing on the canvas to fit.
   fitOnce() {
-    const cards = Array.from(this.el.querySelectorAll(".card"))
+    // The frames are measured alongside the cards: a fit that showed only the cards would cut
+    // the padding and the header off the sections holding them.
+    const cards = Array.from(this.el.querySelectorAll(".card, .frame"))
     if (cards.length === 0) return null
     const box = this.stageBox(cards)
     if (!(box.width > 0) || !(box.height > 0)) return null
@@ -453,7 +466,7 @@ const Canvas = {
       const tx = Math.round((this.drag.dx + mx / s) * s) / s
       const ty = Math.round((this.drag.dy + my / s) * s) / s
       this.drag.node.style.translate = `${tx}px ${ty}px`
-      this.drawConnectors()
+      this.draw()
     }
   },
 
@@ -477,7 +490,7 @@ const Canvas = {
     this.suppressClick = false
     if (drag.kind === "card") {
       drag.node.style.translate = ""
-      this.drawConnectors()
+      this.draw()
     }
   },
 
@@ -499,24 +512,102 @@ const Canvas = {
   },
 
   // The group whose frame a drop landed in, or null when it landed anywhere else — the
-  // ungrouped section, the bare canvas, or the card's own frame, none of which is a change
-  // of membership. The dragged node is under the pointer for the whole gesture, so the
-  // frame beneath it is only visible with the node taken out of hit testing; the inline
-  // property is put back whatever the lookup finds or throws. Off the viewport there is no
-  // element at all, and a release there groups nothing.
+  // ungrouped section, the bare canvas, or the card's own frame, none of which is a change of
+  // membership. The frames are rectangles the hook drew itself, so the drop is decided by area:
+  // anywhere inside one, padding included, joins it, and the card being dragged is no obstacle
+  // the way it is to hit testing. A pointer inside two overlapping frames takes the later one,
+  // which is the one drawn on top.
   groupUnder(e, drag) {
-    const restore = drag.node.style.pointerEvents
-    drag.node.style.pointerEvents = "none"
-    let frame
-    try {
-      const under = document.elementFromPoint(e.clientX, e.clientY)
-      frame = under?.closest(".flow[data-grouped]")
-    } finally {
-      drag.node.style.pointerEvents = restore
+    const s = this.stage.getBoundingClientRect()
+    const {scale} = this.view
+    const x = (e.clientX - s.left) / scale
+    const y = (e.clientY - s.top) / scale
+    // NaN for a card coming out of the ungrouped section, and NaN is equal to no group id, so
+    // such a card has no frame of its own to be skipped.
+    const own = Number(drag.node.closest(".flow")?.dataset.group)
+    let group = null
+    for (const f of this.frames) {
+      if (f.group === own) continue
+      if (x >= f.left && x <= f.right && y >= f.top && y <= f.bottom) group = f.group
     }
-    if (!frame || frame === drag.node.closest(".flow")) return null
-    const group = parseInt(frame.id.replace(/^flow-/, ""), 10)
-    return Number.isInteger(group) ? group : null
+    return group
+  },
+
+  // Frames first: they are measured from the cards, and drawing both from one read of the
+  // layout keeps a dragged card's frame and its edges in step through the gesture.
+  draw() {
+    this.drawFrames()
+    this.drawConnectors()
+  },
+
+  // One rectangle per grouped section, round the cards wherever they have been dragged to,
+  // with the section's header moved to sit above its top-left corner. The rectangles are kept
+  // in this.frames, which is what a drop is tested against.
+  drawFrames() {
+    // The layer lives in a phx-update="ignore" subtree and so normally outlives every patch;
+    // were one ever to replace it, a cached node would go on collecting frames nothing renders.
+    if (!this.frameLayer?.isConnected) this.frameLayer = this.el.querySelector("#frames")
+    if (!this.frameLayer) return
+    const s = this.stage.getBoundingClientRect()
+    const {scale} = this.view
+    this.frames = []
+    const divs = []
+    for (const flow of this.el.querySelectorAll(".flow[data-grouped]")) {
+      const title = flow.querySelector(".flow__title")
+      let left = Infinity,
+        top = Infinity,
+        right = -Infinity,
+        bottom = -Infinity
+      for (const card of flow.querySelectorAll(".card")) {
+        const b = card.getBoundingClientRect()
+        // A card the browser gives no box — inside a subtree that is not displayed — says
+        // nothing about where the frame round it goes.
+        if (!b.width && !b.height) continue
+        left = Math.min(left, (b.left - s.left) / scale)
+        top = Math.min(top, (b.top - s.top) / scale)
+        right = Math.max(right, (b.right - s.left) / scale)
+        bottom = Math.max(bottom, (b.bottom - s.top) / scale)
+      }
+      // A section with nothing measurable in it has no frame, and its header goes back to
+      // wherever the layout puts it.
+      if (left === Infinity) {
+        if (title) title.style.translate = ""
+        continue
+      }
+      let head = FRAME_PAD
+      if (title) {
+        const t = title.getBoundingClientRect()
+        const was = this.translateOf(title)
+        const height = t.height / scale
+        // Where the header would sit untranslated: its own box less the offset it is carrying.
+        const naturalLeft = (t.left - s.left) / scale - was.x
+        const naturalTop = (t.top - s.top) / scale - was.y
+        const x = left - naturalLeft
+        const y = top - (height + FRAME_TITLE_GAP) - naturalTop
+        title.style.translate = `${x}px ${y}px`
+        head = height + FRAME_TITLE_GAP + FRAME_PAD
+      }
+      const frame = {
+        group: Number(flow.dataset.group),
+        left: left - FRAME_PAD,
+        top: top - head,
+        right: right + FRAME_PAD,
+        bottom: bottom + FRAME_PAD,
+      }
+      this.frames.push(frame)
+      divs.push(
+        `<div class="frame" data-group="${frame.group}" style="left:${frame.left}px;top:${frame.top}px;` +
+          `width:${frame.right - frame.left}px;height:${frame.bottom - frame.top}px"></div>`,
+      )
+    }
+    this.frameLayer.innerHTML = divs.join("")
+  },
+
+  // The offset the hook last gave an element, in stage units. A property with one value is an
+  // x with no y, as the CSS `translate` shorthand defines it, and an empty one is no offset.
+  translateOf(el) {
+    const [x, y] = (el.style.translate || "").split(" ").filter((v) => v !== "")
+    return {x: parseFloat(x) || 0, y: parseFloat(y) || 0}
   },
 
   // One path per open call site: `[data-edge-to]` names the callee's card, `data-color` the

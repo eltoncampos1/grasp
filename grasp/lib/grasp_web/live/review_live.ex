@@ -600,6 +600,9 @@ defmodule GraspWeb.ReviewLive do
         </p>
         <.chat_panel open?={@chat_open?} agent={@agent} error={@chat_error} />
         <div id="stage" class="stage">
+          <%!-- A group's frame is measured from the cards inside it and so cannot be a box the
+          server renders: the hook owns this layer and fills it on every draw. --%>
+          <div id="frames" class="frames" phx-update="ignore" aria-hidden="true"></div>
           <svg id="connectors" class="connectors" phx-update="ignore" aria-hidden="true">
             <%!-- The hook owns the edge paths, but a marker cannot be built from a path string:
             it has to exist in the document before an edge can point at it. The server renders

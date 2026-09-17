@@ -68,7 +68,7 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
   something that can scroll itself.
 - ⌘0 resets the canvas zoom, as does clicking the zoom percentage in the toolbar. Some
   browsers also take ⌘0 for their own page zoom, and reset both.
-- Below 60% the cards stop showing code and start showing a signature: the body goes, the
+- Below 50% the cards stop showing code and start showing a signature: the body goes, the
   header and the syntax-highlighted line naming each function are scaled back up so they
   stay readable however far out you are, and the header's buttons keep working, so you can
   close or collapse a card without zooming back in to it.
@@ -79,8 +79,10 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
 - Arrow keys walk the graph, `x` closes the focused card, `Shift+x` closes it together
   with everything that had no other way to be reached, `c` collapses it, ⌘K opens the
   palette.
-- **A group of cards is drawn as a frame** of its own, laid out from its own left edge, so
-  two flows on one canvas are read apart rather than run together. The frame's header
+- **A group of cards is drawn as a frame** round the cards themselves, laid out from its own
+  left edge, so two flows on one canvas are read apart rather than run together. The frame
+  follows its cards: drag one to the edge of a flow and the frame grows with it, header and
+  all, rather than leaving the card outside its own group. The frame's header
   carries its title, how many cards are in it, and `ungroup`, which takes the frame away and
   leaves the cards where they were. A title is a label rather than a requirement: a frame
   may stand with none. Cards in no group make a last, unframed section under the framed
@@ -99,9 +101,10 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
   frame with none and its heading reading "Untitled group", Escape or clicking away leaves it
   as it was. The group keeps its id and its cards, so a tour or an agent holding that id
   still finds it. `ungroup` in the frame's header dissolves the whole frame.
-- Drag a card into another group's frame to move it there; drag a selected card and the rest
-  of the selection goes with it. Dropping it anywhere else — the unframed section, the bare
-  canvas, its own frame — moves the card and nothing more. A card that changes group keeps
+- Drop a card anywhere inside another group's frame — on a card there, in the space between
+  them, on the padding at its edge — to move it to that group; drag a selected card and the
+  rest of the selection goes with it. Dropping it anywhere else — the unframed section, the
+  bare canvas, its own frame — moves the card and nothing more. A card that changes group keeps
   the offset the drag gave it and so lands beside its place in the new frame rather than on
   it; "reset layout" puts every card back on the grid.
 

@@ -40,7 +40,7 @@
   --sidebar-width: 18rem;
   --code-size: 13px;
   /* What a counter-scaled label measures on screen at any zoom: see body.grasp-far. */
-  --far-size: 14px;
+  --far-size: 10px;
   --code-leading: 1.45;
   --mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
   --sans: system-ui, sans-serif;
@@ -96,10 +96,16 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 0; }
 .connectors .edge { fill: none; stroke: var(--edge-color, var(--border)); stroke-width: 2; }
 .connectors .arrow { fill: var(--edge-color, var(--border)); }
+/* The frames the hook draws, under the cards: one rectangle per group, placed in stage
+   units. The border is divided by the zoom so it stays a hairline however far out you are. */
+.frames { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.frame { position: absolute; border: calc(1px / var(--zoom, 1)) solid var(--border); border-radius: var(--radius); background: color-mix(in srgb, var(--bg-raised) 60%, transparent); }
 /* One section per group, stacked down the stage, with the ungrouped cards last. A section
    is only as wide as its own columns, so the frames do not stretch to the widest one. */
 .flows { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-xl); padding: var(--space-m); position: relative; z-index: 1; }
-.flow[data-grouped] { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-s) var(--space-m) var(--space-m); background: color-mix(in srgb, var(--bg-raised) 60%, transparent); }
+/* The section's own box only reserves room between sections; the frame a group is read as
+   is drawn by the canvas hook round the cards wherever they have been dragged to. */
+.flow[data-grouped] { padding: var(--space-s) var(--space-m) var(--space-m); }
 .flow__title { display: flex; align-items: baseline; gap: var(--space-s); margin: 0 0 var(--space-s); font-family: var(--sans); font-size: 13px; color: var(--fg-muted); }
 .flow__title h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--fg); cursor: text; }
 .flow__title h3:hover { text-decoration: underline; text-decoration-style: dotted; }

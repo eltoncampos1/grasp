@@ -491,12 +491,17 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#canvas")
   end
 
-  test "the canvas wraps the cards in a pannable stage with a connector layer and a toolbar",
+  test "the canvas wraps the cards in a pannable stage with a frame and connector layer and a toolbar",
        %{view: view} do
     assert has_element?(
              view,
              "#canvas[phx-hook='Canvas'] #stage svg#connectors[phx-update='ignore']"
            )
+
+    # Both layers are the hook's to fill, and the frames sit under the edges and the cards.
+    assert has_element?(view, "#canvas #stage #frames[phx-update='ignore']")
+
+    assert render(view) =~ ~r/id="frames".*id="connectors"/s
 
     # The hook draws the edges but cannot build the arrowhead they point at, so the marker
     # for every palette colour is server-rendered inside the ignored layer.
@@ -665,7 +670,9 @@ defmodule GraspWeb.ReviewLiveTest do
     Session.open_root(name, @perform)
     Session.group_cards(name, "Greeting", [1, 2])
 
-    assert has_element?(view, "#flow-1[data-grouped] .flow__title h3", "Greeting")
+    # The frame itself is drawn by the hook from where the cards are, so what the server owes
+    # it is the section's group id and a header to lift above it.
+    assert has_element?(view, "#flow-1[data-grouped][data-group='1'] .flow__title h3", "Greeting")
     assert has_element?(view, "#flow-1 .flow__count", "2 cards")
 
     assert has_element?(
