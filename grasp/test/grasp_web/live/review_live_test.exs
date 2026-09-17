@@ -568,6 +568,35 @@ defmodule GraspWeb.ReviewLiveTest do
     refute has_element?(view, "#canvas .toolbar #toggle-signatures[phx-click]")
   end
 
+  test "every toolbar control names itself, and its shortcut where it has one", %{view: view} do
+    for id <- ~w(toggle-sidebar zoom-out zoom-level zoom-in zoom-fit
+                 toggle-signatures reset-layout toggle-chat) do
+      assert has_element?(view, "#canvas .toolbar ##{id}[data-tip]"),
+             "the toolbar's ##{id} has no data-tip"
+    end
+
+    assert has_element?(
+             view,
+             "#canvas .toolbar #zoom-fit[data-tip='Fit all cards'][data-key='F']"
+           )
+
+    assert has_element?(
+             view,
+             "#canvas .toolbar #toggle-signatures[data-tip='Signatures instead of code'][data-key='S']"
+           )
+
+    assert has_element?(
+             view,
+             "#canvas .toolbar #toggle-chat[data-tip='Ask the agent'][data-key=\"\u2318I\"]"
+           )
+
+    assert has_element?(view, "#canvas .toolbar #reset-layout[data-tip='Reset layout']")
+    refute has_element?(view, "#canvas .toolbar #reset-layout[data-key]")
+
+    # The tooltip is drawn from data-tip; a title alongside would show a second bubble.
+    refute has_element?(view, "#canvas .toolbar [title]")
+  end
+
   test "the toolbar's controls read left to right, zoom cluster in the middle", %{view: view} do
     html = render(view)
 

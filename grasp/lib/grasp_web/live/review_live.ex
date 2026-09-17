@@ -765,29 +765,43 @@ defmodule GraspWeb.ReviewLive do
         />
       </aside>
       <section class="canvas" id="canvas" phx-hook="Canvas">
+        <%!-- `data-tip` and `data-key` are what the toolbar's tooltips are drawn from; a
+        `title` alongside one would show the browser's own bubble on top of it. --%>
         <div class="toolbar">
           <button
             type="button"
             id="toggle-sidebar"
             phx-click="toggle_sidebar"
-            title="Show or hide the sidebar (⌘M)"
+            data-tip="Sidebar"
+            data-key="⌘M"
           >
             sidebar
           </button>
           <span class="toolbar__sep" aria-hidden="true"></span>
-          <button type="button" id="zoom-out" title="Zoom out">−</button>
-          <span id="zoom-level" class="toolbar__zoom" phx-update="ignore" title="Reset zoom (⌘0)">100%</span>
-          <button type="button" id="zoom-in" title="Zoom in">+</button>
-          <button type="button" id="zoom-fit" title="Fit all cards">fit</button>
+          <button type="button" id="zoom-out" data-tip="Zoom out" data-key="⌘ wheel">−</button>
+          <span
+            id="zoom-level"
+            class="toolbar__zoom"
+            phx-update="ignore"
+            data-tip="Reset zoom"
+            data-key="⌘0"
+          >
+            100%
+          </span>
+          <button type="button" id="zoom-in" data-tip="Zoom in" data-key="⌘ wheel">+</button>
+          <button type="button" id="zoom-fit" data-tip="Fit all cards" data-key="F">fit</button>
           <span class="toolbar__sep" aria-hidden="true"></span>
           <%!-- The mode is the canvas hook's, written on <body> and on this button, so a patch
-          must leave the button alone or it would render a pressed toggle as unpressed. --%>
+          must leave the button alone or it would render a pressed toggle as unpressed. The
+          tooltip is the server's and the hook never touches it, so the ignored subtree keeps
+          it. --%>
           <button
             type="button"
             id="toggle-signatures"
             phx-update="ignore"
             aria-pressed="false"
-            title="Show signatures instead of code (s)"
+            data-tip="Signatures instead of code"
+            data-key="S"
           >
             signatures
           </button>
@@ -795,7 +809,7 @@ defmodule GraspWeb.ReviewLive do
             type="button"
             id="reset-layout"
             phx-click="reset_layout"
-            title="Return cards to the automatic layout"
+            data-tip="Reset layout"
           >
             reset layout
           </button>
@@ -803,7 +817,8 @@ defmodule GraspWeb.ReviewLive do
             type="button"
             id="toggle-chat"
             phx-click="chat_toggle"
-            title="Ask the agent (⌘I)"
+            data-tip="Ask the agent"
+            data-key="⌘I"
           >
             ask
           </button>

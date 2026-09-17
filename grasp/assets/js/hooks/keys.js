@@ -50,6 +50,10 @@ const Keys = {
         // Signature mode is the Canvas hook's, so this is hook to hook through the DOM rather
         // than a round trip to the server.
         window.dispatchEvent(new CustomEvent("grasp:toggle-signatures"))
+      } else if (e.key === "f") {
+        // The fit is the Canvas hook's too: it measures the cards the browser has laid out,
+        // which the server cannot see.
+        window.dispatchEvent(new CustomEvent("grasp:zoom-fit"))
       } else if (e.key === "Escape") {
         // The palette and any field have already returned above, so Escape here is aimed at
         // the canvas and means the cards picked out on it are let go.

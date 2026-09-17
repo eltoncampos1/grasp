@@ -94,6 +94,16 @@ kbd { font-family: var(--mono); background: var(--bg-sunken); border: 1px solid 
 .toolbar button[aria-pressed="true"] { color: var(--fg); background: var(--bg-sunken); border-radius: 4px; }
 .toolbar__sep { align-self: stretch; width: 1px; background: var(--border); margin-inline: var(--space-xs); }
 .toolbar__zoom { min-width: 3.5em; text-align: center; color: var(--fg-muted); cursor: pointer; font-variant-numeric: tabular-nums; }
+/* Each control names itself and its shortcut in one bubble above the toolbar, with no delay
+   before it appears. One pseudo-element holds both halves, separated by two non-breaking
+   spaces, because a second one cannot be positioned beside the first without measuring it.
+   The toolbar sits at the bottom of the canvas, so the bubble opens upward and stays clear of
+   the `overflow: hidden` that clips the stage. */
+.toolbar [data-tip] { position: relative; }
+.toolbar [data-tip]:hover::after,
+.toolbar [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; inset-block-end: calc(100% + var(--space-s)); inset-inline-start: 50%; translate: -50% 0; white-space: nowrap; padding: var(--space-xs) var(--space-s); border-radius: 4px; background: var(--fg); color: var(--bg); font-size: 12px; pointer-events: none; z-index: 4; }
+.toolbar [data-tip][data-key]:hover::after,
+.toolbar [data-tip][data-key]:focus-visible::after { content: attr(data-tip) "\00a0\00a0" attr(data-key); }
 /* Space is held down: the whole canvas pans, so everything on it offers the pan cursor. */
 body.grasp-space .canvas, body.grasp-space .card { cursor: grab; }
 /* A gesture in progress. The hook sets this class because it calls preventDefault() on the

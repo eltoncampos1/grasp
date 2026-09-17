@@ -66,9 +66,11 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
 - Drag the background to pan; hold Space to pan from anywhere, cards included.
 - ⌘ or Ctrl with the wheel zooms about the cursor; the wheel alone pans, except over
   something that can scroll itself.
-- The toolbar sits at the bottom centre of the canvas. ⌘0 resets the canvas zoom, as does
-  clicking the zoom percentage there. Some browsers also take ⌘0 for their own page zoom,
-  and reset both.
+- The toolbar sits at the bottom centre of the canvas, and every control there names itself
+  and its shortcut when you hover or tab to it. ⌘0 resets the canvas zoom, as does clicking
+  the zoom percentage there. Some browsers also take ⌘0 for their own page zoom, and reset
+  both.
+- `fit` in the toolbar, or `f`, brings every card on the canvas into view at once.
 - `signatures` in the toolbar, or `s`, turns the cards down to their signatures: the body
   goes, and the header and the syntax-highlighted line naming each function are scaled up so
   they stay readable however far out you are. The header's buttons keep working, so you can

@@ -55,6 +55,10 @@ const Canvas = {
     this.signatures = false
     this.frames = []
     this.lastReveal = null
+    // applyView() redraws whenever the scale differs from the one the frames were drawn at,
+    // and the draw that ends mount covers the first frame; seeding the scale keeps that first
+    // frame from being drawn twice.
+    this.drawnScale = this.view.scale
     this.style =
       document.getElementById("grasp-canvas-style") ||
       document.head.appendChild(
@@ -73,6 +77,7 @@ const Canvas = {
     this.onKeyUp = (e) => this.spaceUp(e)
     this.onZoomReset = () => this.resetZoom()
     this.onToggleSignatures = () => this.toggleSignatures()
+    this.onZoomFit = () => this.fit()
     this.onSpaceRelease = () => this.releaseSpace()
     this.el.addEventListener("wheel", this.onWheel, {passive: false})
     this.el.addEventListener("pointerdown", this.onPointerDown)
@@ -85,6 +90,7 @@ const Canvas = {
     window.addEventListener("keyup", this.onKeyUp)
     window.addEventListener("grasp:zoom-reset", this.onZoomReset)
     window.addEventListener("grasp:toggle-signatures", this.onToggleSignatures)
+    window.addEventListener("grasp:zoom-fit", this.onZoomFit)
     // A hold that ends while the page is in the background never delivers its keyup, which
     // would leave the canvas panning on the next press.
     window.addEventListener("blur", this.onSpaceRelease)
@@ -126,6 +132,7 @@ const Canvas = {
     window.removeEventListener("keyup", this.onKeyUp)
     window.removeEventListener("grasp:zoom-reset", this.onZoomReset)
     window.removeEventListener("grasp:toggle-signatures", this.onToggleSignatures)
+    window.removeEventListener("grasp:zoom-fit", this.onZoomFit)
     window.removeEventListener("blur", this.onSpaceRelease)
     document.removeEventListener("visibilitychange", this.onSpaceRelease)
     document.body.classList.remove("grasp-space")
@@ -314,15 +321,24 @@ const Canvas = {
     this.applyView()
   },
 
-  // Fits the cards as they are laid out at this moment, answering the scale it applied, or
-  // null when there is nothing on the canvas to fit.
+  // Brings every card on the canvas into view.
   fit() {
+    // A frame's header holds one size on screen, so it is ~30 / scale tall in stage units and
+    // the block a fit measures changes shape at the scale that fit applies: the first pass
+    // re-lays-out the very boxes it measured. The second pass measures the layout the first
+    // one produced and corrects it.
+    this.fitPass()
+    this.fitPass()
+  },
+
+  // One fit against the layout as it stands.
+  fitPass() {
     // The frames are measured alongside the cards: a fit that showed only the cards would cut
     // the padding and the header off the sections holding them.
     const boxes = Array.from(this.el.querySelectorAll(".card, .frame"))
-    if (boxes.length === 0) return null
+    if (boxes.length === 0) return
     const box = this.stageBox(boxes)
-    if (!(box.width > 0) || !(box.height > 0)) return null
+    if (!(box.width > 0) || !(box.height > 0)) return
     const r = this.el.getBoundingClientRect()
     const scale = Math.min(
       MAX_SCALE,
@@ -333,7 +349,6 @@ const Canvas = {
     )
     this.view = {x: MARGIN - box.left * scale, y: MARGIN - box.top * scale, scale}
     this.applyView()
-    return scale
   },
 
   // Bounding box of elements in unscaled stage coordinates.
@@ -592,21 +607,22 @@ const Canvas = {
   },
 
   // Frames first: they are measured from the cards, and drawing both from one read of the
-  // layout keeps a dragged card's frame and its edges in step through the gesture.
+  // layout keeps a dragged card's frame and its edges in step through the gesture. The scale
+  // is recorded only when there is a layer to draw the frames into, so a draw that finds none
+  // leaves the next applyView() to redraw.
   draw() {
-    this.drawnScale = this.view.scale
-    this.drawFrames()
+    if (this.drawFrames()) this.drawnScale = this.view.scale
     this.drawConnectors()
   },
 
   // One rectangle per grouped section, round the cards wherever they have been dragged to,
   // with the section's header moved to sit above its top-left corner. The rectangles are kept
-  // in this.frames, which is what a drop is tested against.
+  // in this.frames, which is what a drop is tested against. Answers whether it drew.
   drawFrames() {
     // The layer lives in a phx-update="ignore" subtree and so normally outlives every patch;
     // were one ever to replace it, a cached node would go on collecting frames nothing renders.
     if (!this.frameLayer?.isConnected) this.frameLayer = this.el.querySelector("#frames")
-    if (!this.frameLayer) return
+    if (!this.frameLayer) return false
     const s = this.stage.getBoundingClientRect()
     const {scale} = this.view
     const titleGap = FRAME_TITLE_GAP / scale
@@ -677,6 +693,7 @@ const Canvas = {
       )
     }
     this.frameLayer.innerHTML = divs.join("")
+    return true
   },
 
   // The offset the hook last gave an element, in stage units. A property with one value is an
