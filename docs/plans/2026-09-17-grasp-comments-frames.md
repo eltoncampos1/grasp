@@ -210,3 +210,16 @@ Grasp.Agent.Command.reindex_command(Grasp.Index.t() | nil, watched_path :: Strin
 **Files:** `README.md`, `docs/specs/2026-09-15-grasp-design.md` (only if a task changed a name the spec quotes), `grasp/lib/mix/tasks/grasp.serve.ex` moduledoc (mention `.grasp/comments.json` beside the index).
 
 **Requirements:** Read the README top to bottom against what Tasks 1–7 shipped: §Gestures (frames follow cards; drop anywhere in a frame; click a line number to comment; keys), §PR mode (commenting on a deleted line), §MCP (the four tools, `comments` on `get_function`), §Ask the agent (mode select, the address-the-comments prompt, `.grasp/comments.json` travels with the checkout — suggest committing or ignoring it). Fix anything stale (`0.6`, `14px`). No new features. Gates (docs only: `mix format --check-formatted` still runs); commit `Document comments, edit mode and following frames`.
+
+---
+
+### Task 9: A card opened from inside a frame joins the frame
+
+**Files:** modify `grasp/lib/grasp/session/forest.ex`, `docs/specs/2026-09-15-grasp-design.md` §Card graph (one sentence), README §Gestures (one clause); tests `grasp/test/grasp/session/forest_test.exs`, `grasp/test/grasp_web/live/review_live_test.exs`.
+
+**Requirements:**
+
+- `Forest.open_caller/4` and `Forest.open_child/4`: when the card they create is **new** (no card showed the function yet), it takes the `group` of the card it was opened from — the callee for `open_caller`, the parent for `open_child` — so it is laid out in that card's section: a caller lands one column to the left of the callee inside the same frame, a callee one column to the right. A card that already exists keeps the group it has (an edge is added, nothing moves). Opening from an ungrouped card is unchanged (`group: nil`). `open_root/2` is unchanged.
+- Implement in `add_card/2`'s callers, not by a post-hoc `regroup`: the new card is created with the group set. Update the moduledoc's Groups paragraph ("a card opened from a member of a group joins the group") and the `@doc` of both functions.
+- **Tests (forest):** open A as root, group it (`new_group`), `open_caller` B from A → B's `group == A's group`, and `sections/1` shows one section with columns `[[B], [A]]`; `open_child` C from A → C in the group, columns `[[B], [A], [C]]`; opening a caller that is already on screen in another group leaves its group as it was; `open_caller` from an ungrouped card gives `group: nil`. **LiveView:** a card in a frame → `open_caller` (click the caller in the callers menu) → the new card renders inside `#flow-N` for that group.
+- Gates; commit `A card opened from a frame joins the frame`.

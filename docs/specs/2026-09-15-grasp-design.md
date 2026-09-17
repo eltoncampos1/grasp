@@ -293,7 +293,10 @@ exists.
   puts downstream. Collapsing hides what only that card reaches, behind a count badge.
 - Opening a caller from the callers menu adds it to the left of the card and joins the
   two; the card itself does not move and keeps every other edge. Several callers may be
-  open at once.
+  open at once. A card opened from a card inside a group — a caller from its menu, a callee
+  from a call — joins that group when it is new, so it is laid out in the same frame, one
+  column beside the card it was opened from, rather than in the groupless section; a card
+  already on screen keeps the group it has.
 - Palette and entry-point selection add a card with no caller. Shift+Enter opens it as a
   callee of the focused card instead.
 - MCP `set_cards` replaces the whole graph.
