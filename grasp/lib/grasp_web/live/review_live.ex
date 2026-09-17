@@ -12,8 +12,9 @@ defmodule GraspWeb.ReviewLive do
 
   Review threads arrive the same way and belong to the project rather than to the session, so
   a comment written here shows on every card drawing that function everywhere. What is this
-  tab's own is where a comment is being written (`composing`) and which resolved threads have
-  been opened back up (`expanded_threads`) — both are one reader mid-gesture.
+  tab's own is where a comment is being written (`composing`), which resolved threads have
+  been opened back up (`expanded_threads`) and which folds of a changes-only diff have been
+  opened (`expanded_folds`) — each is one reader mid-gesture.
   """
 
   use GraspWeb, :live_view
@@ -58,6 +59,7 @@ defmodule GraspWeb.ReviewLive do
        comments: Grasp.Comments.by_function(),
        composing: nil,
        expanded_threads: MapSet.new(),
+       expanded_folds: MapSet.new(),
        selected: MapSet.new(),
        palette_open?: false,
        palette_query: "",
@@ -73,7 +75,7 @@ defmodule GraspWeb.ReviewLive do
 
   @impl true
   def handle_info({:session, name, %Forest{} = forest}, %{assigns: %{name: name}} = socket) do
-    socket = socket |> assign(forest: forest) |> prune_selection(forest)
+    socket = socket |> assign(forest: forest) |> prune_to_forest(forest)
     {:noreply, push_event(socket, "focus", %{id: forest.focus})}
   end
 
@@ -94,6 +96,7 @@ defmodule GraspWeb.ReviewLive do
        index: index,
        expanded_groups: default_expanded(index, length(Grasp.Comments.list())),
        selected: MapSet.new(),
+       expanded_folds: MapSet.new(),
        index_error: IndexStore.last_error(),
        index_path: IndexStore.path()
      )}
@@ -237,6 +240,26 @@ defmodule GraspWeb.ReviewLive do
 
   def handle_event("toggle_view_focused", _params, socket),
     do: toggle_view(socket, socket.assigns.forest.focus)
+
+  def handle_event("toggle_context", %{"card" => card}, socket),
+    do: toggle_context(socket, int(card))
+
+  def handle_event("toggle_context_focused", _params, socket),
+    do: toggle_context(socket, socket.assigns.forest.focus)
+
+  # Which folds are open is this tab's own, and a fold is named by the line it starts at:
+  # nothing else about it has to be remembered, since expanding it is the card drawing that
+  # stretch again.
+  def handle_event("expand_fold", %{"card" => card, "from" => from}, socket) do
+    case {int(card), int(from)} do
+      {id, from} when is_integer(id) and is_integer(from) ->
+        {:noreply,
+         assign(socket, expanded_folds: MapSet.put(socket.assigns.expanded_folds, {id, from}))}
+
+      _not_a_fold ->
+        {:noreply, socket}
+    end
+  end
 
   # A drop carries a group only when it landed inside another group's frame; every other
   # drop is a move alone, so a card keeps the group it was in wherever on the canvas it is
@@ -427,7 +450,7 @@ defmodule GraspWeb.ReviewLive do
             forest
         end
 
-      {:noreply, socket |> assign(forest: forest) |> prune_selection(forest)}
+      {:noreply, socket |> assign(forest: forest) |> prune_to_forest(forest)}
     else
       _nothing_to_open -> {:noreply, socket}
     end
@@ -565,12 +588,16 @@ defmodule GraspWeb.ReviewLive do
 
   defp clear_selection(socket), do: assign(socket, selected: MapSet.new())
 
-  # A card off the canvas is out of the selection however it left it: this tab's own close,
-  # another tab's, or an agent's over MCP. Ids are never reused, so nothing is ever put back
-  # in by accident.
-  defp prune_selection(socket, %Forest{} = forest) do
+  # A card off the canvas takes this tab's gestures about it with it, however it left: this
+  # tab's own close, another tab's, or an agent's over MCP. Ids are never reused, so nothing
+  # is ever put back in by accident.
+  defp prune_to_forest(socket, %Forest{} = forest) do
+    on_canvas? = &Map.has_key?(forest.cards, &1)
+
     assign(socket,
-      selected: MapSet.filter(socket.assigns.selected, &Map.has_key?(forest.cards, &1))
+      selected: MapSet.filter(socket.assigns.selected, on_canvas?),
+      expanded_folds:
+        MapSet.filter(socket.assigns.expanded_folds, fn {id, _from} -> on_canvas?.(id) end)
     )
   end
 
@@ -609,13 +636,33 @@ defmodule GraspWeb.ReviewLive do
       else: {:noreply, socket}
   end
 
+  # The length that decides what `:auto` folds is the function's own, so the card whose
+  # context is being swapped has to be found before the session is asked to swap it.
+  defp toggle_context(socket, card_id) do
+    case record(socket, card_id) do
+      nil ->
+        {:noreply, socket}
+
+      record ->
+        loc = record["source"] |> to_string() |> String.split("\n") |> length()
+        mutate(socket, &Session.toggle_context(&1, card_id, loc))
+    end
+  end
+
   defp diffable?(socket, card_id) do
+    case record(socket, card_id) do
+      nil -> false
+      record -> Grasp.Diff.diffable?(record)
+    end
+  end
+
+  defp record(socket, card_id) do
     with %Index{} = index <- socket.assigns.index,
          %{function_id: function_id} <- Forest.card(socket.assigns.forest, card_id),
          {:ok, record} <- Index.fetch_function(index, function_id) do
-      Grasp.Diff.diffable?(record)
+      record
     else
-      _no_diff -> false
+      _no_record -> nil
     end
   end
 
@@ -686,7 +733,7 @@ defmodule GraspWeb.ReviewLive do
   # broadcast arrives (which matters in tests, where the view may not be connected).
   defp mutate(socket, fun) do
     forest = fun.(socket.assigns.name)
-    {:noreply, socket |> assign(forest: forest) |> prune_selection(forest)}
+    {:noreply, socket |> assign(forest: forest) |> prune_to_forest(forest)}
   end
 
   # What a PR-mode review is against, as the two ends of the comparison. A detached head has
@@ -915,6 +962,7 @@ defmodule GraspWeb.ReviewLive do
                     comments={@comments}
                     composing={@composing}
                     expanded_threads={@expanded_threads}
+                    expanded_folds={@expanded_folds}
                   />
                 </div>
               </div>

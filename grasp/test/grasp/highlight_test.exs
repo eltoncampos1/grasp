@@ -195,6 +195,15 @@ defmodule Grasp.HighlightTest do
       assert length(lines) == record["source"] |> String.split("\n") |> length()
     end
 
+    test "every line is :eq — outside a diff there is nothing to differ from" do
+      {:ok, index} = Grasp.Index.load(@fixture)
+      {:ok, record} = Grasp.Index.fetch_function(index, "SampleApp.Greeter.greet/2")
+
+      lines = Highlight.lines(record, card_id: 7, open_calls: %{}, external?: fn _ -> false end)
+
+      assert Enum.map(lines, & &1.op) |> Enum.uniq() == [:eq]
+    end
+
     test "every line's gutter is the comment control for that line" do
       {:ok, index} = Grasp.Index.load(@fixture)
       {:ok, record} = Grasp.Index.fetch_function(index, "SampleApp.Greeter.greet/2")
@@ -247,6 +256,17 @@ defmodule Grasp.HighlightTest do
       assert LazyHTML.query(doc, ".ln") |> LazyHTML.text() == ""
 
       assert Enum.filter(lines, &(&1.side == :new)) |> Enum.map(& &1.line) == [8, 9, 10]
+    end
+
+    test "every entry carries what the diff did to it" do
+      {:ok, index} = Grasp.Index.load(@fixture)
+      {:ok, record} = Grasp.Index.fetch_function(index, "SampleApp.Formatter.shout/1")
+
+      lines =
+        Highlight.diff_lines(record, card_id: 3, open_calls: %{}, external?: fn _ -> false end)
+
+      assert Enum.map(lines, &{&1.side, &1.op}) ==
+               [{:new, :eq}, {:new, :eq}, {:old, :del}, {:new, :ins}]
     end
 
     test "render_diff/2 is the lines joined" do

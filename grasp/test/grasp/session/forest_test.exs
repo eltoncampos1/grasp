@@ -355,6 +355,24 @@ defmodule Grasp.Session.ForestTest do
       assert Forest.callers(forest, 3) == [2]
     end
 
+    test "an entry may name the context its card opens in" do
+      spec = [
+        %{
+          key: "a",
+          function_id: "A.f/1",
+          parent_key: nil,
+          opened_by: nil,
+          highlight: nil,
+          context: :hunks
+        },
+        %{key: "b", function_id: "B.g/0", parent_key: "a", opened_by: nil, highlight: nil}
+      ]
+
+      assert {:ok, forest} = Forest.replace(spec)
+      assert Forest.card(forest, 1).context == :hunks
+      assert Forest.card(forest, 2).context == :auto
+    end
+
     test "an empty spec is an empty forest" do
       assert {:ok, %Forest{cards: %{}, edges: [], focus: nil}} = Forest.replace([])
     end
@@ -390,6 +408,42 @@ defmodule Grasp.Session.ForestTest do
     assert_raise FunctionClauseError, fn -> apply(Forest, :set_view, [forest, a, :unified]) end
   end
 
+  test "effective_context/2 folds a function past a hundred lines and shows a shorter one whole" do
+    assert Forest.effective_context(:auto, 100) == :full
+    assert Forest.effective_context(:auto, 101) == :hunks
+    assert Forest.effective_context(:full, 500) == :full
+    assert Forest.effective_context(:hunks, 3) == :hunks
+  end
+
+  test "toggle_context/3 leaves :auto for whichever of the two it is not showing" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+
+    assert Forest.card(forest, a).context == :auto
+
+    assert Forest.toggle_context(forest, a, 400) |> Forest.card(a) |> Map.fetch!(:context) ==
+             :full
+
+    assert Forest.toggle_context(forest, a, 12) |> Forest.card(a) |> Map.fetch!(:context) ==
+             :hunks
+
+    long = Forest.toggle_context(forest, a, 400)
+    assert Forest.toggle_context(long, a, 400) |> Forest.card(a) |> Map.fetch!(:context) == :hunks
+  end
+
+  test "set_context/3 takes one of the three and ignores an unknown card" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+
+    assert Forest.set_context(forest, a, :hunks) |> Forest.card(a) |> Map.fetch!(:context) ==
+             :hunks
+
+    assert Forest.set_context(forest, a, :auto) |> Forest.card(a) |> Map.fetch!(:context) == :auto
+    assert Forest.set_context(forest, 999, :full) == forest
+    assert Forest.toggle_context(forest, 999, 400) == forest
+
+    # Through apply/3, so the type checker does not read the deliberate bad call as a bug.
+    assert_raise FunctionClauseError, fn -> apply(Forest, :set_context, [forest, a, :some]) end
+  end
+
   test "to_map/1 is the JSON shape with cards sorted by id" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_child(forest, a, "B.g/0")
@@ -404,6 +458,7 @@ defmodule Grasp.Session.ForestTest do
                  "function_id" => "A.f/1",
                  "collapsed" => false,
                  "view" => "auto",
+                 "context" => "auto",
                  "highlight" => nil,
                  "group" => nil,
                  "callers" => [],
@@ -414,6 +469,7 @@ defmodule Grasp.Session.ForestTest do
                  "function_id" => "B.g/0",
                  "collapsed" => false,
                  "view" => "diff",
+                 "context" => "auto",
                  "highlight" => %{"call" => "C.h/0"},
                  "group" => nil,
                  "callers" => [a],

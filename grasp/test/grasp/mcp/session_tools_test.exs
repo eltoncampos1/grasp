@@ -56,6 +56,7 @@ defmodule Grasp.MCP.SessionToolsTest do
                "callees" => [],
                "collapsed" => false,
                "view" => "auto",
+               "context" => "auto",
                "highlight" => %{"call" => @wrap},
                "group" => nil
              }
@@ -337,6 +338,38 @@ defmodule Grasp.MCP.SessionToolsTest do
 
       assert response.isError
       assert [%{"text" => "unknown card: 9"}] = response.content
+    end
+
+    test "context says how much of the diff is drawn, and is left alone when omitted", %{
+      session: session
+    } do
+      run(Tools.OpenCard, %{session: session, function_id: @shout})
+
+      body =
+        json!(run(Tools.SetView, %{session: session, card_id: 1, view: "diff", context: "hunks"}))
+
+      assert card(body, 1)["view"] == "diff"
+      assert card(body, 1)["context"] == "hunks"
+
+      body = json!(run(Tools.SetView, %{session: session, card_id: 1, view: "source"}))
+      assert card(body, 1)["context"] == "hunks"
+
+      body =
+        json!(
+          run(Tools.SetView, %{session: session, card_id: 1, view: "source", context: "auto"})
+        )
+
+      assert card(body, 1)["context"] == "auto"
+    end
+
+    test "a context the card has no name for is an error", %{session: session} do
+      run(Tools.OpenCard, %{session: session, function_id: @shout})
+
+      response =
+        run(Tools.SetView, %{session: session, card_id: 1, view: "diff", context: "some"})
+
+      assert response.isError
+      assert [%{"text" => "unknown context: some"}] = response.content
     end
 
     test "a view the card has no name for is an error", %{session: session} do

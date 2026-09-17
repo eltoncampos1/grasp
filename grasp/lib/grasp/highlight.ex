@@ -71,11 +71,18 @@ defmodule Grasp.Highlight do
         ]
 
   @typedoc """
-  One rendered line: its `html`, the line number it is addressed by and which side of the
-  diff that number belongs to. `:new` numbers a line of the current source, `:old` a line
-  the branch deleted, numbered as the base commit numbers it.
+  One rendered line: its `html`, the line number it is addressed by, which side of the diff
+  that number belongs to and what the diff did to it. `:new` numbers a line of the current
+  source, `:old` a line the branch deleted, numbered as the base commit numbers it. `op` is
+  `:eq` for a line both sides share, `:ins` for one the branch added and `:del` for one it
+  removed; outside a diff every line is `:eq`, since there is nothing it differs from.
   """
-  @type line :: %{side: :new | :old, line: pos_integer(), html: String.t()}
+  @type line :: %{
+          side: :new | :old,
+          line: pos_integer(),
+          op: :eq | :ins | :del,
+          html: String.t()
+        }
 
   @doc "Highlighted HTML for `record` with clickable call spans; see the moduledoc."
   @spec render(map(), opts()) :: Phoenix.HTML.safe()
@@ -103,7 +110,7 @@ defmodule Grasp.Highlight do
       html =
         ~s(<span class="line" data-line="#{line}"#{highlighted_line(highlight, line)}>#{gutter(card_id, :new, line, line)}#{body.(line)}</span>)
 
-      %{side: :new, line: line, html: html}
+      %{side: :new, line: line, op: :eq, html: html}
     end
   end
 
@@ -157,13 +164,13 @@ defmodule Grasp.Highlight do
           html =
             ~s(<span class="line" data-op="del" data-base-line="#{base}">#{gutter(card_id, :old, base, "")}<span class="op">−</span>#{text}</span>)
 
-          {[%{side: :old, line: base, html: html} | acc], current, base + 1}
+          {[%{side: :old, line: base, op: :del, html: html} | acc], current, base + 1}
 
         {op, _text}, {acc, current, base} ->
           html =
             ~s(<span class="line" data-op="#{op}" data-line="#{current}"#{highlighted_line(highlight, current)}>#{gutter(card_id, :new, current, current)}<span class="op">#{mark(op)}</span>#{body.(current)}</span>)
 
-          {[%{side: :new, line: current, html: html} | acc], current + 1,
+          {[%{side: :new, line: current, op: op, html: html} | acc], current + 1,
            if(op == :eq, do: base + 1, else: base)}
       end)
 

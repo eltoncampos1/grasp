@@ -13,7 +13,8 @@ defmodule Grasp.Session.Forest do
   Focus is a single card id; `offset` is a card's displacement in stage pixels from where
   the layout puts it, so a card dragged by hand keeps its place; `highlight` marks what to
   point at inside a card; `view` chooses whether a modified function reads as the source on
-  the branch or as the diff against the base.
+  the branch or as the diff against the base, and `context` whether that diff shows every
+  line or only the changed hunks.
 
   ## Layout
 
@@ -80,6 +81,13 @@ defmodule Grasp.Session.Forest do
   are the reviewer's explicit picks.
   """
   @type view :: :auto | :source | :diff
+  @typedoc """
+  How much of a function's diff a card shows: `:hunks` draws the changed lines with three
+  lines of context on either side and folds the rest away, `:full` draws every line, and
+  `:auto` folds a function longer than 100 lines and shows a shorter one whole. The source
+  view ignores it.
+  """
+  @type context :: :auto | :hunks | :full
   @type card :: %{
           id: id(),
           function_id: String.t(),
@@ -87,6 +95,7 @@ defmodule Grasp.Session.Forest do
           offset: {integer(), integer()},
           highlight: highlight(),
           view: view(),
+          context: context(),
           group: group_id() | nil
         }
   @type group_id :: pos_integer()
@@ -115,7 +124,8 @@ defmodule Grasp.Session.Forest do
           :parent_key => String.t() | nil,
           :opened_by => String.t() | nil,
           :highlight => highlight(),
-          optional(:group) => String.t() | nil
+          optional(:group) => String.t() | nil,
+          optional(:context) => context()
         }
   @type t :: %__MODULE__{
           cards: %{id() => card()},
@@ -572,6 +582,49 @@ defmodule Grasp.Session.Forest do
   def effective_view(:auto, false), do: :source
   def effective_view(view, _diffable?), do: view
 
+  @doc "Picks how much of `id`'s diff is drawn; unknown ids are ignored."
+  @spec set_context(t(), id(), context()) :: t()
+  def set_context(%__MODULE__{} = forest, id, context)
+      when context in [:auto, :hunks, :full] do
+    case card(forest, id) do
+      nil -> forest
+      card -> put_card(forest, %{card | context: context})
+    end
+  end
+
+  @doc """
+  Swaps `id` between the changes alone and every line, `loc` being the length of the
+  function it draws.
+
+  A card left on `:auto` is toggled away from what it currently shows rather than from
+  `:auto` itself, so the first press always changes what the reader is looking at.
+  """
+  @spec toggle_context(t(), id(), non_neg_integer()) :: t()
+  def toggle_context(%__MODULE__{} = forest, id, loc) do
+    case card(forest, id) do
+      nil ->
+        forest
+
+      card ->
+        case effective_context(card.context, loc) do
+          :hunks -> set_context(forest, id, :full)
+          :full -> set_context(forest, id, :hunks)
+        end
+    end
+  end
+
+  @doc """
+  How much of a diff a card draws: `:auto` folds a function of more than 100 lines and
+  shows a shorter one whole.
+
+  A short function is read whole in about the space its hunks would take, and the fold row
+  would cost more attention than the lines it saves.
+  """
+  @spec effective_context(context(), non_neg_integer()) :: :hunks | :full
+  def effective_context(:auto, loc) when loc > 100, do: :hunks
+  def effective_context(:auto, _loc), do: :full
+  def effective_context(context, _loc), do: context
+
   @doc """
   Builds a graph from an ordered flat spec. A `parent_key` names an earlier entry, and the
   first entry's card takes the focus.
@@ -591,6 +644,13 @@ defmodule Grasp.Session.Forest do
           # A later entry for the same function marks nothing of its own, so the highlight
           # an earlier entry asked for survives the card being named again.
           forest = if spec.highlight, do: set_highlight(forest, id, spec.highlight), else: forest
+
+          forest =
+            case Map.get(spec, :context) do
+              nil -> forest
+              context -> set_context(forest, id, context)
+            end
+
           forest = join_group(forest, id, Map.get(spec, :group))
           {:cont, {:ok, forest, Map.put(keys, spec.key, id), first || id}}
 
@@ -624,6 +684,7 @@ defmodule Grasp.Session.Forest do
           "function_id" => card.function_id,
           "collapsed" => card.collapsed,
           "view" => Atom.to_string(card.view),
+          "context" => Atom.to_string(card.context),
           "highlight" => card.highlight,
           "group" => card.group,
           "callers" => callers(forest, card.id),
@@ -774,6 +835,7 @@ defmodule Grasp.Session.Forest do
       offset: {0, 0},
       highlight: nil,
       view: :auto,
+      context: :auto,
       group: group
     }
 

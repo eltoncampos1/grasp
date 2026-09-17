@@ -726,6 +726,60 @@ defmodule GraspWeb.ReviewLiveTest do
     refute has_element?(view, "#card-1 .card__also")
   end
 
+  test "a short diff opens whole and the header toggles it to the changes alone", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @shout)
+
+    # Three lines of context reach every line of a function this short, so `full` and
+    # `hunks` draw the same body — what the toggle changes is the preference the card holds.
+    assert has_element?(view, "#card-1[data-context='full']")
+    assert has_element?(view, "#context-1[phx-click='toggle_context']", "changes only")
+    refute has_element?(view, "#card-1 .line--fold")
+
+    view |> element("#context-1") |> render_click()
+
+    assert has_element?(view, "#card-1[data-context='hunks']")
+    assert has_element?(view, "#context-1", "all lines")
+    assert has_element?(view, "#card-1 .line[data-op='del']")
+    refute has_element?(view, "#card-1 .line--fold")
+
+    render_hook(view, "toggle_context_focused", %{})
+    assert has_element?(view, "#card-1[data-context='full']")
+  end
+
+  test "the source view has no context toggle and no context of its own", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @shout)
+
+    view |> element("#view-1") |> render_click()
+
+    assert has_element?(view, "#card-1[data-view='source']")
+    refute has_element?(view, "#card-1[data-context]")
+    refute has_element?(view, "#context-1")
+  end
+
+  test "a card with nothing to compare offers no context toggle", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+
+    refute has_element?(view, "#context-1")
+  end
+
+  test "expanding a fold leaves the card standing, and a fold nobody has is ignored", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @shout)
+
+    render_click(view, "expand_fold", %{"card" => "1", "from" => "8"})
+    render_click(view, "expand_fold", %{"card" => "nope", "from" => "eight"})
+
+    assert has_element?(view, "#card-1 .line[data-op='ins']")
+  end
+
   test "d toggles the focused card's view and passes over a card with no diff", %{
     view: view,
     name: name

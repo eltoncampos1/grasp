@@ -151,6 +151,11 @@ In the viewer:
   deleted lines from the base, inserted lines from the branch, highlighted as code either
   way — and `source` swaps it back. The `d` key does the same to the focused card, and
   passes over a card with nothing to compare.
+- **`changes only` folds the unchanged lines away**, the way a pull request shows a file:
+  the changed lines, three lines of context on either side, every line a comment sits on,
+  and one `⋯ n unchanged lines` row per stretch in between, which draws its lines when
+  clicked. A function longer than 100 lines arrives folded; a shorter one arrives whole.
+  `all lines` swaps back, and the `h` key does the same to the focused card.
 - **A removed function opens as a card of its own**, tinted and showing the source the base
   had. Its `file:line` is the base commit's, so it is printed rather than linked into your
   editor.
@@ -223,9 +228,12 @@ Arranging the cards:
   is left out, keeping its id and its cards. Regrouping under a new title would draw the
   same picture but build a different group, so a frame that outgrew its name is renamed
   rather than rebuilt.
-- `set_view(name, card_id, view)` — show a card as its `source` or as its `diff` against
-  the base, to point at what the branch did to a function rather than at the function.
-  Only a modified function has a diff; asking for one of anything else is an error.
+- `set_view(name, card_id, view, context \\ nil)` — show a card as its `source` or as its
+  `diff` against the base, to point at what the branch did to a function rather than at the
+  function. Only a modified function has a diff; asking for one of anything else is an
+  error. `context` says how much of that diff is drawn — `hunks` for the changed lines with
+  three lines around them, `full` for every line, `auto` for hunks past 100 lines — and is
+  left as it stands when omitted.
 
 A session name defaults to `default`, which is the canvas at `/`; any other name is the
 canvas at `/s/<name>` and is created on first mention.

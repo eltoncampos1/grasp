@@ -15,6 +15,7 @@ defmodule GraspWeb.CardComponents do
 
   alias Grasp.Comments.Anchor
   alias Grasp.Diff
+  alias Grasp.Diff.Hunks
   alias Grasp.Index
   alias Grasp.Session.Forest
 
@@ -39,6 +40,7 @@ defmodule GraspWeb.CardComponents do
   attr :comments, :map, doc: "every thread of the project, keyed by function id", default: %{}
   attr :composing, :map, doc: "the anchor a comment is being written at", default: nil
   attr :expanded_threads, :any, doc: "ids of the resolved threads shown in full", default: nil
+  attr :expanded_folds, :any, doc: "`{card id, first line}` of every fold opened", default: nil
 
   # The drag hook translates the node rather than the card, so the offset survives a
   # re-render: LiveView owns the card's attributes, and the node is where the hand-placed
@@ -63,6 +65,7 @@ defmodule GraspWeb.CardComponents do
         comments={@comments}
         composing={@composing}
         expanded_threads={@expanded_threads}
+        expanded_folds={@expanded_folds}
       />
     </div>
     """
@@ -79,6 +82,7 @@ defmodule GraspWeb.CardComponents do
   attr :comments, :map, doc: "every thread of the project, keyed by function id", default: %{}
   attr :composing, :map, doc: "the anchor a comment is being written at", default: nil
   attr :expanded_threads, :any, doc: "ids of the resolved threads shown in full", default: nil
+  attr :expanded_folds, :any, doc: "`{card id, first line}` of every fold opened", default: nil
 
   def card(assigns) do
     case Index.fetch_function(assigns.index, assigns.card.function_id) do
@@ -123,6 +127,10 @@ defmodule GraspWeb.CardComponents do
     # again rather than reporting a view it is not in.
     view = Forest.effective_view(card.view, diffable?)
 
+    # Only the diff has unchanged stretches to fold; the source view is the whole function
+    # by definition, and says so by carrying no context at all.
+    context = view == :diff && Forest.effective_context(card.context, loc(record))
+
     highlight_opts = [
       card_id: card.id,
       open_calls: assigns.open_calls,
@@ -160,6 +168,20 @@ defmodule GraspWeb.CardComponents do
       )
       |> Enum.sort_by(fn {_why, thread} -> thread.id end)
 
+    expanded_folds = assigns.expanded_folds || MapSet.new()
+    card_id = card.id
+    opened = for {^card_id, from} <- expanded_folds, into: MapSet.new(), do: from
+
+    # Folding runs after the threads are placed, so a comment holds its line open: the
+    # placements are decided against every line the record has, and only then is what is
+    # left of an unchanged stretch collapsed.
+    lines =
+      if context == :hunks do
+        Hunks.fold(lines, keep: MapSet.new(Map.keys(placed)), expanded: opened)
+      else
+        lines
+      end
+
     assigns =
       assign(assigns,
         focused?: forest.focus == card.id,
@@ -179,6 +201,7 @@ defmodule GraspWeb.CardComponents do
         callees: Forest.callees(forest, card.id),
         hidden_count: Forest.hidden_count(forest, card.id),
         view: view,
+        context: context,
         gutter: gutter_columns(record),
         # A removed function's file and line are the base commit's: the line may hold
         # something else on this branch, or the file may be gone, so there is nothing to
@@ -206,6 +229,7 @@ defmodule GraspWeb.CardComponents do
       data-focused={to_string(@focused?)}
       data-selected={to_string(@selected)}
       data-view={to_string(@view)}
+      data-context={@context && to_string(@context)}
       data-highlight-key={highlight_key(@card.highlight)}
       data-depth={@column}
       data-dx={@dx}
@@ -267,6 +291,16 @@ defmodule GraspWeb.CardComponents do
             {if @view == :source, do: "diff", else: "source"}
           </button>
           <button
+            :if={@context}
+            id={"context-#{@card.id}"}
+            class="card__context"
+            phx-click="toggle_context"
+            phx-value-card={@card.id}
+            title="Show every line or only the changes (h)"
+          >
+            {if @context == :hunks, do: "all lines", else: "changes only"}
+          </button>
+          <button
             :if={@callees != []}
             class="card__collapse"
             phx-click="toggle_collapse"
@@ -291,17 +325,28 @@ defmodule GraspWeb.CardComponents do
       preserve — only the lines themselves are preformatted. --%>
       <div class="card__body lumis" style={"--gutter: #{@gutter}ch"}>
         <%= for line <- @lines do %>
-          {raw(line.html)}<.thread
-            :for={thread <- Map.get(@placed, {line.side, line.line}, [])}
-            thread={thread}
-            card_id={@card.id}
-            expanded={MapSet.member?(@expanded_threads, thread.id)}
-            composing={@composing}
-          /><.composer
-            :if={composing_at?(@composing, @card.id, line.side, line.line)}
-            composing={@composing}
-            card_id={@card.id}
-          />
+          <%= if line[:fold] do %>
+            <button
+              class="line line--fold"
+              phx-click="expand_fold"
+              phx-value-card={@card.id}
+              phx-value-from={line.from}
+            >
+              ⋯ {line.count} unchanged lines
+            </button>
+          <% else %>
+            {raw(line.html)}<.thread
+              :for={thread <- Map.get(@placed, {line.side, line.line}, [])}
+              thread={thread}
+              card_id={@card.id}
+              expanded={MapSet.member?(@expanded_threads, thread.id)}
+              composing={@composing}
+            /><.composer
+              :if={composing_at?(@composing, @card.id, line.side, line.line)}
+              composing={@composing}
+              card_id={@card.id}
+            />
+          <% end %>
         <% end %>
       </div>
       <footer :if={@aside != []} class="card__outdated">
@@ -351,6 +396,11 @@ defmodule GraspWeb.CardComponents do
     last = record["span"]["end_line"] || record["span"]["start_line"] || 1
     max(4, String.length(Integer.to_string(last)) + 1)
   end
+
+  # How long the function is on the branch, which is what the default context is decided
+  # against. A record carrying no source of its own — one the branch removed — is nothing to
+  # fold.
+  defp loc(record), do: record["source"] |> to_string() |> String.split("\n") |> length()
 
   # The footer button for a hidden call is marked exactly as the call spans in the body are,
   # so a call the graph has opened reads the same wherever the card shows it.

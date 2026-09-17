@@ -173,12 +173,14 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
 .caller { display: block; width: 100%; text-align: start; padding: 2px var(--space-s); white-space: nowrap; }
 .caller:hover { color: var(--accent); }
 .card__stats { color: var(--fg-muted); font-size: 12px; white-space: nowrap; }
-.card__view, .card__collapse, .card__close { padding: 0 var(--space-xs); color: var(--fg-muted); }
-.card__view:hover { color: var(--accent); }
+.card__view, .card__context, .card__collapse, .card__close { padding: 0 var(--space-xs); color: var(--fg-muted); }
+.card__view:hover, .card__context:hover { color: var(--accent); }
 .card__close:hover { color: var(--danger); }
 .card__signature { display: none; margin: 0; padding: var(--space-s) var(--space-m); font-weight: 600; white-space: nowrap; }
 .card .card__body { user-select: text; margin: 0; padding: var(--space-xs) 0; overflow-x: auto; line-height: var(--code-leading); background: var(--code-bg); }
 .line { display: block; padding-inline: var(--space-s); white-space: pre; }
+.line--fold { display: block; width: 100%; text-align: start; padding-inline: var(--space-s); white-space: normal; color: var(--fg-muted); background: var(--bg-sunken); font-family: var(--mono); font-size: var(--code-size); }
+.line--fold:hover { background: var(--accent-soft); color: var(--accent); }
 .ln { position: relative; display: inline-block; width: var(--gutter, 4ch); margin-inline-end: var(--space-s); text-align: end; color: var(--fg-faint); user-select: none; cursor: pointer; }
 /* The card sizes --gutter to the widest number its body prints, with a column to spare, so
    the + appearing on hover sits beside the number and leaves the code where it was. */

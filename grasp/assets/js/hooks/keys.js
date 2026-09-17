@@ -46,6 +46,8 @@ const Keys = {
         this.pushEvent("collapse_focused", {})
       } else if (e.key === "d") {
         this.pushEvent("toggle_view_focused", {})
+      } else if (e.key === "h") {
+        this.pushEvent("toggle_context_focused", {})
       } else if (e.key.toLowerCase() === "s") {
         // Signature mode is the Canvas hook's, so this is hook to hook through the DOM rather
         // than a round trip to the server.

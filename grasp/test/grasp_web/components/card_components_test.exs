@@ -144,6 +144,88 @@ defmodule GraspWeb.CardComponentsTest do
     end
   end
 
+  describe "changes only" do
+    test "a long diff folds its unchanged stretches and the header offers every line" do
+      html = render_long_card()
+
+      assert html =~ ~s|data-context="hunks"|
+      assert html =~ ~s|<button class="line line--fold"|
+      assert html =~ "phx-click=\"expand_fold\""
+      assert html =~ "unchanged lines"
+      assert html =~ "all lines"
+
+      # The change and the three lines on either side of it are drawn; what sits further out
+      # is behind a fold.
+      assert html =~ ">a57</span>"
+      assert html =~ ">a63</span>"
+      refute html =~ ">a20</span>"
+    end
+
+    test "a fold the reader opened draws its lines again" do
+      html = render_long_card(expanded_folds: MapSet.new([{1, 1}]))
+
+      assert html =~ ">a20</span>"
+      # Only the fold that was opened: the one past the change is still a row.
+      assert html =~ ~s|<button class="line line--fold"|
+    end
+
+    test "every line is drawn once the card is told to show them all" do
+      html = render_long_card(context: :full)
+
+      assert html =~ ~s|data-context="full"|
+      refute html =~ "line--fold"
+      assert html =~ ">a20</span>"
+      assert html =~ "changes only"
+    end
+  end
+
+  # A modified function long enough that `:auto` folds it, which the fixture has none of.
+  defp render_long_card(opts \\ []) do
+    body = for n <- 1..118, do: "  a#{n} = x"
+    source = Enum.join(["def long(x) do" | body] ++ ["end"], "\n")
+    base_source = String.replace(source, "  a60 = x", "  a60 = nil")
+
+    record = %{
+      "id" => "SampleApp.Long.long/1",
+      "module" => "SampleApp.Long",
+      "name" => "long",
+      "arity" => 1,
+      "kind" => "def",
+      "file" => "lib/sample_app/long.ex",
+      "span" => %{"start_line" => 1, "end_line" => 120},
+      "source" => source,
+      "base_source" => base_source,
+      "change" => "modified",
+      "calls" => [],
+      "hidden_calls" => []
+    }
+
+    {:ok, index} =
+      Grasp.Index.from_document(%{
+        "version" => 1,
+        "project" => %{"root" => "/tmp/sample_app"},
+        "functions" => [record]
+      })
+
+    {forest, id} = Forest.open_root(Forest.new(), record["id"])
+
+    forest =
+      case Keyword.get(opts, :context) do
+        nil -> forest
+        context -> Forest.set_context(forest, id, context)
+      end
+
+    render_component(&CardComponents.card/1,
+      forest: forest,
+      index: index,
+      card: Forest.card(forest, id),
+      column: 0,
+      open_calls: %{},
+      editor: "vscode",
+      expanded_folds: Keyword.get(opts, :expanded_folds)
+    )
+  end
+
   defp render_card(function_id) do
     {forest, _id} = Forest.open_root(Forest.new(), function_id)
 

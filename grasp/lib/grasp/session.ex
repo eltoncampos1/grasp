@@ -84,6 +84,16 @@ defmodule Grasp.Session do
   @spec toggle_view(name(), Forest.id()) :: Forest.t()
   def toggle_view(name, card_id), do: mutate(name, &Forest.toggle_view(&1, card_id))
 
+  @doc "Shows `card_id`'s diff as the changed hunks alone or as every line."
+  @spec set_context(name(), Forest.id(), Forest.context()) :: Forest.t()
+  def set_context(name, card_id, context),
+    do: mutate(name, &Forest.set_context(&1, card_id, context))
+
+  @doc "Swaps `card_id` between the changes alone and every line; `loc` is the function's length."
+  @spec toggle_context(name(), Forest.id(), non_neg_integer()) :: Forest.t()
+  def toggle_context(name, card_id, loc),
+    do: mutate(name, &Forest.toggle_context(&1, card_id, loc))
+
   @doc "Sets `card_id`'s layout offset in stage pixels."
   @spec move(name(), Forest.id(), {integer(), integer()}) :: Forest.t()
   def move(name, card_id, {dx, dy}), do: mutate(name, &Forest.move(&1, card_id, {dx, dy}))
