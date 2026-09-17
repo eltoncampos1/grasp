@@ -232,6 +232,8 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
 .thread__actions { display: flex; gap: var(--space-m); }
 .thread__actions button { padding: 0; color: var(--fg-muted); font-size: 12px; }
 .thread__actions button:hover { color: var(--accent); }
+.thread__github { color: var(--fg-muted); font-size: 12px; text-decoration: none; }
+.thread__github:hover { color: var(--accent); text-decoration: underline; }
 .composer { display: block; padding: var(--space-s) var(--space-m); }
 .composer textarea { font: inherit; font-family: var(--sans); width: 100%; padding: var(--space-s); color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); resize: vertical; }
 .composer button { margin: var(--space-xs) var(--space-s) 0 0; padding: 1px var(--space-s); color: var(--fg-muted); border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px; }

@@ -10,6 +10,10 @@ defmodule GraspWeb.CommentComponents do
   conversation is over, and a card whose every settled argument is still spelled out in full
   buries the code it was written about; the toggle keeps the thread one click away.
 
+  A published thread carries a link to the review comment it was posted as, beside the
+  actions that act on it, so the conversation on the pull request is one click from the
+  conversation on the card.
+
   The composer's text is the browser's alone. The textarea is `phx-update="ignore"` so a
   patch arriving mid-sentence cannot rewrite what is being typed, and its id names the
   anchor it was opened at — card, side, line and the thread it replies to — so a draft
@@ -103,6 +107,13 @@ defmodule GraspWeb.CommentComponents do
           <button :if={@thread.resolved} phx-click="toggle_thread" phx-value-id={@thread.id}>
             hide
           </button>
+          <a
+            :if={@thread.github}
+            class="thread__github"
+            href={@thread.github.url}
+            target="_blank"
+            rel="noopener"
+          >on GitHub</a>
         </div>
         <.composer :if={@replying?} composing={@composing} card_id={@card_id} />
       <% end %>

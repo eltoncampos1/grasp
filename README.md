@@ -252,6 +252,12 @@ Comments:
 - `reply_comment(comment_id, body)` — answer a thread, as the agent.
 - `resolve_comment(comment_id, resolved?)` — close a thread once it is dealt with, or
   reopen one with `resolved: false`.
+- `publish_comments(pull_request?, include_resolved?)` — post the threads to the pull
+  request as review comments, each with its replies under it. A thread whose line the pull
+  request's diff covers goes on that line, and one the diff does not show — a line outside
+  every hunk, or a comment on the base side — goes on the file with the function and line
+  it was written on at the top of it. Threads already published are skipped, so publishing
+  again posts only what has been written since.
 
 `get_function` carries a function's open threads under `comments`, so reading the code and
 reading what the reviewer said about it is one call. Comments belong to the project, not to
@@ -302,6 +308,17 @@ they do on any `git switch`; a checkout git refuses because it would overwrite a
 file stops the agent, which names the files rather than stashing or discarding anything. `gh` has to be installed and signed in, and the checkout
 happens in your own working tree: the branch you had is gone from disk until you switch
 back, so finish what you were doing first.
+
+"Publish the comments to PR 1212" sends the review to GitHub. The agent calls
+`publish_comments`, which posts each thread as a review comment with its replies under it,
+on its own line where the pull request's diff covers that line and on the file otherwise —
+GitHub takes a line comment only inside the diff, so a comment on an untouched line, or on
+the base side of a modified function, opens with the function and line it was written on
+instead. It reports back what went where and what failed, and skips threads it has already
+published, so you can publish, write three more comments and publish again. This works in
+either mode, since the posting goes through `gh` rather than through the agent's own tools;
+`gh` has to be installed and signed in. Drop the number to publish to the pull request the
+checked-out branch is already open on.
 
 The panel's Model select picks which model the CLI runs: the four aliases `haiku`,
 `sonnet`, `opus` and `fable`, or `default` to leave the CLI on whatever `--agent-model` /

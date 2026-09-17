@@ -42,6 +42,7 @@ defmodule Grasp.MCP.CommentToolsTest do
       assert thread["snippet"] == "text = Formatter.wrap(name)"
       assert thread["resolved"] == false
       assert thread["replies"] == []
+      assert thread["github_url"] == nil
 
       found = find(listed(%{function_id: @greet}), thread["id"])
       assert found["body"] == body

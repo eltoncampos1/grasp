@@ -99,6 +99,8 @@ defmodule Grasp.Agent.CommandTest do
       assert prompt =~ "reply_comment"
       assert prompt =~ "resolve_comment"
       assert prompt =~ "add_comment"
+      assert prompt =~ "publish_comments"
+      assert prompt =~ "which went as file comments"
     end
   end
 

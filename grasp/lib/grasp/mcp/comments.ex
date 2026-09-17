@@ -24,8 +24,9 @@ defmodule Grasp.MCP.Comments do
 
   Beyond the thread's own fields it carries `"file"` (the record's, `nil` when the function
   has left the index), `"status"` — `"anchored"`, `"outdated"` for a line that is no longer
-  there, `"orphan"` for a function that is gone — and `"anchored_line"`, the line the thread
-  now sits on, `nil` unless it is anchored.
+  there, `"orphan"` for a function that is gone — `"anchored_line"`, the line the thread
+  now sits on, `nil` unless it is anchored, and `"github_url"`, where the thread reads on
+  the pull request, `nil` while it has not been published.
   """
   @spec thread_map(Comments.thread(), Grasp.Index.t()) :: map()
   def thread_map(thread, %Grasp.Index{} = index) do
@@ -50,6 +51,7 @@ defmodule Grasp.MCP.Comments do
       "author" => thread.author,
       "created_at" => thread.created_at,
       "resolved" => thread.resolved,
+      "github_url" => thread.github && thread.github.url,
       "replies" => Enum.map(thread.replies, &reply_map/1)
     }
   end

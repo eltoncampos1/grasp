@@ -37,4 +37,5 @@ defmodule Grasp.MCP.Server do
   component(Tools.AddComment)
   component(Tools.ReplyComment)
   component(Tools.ResolveComment)
+  component(Tools.PublishComments)
 end
