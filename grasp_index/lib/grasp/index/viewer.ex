@@ -214,7 +214,9 @@ defmodule Grasp.Index.Viewer do
   defp mix_project(project) do
     if File.regular?(Path.join(project, "mix.exs")),
       do: :ok,
-      else: {:error, "#{project} is not a Grasp checkout (no mix.exs)"}
+      else:
+        {:error,
+         "#{project} is not a Grasp checkout (no mix.exs); remove it to clone afresh, or point --viewer at one"}
   end
 
   # git creates the checkout and the directories leading to it, so the clone only needs a
@@ -274,7 +276,7 @@ defmodule Grasp.Index.Viewer do
   defp stream(port) do
     receive do
       {^port, {:data, chunk}} ->
-        IO.write(chunk)
+        IO.binwrite(chunk)
         stream(port)
 
       {^port, {:exit_status, status}} ->

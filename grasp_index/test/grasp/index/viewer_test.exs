@@ -136,7 +136,8 @@ defmodule Grasp.Index.ViewerTest do
       {recorder, recorded} = recording_runner(0)
 
       assert Viewer.run(Viewer.steps(checkout, @repo, @argv), recorder) ==
-               {:error, "#{checkout} is not a Grasp checkout (no mix.exs)"}
+               {:error,
+                "#{checkout} is not a Grasp checkout (no mix.exs); remove it to clone afresh, or point --viewer at one"}
 
       refute File.exists?(Path.join(tmp_dir, "below"))
       assert recorded.() == [{["git", "clone", "--progress", @repo, checkout], tmp_dir}]
@@ -162,7 +163,8 @@ defmodule Grasp.Index.ViewerTest do
       {recorder, recorded} = recording_runner(0)
 
       assert Viewer.run(Viewer.steps(tmp_dir, @repo, @argv), recorder) ==
-               {:error, "#{tmp_dir} is not a Grasp checkout (no mix.exs)"}
+               {:error,
+                "#{tmp_dir} is not a Grasp checkout (no mix.exs); remove it to clone afresh, or point --viewer at one"}
 
       assert recorded.() == []
     end

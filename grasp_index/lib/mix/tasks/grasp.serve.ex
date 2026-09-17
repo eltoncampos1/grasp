@@ -90,7 +90,7 @@ defmodule Mix.Tasks.Grasp.Serve do
     end
   end
 
-  defp announce({:clone, _repo, into}), do: "Cloning the Grasp viewer into #{into}"
+  defp announce({:clone, _url, into}), do: "Cloning the Grasp viewer into #{into}"
   defp announce({:deps, _project}), do: "Fetching the viewer's dependencies…"
   defp announce({:assets, _project}), do: "Building the viewer's assets…"
   defp announce({:serve, project, _argv}), do: "Starting the viewer from #{project}"
