@@ -748,23 +748,46 @@ const Canvas = {
       const right = ((anchored ? within(anchor.right, c.left, c.right) : c.right) - s.left) / scale
       const calleeLeft = (b.left - s.left) / scale
       const calleeRight = (b.right - s.left) / scale
+      const callerTop = (c.top - s.top) / scale
+      const callerBottom = (c.bottom - s.top) / scale
+      const calleeTop = (b.top - s.top) / scale
+      const calleeBottom = (b.bottom - s.top) / scale
       // An edge leaves towards the callee and arrives on the side it comes from, so a card
       // opened to the left of its caller is joined round the outside rather than through it.
       const rightward = calleeLeft > right
-      const x1 = rightward ? right : left
-      const y1 = anchored
-        ? (within(anchor.top + anchor.height / 2, c.top, c.bottom) - s.top) / scale
-        : (c.top - s.top) / scale + PORT_Y
-      const x2 = rightward ? calleeLeft : calleeRight
-      const y2 = (b.top - s.top) / scale + PORT_Y
-      const mid = (x1 + x2) / 2
+      const leftward = calleeRight < left
+      // A callee that shares the caller's columns has no free side to arrive at: a line drawn
+      // to its left or right port would cross the card and end under it, and the cards paint
+      // over this layer, so the arrowhead would never show. Such a callee is joined through the
+      // edge that faces the caller, above or below, at the point nearest the call site.
+      const below = !rightward && !leftward && calleeTop >= callerBottom
+      const above = !rightward && !leftward && calleeBottom <= callerTop
+      let d
+      if (below || above) {
+        const siteX = anchored ? within((anchor.left + anchor.right) / 2, c.left, c.right) : c.right
+        const x1 = (siteX - s.left) / scale
+        const y1 = below ? callerBottom : callerTop
+        const x2 = within(x1, calleeLeft + PORT_Y, calleeRight - PORT_Y)
+        const y2 = below ? calleeTop : calleeBottom
+        const mid = (y1 + y2) / 2
+        d = `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`
+      } else {
+        const x1 = rightward ? right : left
+        const y1 = anchored
+          ? (within(anchor.top + anchor.height / 2, c.top, c.bottom) - s.top) / scale
+          : callerTop + PORT_Y
+        const x2 = rightward ? calleeLeft : calleeRight
+        const y2 = calleeTop + PORT_Y
+        const mid = (x1 + x2) / 2
+        d = `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`
+      }
       const color = /^[0-7]$/.test(site.dataset.color || "") ? site.dataset.color : null
       // The path is drawn in stage units, which the zoom scales; `vector-effect` is what keeps
       // its stroke 2 screen pixels instead of thinning to under half a one at MIN_SCALE.
       paths.push(
         `<path class="edge" vector-effect="non-scaling-stroke"` +
           (color === null ? "" : ` data-color="${color}" marker-end="url(#arrow-${color})"`) +
-          ` d="M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}" />`,
+          ` d="${d}" />`,
       )
     }
     this.svg.setAttribute("width", String(this.stage.scrollWidth))
