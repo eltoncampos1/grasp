@@ -138,10 +138,11 @@ defmodule Grasp.Comments do
   Stamps the thread `id` with the GitHub review comment `%{id, url}` it was published as.
 
   `published_at` is the moment of the stamp, in the same ISO 8601 UTC spelling as
-  `created_at`. A thread stamped twice keeps the latest comment.
+  `created_at`. A thread stamped twice keeps the latest comment, and a comment without a
+  positive integer id and a URL is `{:error, :invalid}`.
   """
   @spec mark_published(pos_integer(), %{id: pos_integer(), url: String.t()}) ::
-          {:ok, thread()} | {:error, :unknown}
+          {:ok, thread()} | {:error, :unknown | :invalid}
   def mark_published(id, comment) when is_integer(id) and is_map(comment),
     do: GenServer.call(__MODULE__, {:mark_published, id, comment})
 
@@ -268,7 +269,7 @@ defmodule Grasp.Comments do
 
       {:reply, {:ok, thread}, commit(state)}
     else
-      :error -> {:reply, {:error, reply_error(state, id)}, state}
+      :error -> {:reply, {:error, thread_error(state, id)}, state}
     end
   end
 
@@ -287,15 +288,14 @@ defmodule Grasp.Comments do
     end
   end
 
-  def handle_call({:mark_published, id, %{id: comment_id, url: url}}, _from, state) do
-    case Map.fetch(state.threads, id) do
-      {:ok, thread} ->
-        thread = %{thread | github: %{id: comment_id, url: url, published_at: now()}}
-        state = %{state | threads: Map.put(state.threads, id, thread)}
-        {:reply, {:ok, thread}, commit(state)}
-
-      :error ->
-        {:reply, {:error, :unknown}, state}
+  def handle_call({:mark_published, id, comment}, _from, state) do
+    with {:ok, thread} <- Map.fetch(state.threads, id),
+         {:ok, github} <- build_github(comment) do
+      thread = %{thread | github: github}
+      state = %{state | threads: Map.put(state.threads, id, thread)}
+      {:reply, {:ok, thread}, commit(state)}
+    else
+      :error -> {:reply, {:error, thread_error(state, id)}, state}
     end
   end
 
@@ -442,7 +442,9 @@ defmodule Grasp.Comments do
     end)
   end
 
-  defp reply_error(state, id),
+  # A mutation that found no thread at all is :unknown; one that found the thread and
+  # refused its attributes is :invalid.
+  defp thread_error(state, id),
     do: if(Map.has_key?(state.threads, id), do: :invalid, else: :unknown)
 
   defp build_thread(attrs, id) do
@@ -467,6 +469,11 @@ defmodule Grasp.Comments do
        }}
     end
   end
+
+  defp build_github(%{id: id, url: url}) when is_integer(id) and id > 0 and is_binary(url),
+    do: {:ok, %{id: id, url: url, published_at: now()}}
+
+  defp build_github(_comment), do: :error
 
   defp build_reply(attrs, id) do
     with {:ok, author} <- member_field(attrs, :author, @authors),

@@ -33,7 +33,9 @@ defmodule Grasp.GitHub do
   Runs `gh` with `args` from `root`, answering its output or the output of its failure.
 
   The output is handed back as `gh` wrote it, trailing newline and all, so a caller that
-  wants a diff gets the diff; a failure's output is trimmed, because it is a message.
+  wants a diff gets the diff; a failure's output is trimmed, because it is a message. A
+  failure that said nothing at all is reported by its exit status, so the error is never
+  an empty string the caller would have to explain away.
   """
   @spec run([String.t()], Path.t()) :: {:ok, String.t()} | {:error, String.t()}
   def run(args, root) when is_list(args) and is_binary(root) do
@@ -42,7 +44,7 @@ defmodule Grasp.GitHub do
     if System.find_executable(command) do
       case System.cmd(command, args, cd: root, stderr_to_stdout: true) do
         {output, 0} -> {:ok, output}
-        {output, _status} -> {:error, String.trim(output)}
+        {output, status} -> {:error, failure(output, status)}
       end
     else
       {:error, "gh is not installed or not on PATH"}
@@ -74,32 +76,36 @@ defmodule Grasp.GitHub do
 
   The comment names its `body`, the `path` it hangs off, the `commit_id` it is written
   against, and a `kind`: a `:line` comment sits on the new side at `line`, and a `:file`
-  comment sits on the file as a whole and carries no line. GitHub rejects a line the
-  pull request's diff does not touch, which is what `Grasp.GitHub.Diff` is for.
+  comment sits on the file as a whole and carries no line. A `:line` comment with no line,
+  and any other kind, is an error rather than a raise, so a caller that built the comment
+  from a thread reads about it the same way it reads about a rejection. GitHub rejects a
+  line the pull request's diff does not touch, which is what `Grasp.GitHub.Diff` is for.
   """
   @spec create_review_comment(Path.t(), pos_integer(), map()) ::
           {:ok, posted()} | {:error, String.t()}
   def create_review_comment(
         root,
         number,
-        %{body: body, path: path, commit_id: commit_id} = comment
+        %{body: body, path: path, commit_id: commit_id, kind: kind} = comment
       )
       when is_integer(number) and number > 0 do
-    args =
-      [
-        "api",
-        "--method",
-        "POST",
-        "repos/{owner}/{repo}/pulls/#{number}/comments",
-        "-f",
-        "body=#{body}",
-        "-f",
-        "path=#{path}",
-        "-f",
-        "commit_id=#{commit_id}"
-      ] ++ placement(comment.kind, Map.get(comment, :line))
+    args = [
+      "api",
+      "--method",
+      "POST",
+      "repos/{owner}/{repo}/pulls/#{number}/comments",
+      "-f",
+      "body=#{body}",
+      "-f",
+      "path=#{path}",
+      "-f",
+      "commit_id=#{commit_id}"
+    ]
 
-    with {:ok, output} <- run(args, root), do: decode_posted(output)
+    with {:ok, placement} <- placement(kind, Map.get(comment, :line)),
+         {:ok, output} <- run(args ++ placement, root) do
+      decode_posted(output)
+    end
   end
 
   @doc "Posts `body` as a reply to review comment `comment_id` on pull request `number`."
@@ -122,9 +128,20 @@ defmodule Grasp.GitHub do
 
   # `-F` sends the line as a JSON number; GitHub rejects the string `-f` would send.
   defp placement(:line, line) when is_integer(line) and line > 0,
-    do: ["-F", "line=#{line}", "-f", "side=RIGHT"]
+    do: {:ok, ["-F", "line=#{line}", "-f", "side=RIGHT"]}
 
-  defp placement(:file, _line), do: ["-f", "subject_type=file"]
+  defp placement(:line, _line), do: {:error, "a line comment needs a line"}
+
+  defp placement(:file, _line), do: {:ok, ["-f", "subject_type=file"]}
+
+  defp placement(kind, _line), do: {:error, "unknown comment kind: #{inspect(kind)}"}
+
+  defp failure(output, status) do
+    case String.trim(output) do
+      "" -> "gh exited with status #{status}"
+      message -> message
+    end
+  end
 
   defp decode_pull_request(output) do
     case Jason.decode(output) do

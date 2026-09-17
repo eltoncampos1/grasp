@@ -239,18 +239,36 @@ defmodule Grasp.CommentsTest do
     assert Comments.snippet(nil, "new", 1) == nil
   end
 
-  test "mark_published/2 stamps a thread with its GitHub review comment", %{
+  test "mark_published/2 stamps a thread, broadcasts and writes the stamp to the file", %{
     function_id: function_id
   } do
     {:ok, thread} = add(function_id, %{})
     assert thread.github == nil
+    :ok = Comments.subscribe()
 
     url = "https://github.com/acme/sample_app/pull/42#discussion_r55123"
     assert {:ok, published} = Comments.mark_published(thread.id, %{id: 55_123, url: url})
 
+    assert_receive :comments_changed
     assert %{id: 55_123, url: ^url, published_at: published_at} = published.github
     assert {:ok, _datetime, _offset} = DateTime.from_iso8601(published_at)
     assert {:ok, ^published} = Comments.fetch(thread.id)
+
+    assert {:ok, {threads, _next_id, 0}} = Comments.path() |> File.read!() |> Comments.decode()
+    assert Enum.any?(threads, &(&1.id == published.id and &1.github == published.github))
+  end
+
+  test "mark_published/2 refuses a comment that names no review comment", %{
+    function_id: function_id
+  } do
+    {:ok, thread} = add(function_id, %{})
+
+    assert Comments.mark_published(thread.id, %{}) == {:error, :invalid}
+    assert Comments.mark_published(thread.id, %{id: "r1", url: nil}) == {:error, :invalid}
+
+    assert pid = Process.whereis(Comments)
+    assert Process.alive?(pid)
+    assert {:ok, %{github: nil}} = Comments.fetch(thread.id)
   end
 
   test "mark_published/2 does not know an id no thread holds" do

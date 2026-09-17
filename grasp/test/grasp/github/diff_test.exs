@@ -45,6 +45,23 @@ defmodule Grasp.GitHub.DiffTest do
     assert Diff.commentable_lines(diff) == %{"lib/sample_app/greeter.ex" => [1..3, 30..33]}
   end
 
+  test "commentable_lines/1 does not read an added line beginning with ++ as a header" do
+    diff = """
+    --- a/lib/sample_app/counter.ex
+    +++ b/lib/sample_app/counter.ex
+    @@ -1,2 +1,4 @@
+     defmodule SampleApp.Counter do
+    +++ extras
+    +  def all(list), do: list
+     end
+    @@ -20 +22,2 @@
+    +  def other(list), do: list
+     end
+    """
+
+    assert Diff.commentable_lines(diff) == %{"lib/sample_app/counter.ex" => [1..4, 22..23]}
+  end
+
   defp hunk(header) do
     """
     --- a/lib/sample_app/greeter.ex

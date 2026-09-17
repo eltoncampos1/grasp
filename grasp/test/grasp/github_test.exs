@@ -61,10 +61,25 @@ defmodule Grasp.GitHubTest do
     assert message =~ "422"
   end
 
+  test "create_review_comment/3 refuses a line comment with no line", %{root: root} do
+    assert GitHub.create_review_comment(root, 42, %{
+             body: "this guard is unreachable",
+             path: "lib/sample_app/greeter.ex",
+             commit_id: "0000000",
+             kind: :line,
+             line: nil
+           }) == {:error, "a line comment needs a line"}
+  end
+
   test "reply_review_comment/4 posts a reply", %{root: root} do
     assert {:ok, %{id: id, url: url}} = GitHub.reply_review_comment(root, 42, 7, "agreed")
     assert is_integer(id)
     assert url =~ "#discussion_r"
+  end
+
+  test "a failure that said nothing is reported by its exit status" do
+    assert {:error, message} = GitHub.run(["pr", "view"], "/no/such/directory")
+    assert message =~ "gh exited with status"
   end
 
   test "a gh that is not on PATH is an error, not a crash", %{root: root} do

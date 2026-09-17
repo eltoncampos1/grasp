@@ -23,19 +23,30 @@ defmodule Grasp.GitHub.Diff do
   """
   @spec commentable_lines(String.t()) :: %{String.t() => [Range.t()]}
   def commentable_lines(diff) when is_binary(diff) do
-    {_path, files} =
+    {_previous, _path, files} =
       diff
       |> String.split("\n")
-      |> Enum.reduce({nil, %{}}, fn line, {path, files} ->
+      |> Enum.reduce({"", nil, %{}}, fn line, {previous, path, files} ->
         cond do
-          String.starts_with?(line, "+++ ") -> open_section(line, files)
-          is_nil(path) -> {path, files}
-          true -> {path, hunk(line, path, files)}
+          new_side_header?(previous, line) ->
+            {path, files} = open_section(line, files)
+            {line, path, files}
+
+          is_nil(path) ->
+            {line, path, files}
+
+          true ->
+            {line, path, hunk(line, path, files)}
         end
       end)
 
     Map.new(files, fn {path, ranges} -> {path, Enum.reverse(ranges)} end)
   end
+
+  # An added line whose own text begins with `++ ` is written `+++ ` in the diff, so the
+  # four characters alone do not make a header: the old-side half has to precede it.
+  defp new_side_header?(previous, line),
+    do: String.starts_with?(line, "+++ ") and String.starts_with?(previous, "--- ")
 
   defp open_section(line, files) do
     header = line |> String.replace_prefix("+++ ", "") |> String.trim()
