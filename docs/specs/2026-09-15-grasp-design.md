@@ -243,11 +243,25 @@ tracer event whose caller has no definition record is dropped entirely.
 ## Part 2 — `grasp` viewer
 
 ```
-cd grasp && mix grasp.serve --index ../my_app/.grasp/index.json [--port 4040] [--editor vscode]
+cd my_app && mix grasp.serve [--port 4040] [--editor vscode]
 ```
 
-Binds to 127.0.0.1. Reloads the index when the file's mtime changes (2 s poll) and
-broadcasts the reload.
+The viewer is never a dependency of the project it reviews — its Phoenix, LiveView, Bandit
+and MCP libraries would collide with the project's own pins — so `mix grasp.serve` is a
+task of `grasp_index`, the one package the project installs, and it launches the viewer
+from a checkout of this repository. The checkout is `--viewer PATH` or `GRASP_VIEWER`, else
+`~/.grasp/viewer`; when the current project *is* the viewer, the checkout is the current
+directory. A checkout that does not exist yet is cloned from `--repo URL` or
+`GRASP_VIEWER_REPO` (default: this repository on GitHub); one without `deps/` gets
+`mix deps.get`, one without a built `priv/static/assets/app.js` gets `mix assets.build`.
+The index defaults to `.grasp/index.json` under the current directory and must exist
+(`mix grasp.index` writes it); `--index`, `--port`, `--editor`, `--agent-command` and
+`--agent-model` are forwarded. The launcher then runs `mix grasp.viewer --index PATH …` in
+the checkout's `grasp/` project, streaming its output, so Ctrl-C stops both.
+
+`mix grasp.viewer` is the viewer's own task, run in `grasp/`; it takes the same options,
+needs `--index`, binds to 127.0.0.1, reloads the index when the file's mtime changes (2 s
+poll) and broadcasts the reload.
 
 ### Session
 
@@ -521,7 +535,9 @@ redraw the flow" is one prompt in the chat panel.
   file is, or `"old"` for a line the diff deleted, numbered from 1 within `base_source` as
   the diff view numbers them; `snippet` is the trimmed text of the line when the comment
   was made; `author` is `"human"` or `"agent"`; `created_at` is ISO 8601 UTC; a reply is
-  `%{id, author, body, created_at}`. Ids are never reused. A body is stored trimmed and may
+  `%{id, author, body, created_at}`; `github` is `nil` until the thread is published to a
+  pull request, then `%{id, url, published_at}` — the review comment's id and link, kept
+  so a second publish skips it. Ids are never reused. A body is stored trimmed and may
   not be blank. Every change broadcasts `:comments_changed` on the `"comments"` topic and
   rewrites `<project.root>/.grasp/comments.json` (`version`, `next_id`, `comments`), which is
   read back when the viewer starts, so comments outlive the viewer and travel with the
@@ -557,6 +573,16 @@ redraw the flow" is one prompt in the chat panel.
   give the agent the threads, with each one's placement, and `get_function` carries a
   function's open threads. The system prompt tells the agent what a comment is and how to
   answer one; in *edit mode* (see the chat panel) it can also act on one.
+- **Publishing.** `publish_comments` (Part 3) posts the open threads to the pull request
+  of the current branch as GitHub review comments through `gh`, so a review done in Grasp
+  ends up where the author reads it. A thread on the `"new"` side whose line falls inside
+  the pull request's diff (the changed lines and the context GitHub shows around them) is
+  posted on that line; every other thread — a line outside the diff, or a `"old"`-side line,
+  which Grasp numbers within the function rather than within the base file — is posted as
+  a file-level comment that names the function, the side and the line and quotes the
+  snippet. A thread the agent wrote is prefixed `claude:`; replies are posted as replies,
+  in order. Each published thread is stamped with the comment's id and URL; the card shows
+  the link in the thread's footer, and a second publish skips stamped threads.
 
 ### Highlighting and diffs
 
@@ -732,6 +758,21 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   ones that write outside the project; there is no sandbox beyond what Claude Code applies.
   The mode is off unless the reader turns it on, and per viewer session.
 
+### Known gaps (milestone 5.8)
+
+- **Comments off the diff become file comments.** GitHub takes a line comment only on a
+  line its diff shows; a Grasp comment on an unchanged line far from any hunk, and every
+  comment on a deleted line (numbered within the function, not the base file), is posted
+  at file level with the location and the snippet in the body. Anchoring deleted lines
+  would need the base file's line for the function, which the index does not carry.
+- **Publishing is one way.** Replies and resolutions made on GitHub after publishing do not
+  come back into `.grasp/comments.json`; a thread published once is never posted again,
+  even if its Grasp replies grew since.
+- **The launcher needs git and the network on first run.** `mix grasp.serve` clones the
+  viewer and downloads its dependencies and esbuild once; after that it runs offline. The
+  checkout is whatever branch the clone left it on and is never updated by the launcher —
+  `git pull` in `~/.grasp/viewer` by hand.
+
 ## Part 3 — MCP
 
 Served by `anubis_mcp` at `/mcp` over Streamable HTTP, on the same endpoint as the viewer.
@@ -813,8 +854,22 @@ first reference. Results are JSON text content, so any MCP client can read them.
   line is outside it; `reply_comment(comment_id, body)` appends a reply as the agent;
   `resolve_comment(comment_id, resolved?)` resolves (default) or reopens a thread. Unknown
   ids and blank bodies are tool errors. `get_function` carries `comments`, the function's
-  open threads with the same fields. There is no tool that deletes a comment: what a
-  reviewer wrote is theirs to remove, from the card.
+  open threads with the same fields, and every thread carries `github_url` (null until
+  published). There is no tool that deletes a comment: what a reviewer wrote is theirs to
+  remove, from the card.
+- `publish_comments(pull_request?, include_resolved?)` posts the threads to a pull request
+  (see [Comments](#comments), Publishing). Without `pull_request` it takes the one open for
+  the current branch (`gh pr view --json`). It reads the pull request's diff (`gh pr diff`)
+  to decide which threads can be line comments, posts each unpublished thread with
+  `gh api` (`POST repos/{owner}/{repo}/pulls/N/comments`, `commit_id` the pull request's
+  head), then each of its replies, and stamps the thread. It answers `pull_request`
+  (`number`, `url`), `published` (`comment_id`, `url`, `kind` `"line"` or `"file"`),
+  `skipped` (`comment_id`, `reason` — already published), `failed` (`comment_id`, `error`
+  — GitHub's refusal, or a function no longer in the index) and `warnings` (one when the
+  index's `git.head` is not the pull request's head: the lines may be off). A missing or
+  unauthenticated `gh`, no pull request for the branch, or a project root that is not a
+  directory on this machine is a tool error carrying `gh`'s own message. The tool works in
+  both chat modes: it writes to the pull request, not to the working tree.
 - `reload_index()` makes the store read the watched index file now, instead of at its next
   mtime poll, and answers the loaded index's summary: `path`, `functions`, `changed`,
   `base_ref`, `branch` and `head` (the last three null without git). An agent that has just
@@ -882,6 +937,10 @@ conversation.
   so the whole change is on the canvas in frames. Comments from an earlier review of another
   branch stay in `.grasp/comments.json` until resolved or deleted; the prompt says so. In
   `read` mode the same request is answered with a note to switch the chat to edit mode.
+- "Publish the comments to the PR" is one prompt in either mode: the system prompt names
+  `publish_comments`, says to pass the number when the request has one, and asks the agent
+  to report which threads went on their line and which as file comments, and any failure,
+  from the tool's answer.
 - The runner parses the JSON stream line by line: `assistant` text blocks stream into the
   transcript, `tool_use` blocks become tool rows showing the tool name and its main
   argument, `tool_result` blocks mark the row done or failed, `system/init` records the
@@ -935,7 +994,10 @@ conversation.
    Done, then groups and semantic zoom (5.1, 5.2), selection (5.3) and, in 5.4, review
    comments with the agent's edit mode, frames that follow their cards, and the far-zoom
    retune; 5.5 opens a pull request from the chat (`gh pr checkout` in place, rebuild
-   against the base, `reload_index`, one group per flow).
+   against the base, `reload_index`, one group per flow); 5.6 the bottom toolbar, manual
+   signature mode and group drag; 5.7 the changes-only diff; 5.8 `publish_comments` and
+   `mix grasp.serve` from the reviewed project (the viewer's own task becomes
+   `mix grasp.viewer`).
 6. Sessions on disk: persistence of the forest and its groups.
 7. Tours: `set_tour`, `tour_goto`, the tour bar, resources and the `build_review_tour`
    prompt.
