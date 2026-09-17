@@ -366,8 +366,16 @@ defmodule Grasp.Comments do
   # it came from is moved aside first and the reviewer keeps a copy to recover by hand.
   defp keep_corrupt_aside(%{corrupt: false} = state), do: state
 
+  # A second damaged file at the same path is kept beside the first rather than over it:
+  # `File.rename/2` replaces an existing destination without a word, and the copy it would
+  # replace is the one the reader has not looked at yet.
   defp keep_corrupt_aside(state) do
     kept = state.path <> ".corrupt"
+
+    kept =
+      if File.exists?(kept),
+        do: state.path <> ".#{System.os_time(:second)}.corrupt",
+        else: kept
 
     case File.rename(state.path, kept) do
       :ok -> Logger.warning("grasp: kept the unreadable comments file as #{kept}")
