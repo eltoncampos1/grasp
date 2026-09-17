@@ -61,10 +61,10 @@ defmodule Grasp.Index.Viewer do
   @doc """
   The directory holding the viewer's checkout.
 
-  `:cwd_app` is the app name of the Mix project the launcher was invoked from. When that
-  project is the viewer itself, the checkout is `:cwd` — someone working on Grasp serves
-  the code in front of them rather than a copy of it somewhere else. Otherwise the
-  checkout is `:viewer`, else `GRASP_VIEWER` in `:env`, else `#{@default_checkout}`.
+  `:viewer` wins when given. Otherwise, when `:cwd_app` — the app name of the Mix project
+  the launcher was invoked from — is the viewer itself, the checkout is `:cwd`: someone
+  working on Grasp serves the code in front of them rather than a copy of it somewhere
+  else. Otherwise it is `GRASP_VIEWER` in `:env`, else `#{@default_checkout}`.
 
   A relative path is taken as relative to `:cwd`, which is where the person typed it, and
   the result is always absolute, so a caller may hand it straight to a command's `cd`.
@@ -74,12 +74,8 @@ defmodule Grasp.Index.Viewer do
     cwd = Keyword.fetch!(opts, :cwd)
     env = Keyword.get(opts, :env, %{})
 
-    path =
-      if Keyword.get(opts, :cwd_app) == :grasp do
-        cwd
-      else
-        opts[:viewer] || env["GRASP_VIEWER"] || @default_checkout
-      end
+    own_checkout = if Keyword.get(opts, :cwd_app) == :grasp, do: cwd
+    path = opts[:viewer] || own_checkout || env["GRASP_VIEWER"] || @default_checkout
 
     Path.expand(path, cwd)
   end
@@ -110,7 +106,9 @@ defmodule Grasp.Index.Viewer do
   """
   @spec steps(Path.t(), String.t(), [String.t()]) :: [step()]
   def steps(checkout, repo, argv) do
-    fresh? = not File.dir?(checkout)
+    # A regular file at the path is not a fresh start: cloning onto it would fail with
+    # git's message where the checkout check says how to recover.
+    fresh? = not File.exists?(checkout)
     project = if fresh?, do: Path.join(checkout, "grasp"), else: project(checkout)
 
     clone = if fresh?, do: [{:clone, repo, checkout}], else: []
@@ -222,7 +220,7 @@ defmodule Grasp.Index.Viewer do
   # git creates the checkout and the directories leading to it, so the clone only needs a
   # directory to be run from: the nearest one above the checkout that already exists.
   defp command({:clone, url, into}),
-    do: {["git", "clone", "--progress", url, into], existing(Path.dirname(into))}
+    do: {["git", "clone", "--progress", "--", url, into], existing(Path.dirname(into))}
 
   defp command({:deps, project}), do: {["mix", "deps.get"], project}
   defp command({:assets, project}), do: {["mix", "assets.build"], project}

@@ -9,9 +9,9 @@ defmodule Mix.Tasks.Grasp.Serve do
                       [--agent-command claude] [--agent-model MODEL]
 
   The viewer is a Phoenix application and is never a dependency of the project it reviews,
-  so it runs from a checkout of the Grasp repository: `--viewer PATH`, else `GRASP_VIEWER`,
-  else `~/.grasp/viewer`, and the current directory when the current project is the viewer
-  itself. A checkout that is not there yet is cloned from `--repo URL`, else
+  so it runs from a checkout of the Grasp repository: `--viewer PATH`; else the current
+  directory when the current project is the viewer itself; else `GRASP_VIEWER`; else
+  `~/.grasp/viewer`. A checkout that is not there yet is cloned from `--repo URL`, else
   `GRASP_VIEWER_REPO`, else the repository on GitHub; a checkout without its dependencies
   or its built assets gets them before the viewer starts. Those are one-off waits on a new
   machine.

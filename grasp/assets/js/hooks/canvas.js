@@ -767,7 +767,10 @@ const Canvas = {
         const siteX = anchored ? within((anchor.left + anchor.right) / 2, c.left, c.right) : c.right
         const x1 = (siteX - s.left) / scale
         const y1 = below ? callerBottom : callerTop
-        const x2 = within(x1, calleeLeft + PORT_Y, calleeRight - PORT_Y)
+        // The arrival point keeps off the callee's corners by the port offset, or by half the
+        // card when a signature-mode card is narrower than two of them.
+        const inset = Math.min(PORT_Y, (calleeRight - calleeLeft) / 2)
+        const x2 = within(x1, calleeLeft + inset, calleeRight - inset)
         const y2 = below ? calleeTop : calleeBottom
         const mid = (y1 + y2) / 2
         d = `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`

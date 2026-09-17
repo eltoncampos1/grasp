@@ -9,11 +9,20 @@ defmodule Grasp.Index.ViewerTest do
   describe "checkout/1" do
     test "serves the current directory when the current project is the viewer" do
       assert Viewer.checkout(
-               viewer: "/elsewhere",
+               viewer: nil,
                env: %{"GRASP_VIEWER" => "/env"},
                cwd: "/repo/grasp",
                cwd_app: :grasp
              ) == "/repo/grasp"
+    end
+
+    test "takes the given path even inside the viewer" do
+      assert Viewer.checkout(
+               viewer: "/elsewhere",
+               env: %{},
+               cwd: "/repo/grasp",
+               cwd_app: :grasp
+             ) == "/elsewhere"
     end
 
     test "takes the given path over the environment" do
@@ -123,7 +132,7 @@ defmodule Grasp.Index.ViewerTest do
       assert Viewer.run(Viewer.steps(checkout, @repo, @argv), recorder) == :ok
 
       assert recorded.() == [
-               {["git", "clone", "--progress", @repo, checkout], tmp_dir},
+               {["git", "clone", "--progress", "--", @repo, checkout], tmp_dir},
                {["mix", "deps.get"], project},
                {["mix", "assets.build"], project},
                {["mix", "grasp.viewer" | @argv], project}
@@ -140,7 +149,7 @@ defmodule Grasp.Index.ViewerTest do
                 "#{checkout} is not a Grasp checkout (no mix.exs); remove it to clone afresh, or point --viewer at one"}
 
       refute File.exists?(Path.join(tmp_dir, "below"))
-      assert recorded.() == [{["git", "clone", "--progress", @repo, checkout], tmp_dir}]
+      assert recorded.() == [{["git", "clone", "--progress", "--", @repo, checkout], tmp_dir}]
     end
 
     @tag :tmp_dir
@@ -151,7 +160,7 @@ defmodule Grasp.Index.ViewerTest do
       assert Viewer.run(Viewer.steps(checkout, @repo, @argv), recorder) == :ok
 
       assert recorded.() == [
-               {["git", "clone", "--progress", @repo, checkout], tmp_dir},
+               {["git", "clone", "--progress", "--", @repo, checkout], tmp_dir},
                {["mix", "deps.get"], checkout},
                {["mix", "assets.build"], checkout},
                {["mix", "grasp.viewer" | @argv], checkout}

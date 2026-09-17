@@ -775,6 +775,11 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 - **Publishing is one way.** Replies and resolutions made on GitHub after publishing do not
   come back into `.grasp/comments.json`; a thread published once is never posted again,
   even if its Grasp replies grew since.
+- **Publishing takes the whole store.** `publish_comments` posts every open thread in
+  `.grasp/comments.json`, including ones written against another branch that were never
+  resolved, and the stamp is per thread, not per pull request — a thread that landed on the
+  wrong pull request cannot be published again to the right one. Resolve or delete threads
+  from an earlier review before publishing the next.
 - **The launcher needs git and the network on first run.** `mix grasp.serve` clones the
   viewer and downloads its dependencies and esbuild once; after that it runs offline. The
   checkout is whatever branch the clone left it on and is never updated by the launcher —
@@ -872,10 +877,12 @@ first reference. Results are JSON text content, so any MCP client can read them.
   head), then each of its replies, and stamps the thread. It answers `pull_request`
   (`number`, `url`), `published` (`comment_id`, `url`, `kind` `"line"` or `"file"`),
   `skipped` (`comment_id`, `reason` — already published), `failed` (`comment_id`, `error`
-  — GitHub's refusal, or a function no longer in the index) and `warnings` (one when the
-  index's `git.head` is not the pull request's head: the lines may be off). A missing or
-  unauthenticated `gh`, no pull request for the branch, or a project root that is not a
-  directory on this machine is a tool error carrying `gh`'s own message. The tool works in
+  — GitHub's refusal, or a function no longer in the index) and `warnings`: one when the
+  index's `git.head` is not the pull request's head (the lines may be off), one per reply
+  that failed after its comment landed, and one per comment that landed but could not be
+  stamped (publishing again would post it twice). A number that is not positive, a missing
+  or unauthenticated `gh`, no pull request for the branch, or a project root that is not a
+  directory on this machine is a tool error carrying `gh`'s own message where there is one. The tool works in
   both chat modes: it writes to the pull request, not to the working tree.
 - `reload_index()` makes the store read the watched index file now, instead of at its next
   mtime poll, and answers the loaded index's summary: `path`, `functions`, `changed`,
