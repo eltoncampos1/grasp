@@ -71,6 +71,16 @@ defmodule Grasp.GitHubTest do
            }) == {:error, "a line comment needs a line"}
   end
 
+  test "create_review_comment/3 refuses a kind it does not know", %{root: root} do
+    assert GitHub.create_review_comment(root, 42, %{
+             body: "neither a line nor a file",
+             path: "lib/sample_app/greeter.ex",
+             commit_id: "0000000",
+             kind: :suggestion,
+             line: 6
+           }) == {:error, "unknown comment kind: :suggestion"}
+  end
+
   test "reply_review_comment/4 posts a reply", %{root: root} do
     assert {:ok, %{id: id, url: url}} = GitHub.reply_review_comment(root, 42, 7, "agreed")
     assert is_integer(id)
