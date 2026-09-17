@@ -66,12 +66,15 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
 - Drag the background to pan; hold Space to pan from anywhere, cards included.
 - ⌘ or Ctrl with the wheel zooms about the cursor; the wheel alone pans, except over
   something that can scroll itself.
-- ⌘0 resets the canvas zoom, as does clicking the zoom percentage in the toolbar. Some
-  browsers also take ⌘0 for their own page zoom, and reset both.
-- Below 50% the cards stop showing code and start showing a signature: the body goes, the
-  header and the syntax-highlighted line naming each function are scaled back up so they
-  stay readable however far out you are, and the header's buttons keep working, so you can
-  close or collapse a card without zooming back in to it.
+- The toolbar sits at the bottom centre of the canvas. ⌘0 resets the canvas zoom, as does
+  clicking the zoom percentage there. Some browsers also take ⌘0 for their own page zoom,
+  and reset both.
+- `signatures` in the toolbar, or `s`, turns the cards down to their signatures: the body
+  goes, and the header and the syntax-highlighted line naming each function are scaled up so
+  they stay readable however far out you are. The header's buttons keep working, so you can
+  close or collapse a card without leaving the mode. Press it again for the code back.
+- A frame's title keeps its size at any zoom, so you can read which group is which from far
+  enough out that the cards inside it are specks.
 - ⌘M toggles the sidebar. On macOS the browser may take ⌘M for "minimise window", in
   which case use ⌘\\.
 - A card's callers menu opens a caller to its left; open several and the card keeps one

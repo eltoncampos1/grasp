@@ -556,6 +556,35 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#canvas .toolbar #zoom-fit")
     assert has_element?(view, "#canvas .toolbar #zoom-level[phx-update='ignore']", "100%")
     refute has_element?(view, "#canvas .toolbar #zoom-in[phx-click]")
+
+    # Signature mode is the hook's: the button is client-only, starts unpressed, and is kept
+    # out of every patch so a patch cannot render a pressed toggle as unpressed.
+    assert has_element?(
+             view,
+             "#canvas .toolbar #toggle-signatures[aria-pressed='false'][phx-update='ignore']",
+             "signatures"
+           )
+
+    refute has_element?(view, "#canvas .toolbar #toggle-signatures[phx-click]")
+  end
+
+  test "the toolbar's controls read left to right, zoom cluster in the middle", %{view: view} do
+    html = render(view)
+
+    at = fn id ->
+      case :binary.match(html, ~s(id="#{id}")) do
+        {position, _} -> position
+        :nomatch -> flunk("the toolbar has no ##{id}")
+      end
+    end
+
+    ids = ~w(
+      toggle-sidebar zoom-out zoom-level zoom-in zoom-fit
+      toggle-signatures reset-layout toggle-chat
+    )
+
+    positions = Enum.map(ids, at)
+    assert positions == Enum.sort(positions)
   end
 
   test "the sidebar can be hidden and shown", %{view: view} do

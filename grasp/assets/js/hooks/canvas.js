@@ -16,6 +16,11 @@
 // section are dragged about freely, so the frame is measured from where they ended up rather
 // than being the section's own box, and the section's header is moved to sit above it.
 //
+// Signature mode is a mode the reader turns on, from the toolbar or with `s`: the hook puts
+// `grasp-signatures` on <body> and the rules in app.css cut every card down to its header and
+// the one line that names it. The zoom decides nothing about it, so a canvas stays as it is
+// read wherever it is panned or zoomed to.
+//
 // A card is dragged by its header, or from anywhere on it with Ctrl held; holding Space turns
 // the whole canvas, cards included, into a pan surface. A card dropped anywhere inside another
 // group's frame joins that group — the drop is decided against the rectangles the hook drew —
@@ -24,20 +29,18 @@
 
 const MIN_SCALE = 0.25
 const MAX_SCALE = 2.5
-// Below this the code in a card is a grey smear whatever the font size, so the canvas
-// switches to the semantic zoom `body.grasp-far` describes in app.css.
-const FAR_SCALE = 0.5
 const DRAG_THRESHOLD = 4
 const MARGIN = 24
 // Half a card header near 1:1, so an edge arrives at the callee's title rather than at
-// its corner; far out the header is a thin strip and the port lands just under it.
+// its corner; in signature mode the header is a thin strip and the port lands just under it.
 const PORT_Y = 18
 // A Ctrl-drag's release is still a context-menu gesture; long enough to cover the menu the
 // browser opens just after the drag has ended.
 const CTRL_MENU_GRACE = 300
 // The frame's padding round the cards it holds, and the gap between it and the header above
-// them. The gap matches the header's own bottom margin, so a section nobody has dragged keeps
-// its header exactly where the layout put it.
+// them. The header's bottom margin is counter-scaled, so the gap is a screen measurement that
+// is divided by the scale to reach stage units: the two agree at every zoom, and a section
+// nobody has dragged keeps its header exactly where the layout put it.
 const FRAME_PAD = 16
 const FRAME_TITLE_GAP = 8
 
@@ -47,6 +50,7 @@ const Canvas = {
     this.svg = this.el.querySelector("#connectors")
     this.zoomLevel = this.el.querySelector("#zoom-level")
     this.view = {x: MARGIN, y: MARGIN, scale: 1}
+    this.signatures = false
     this.frames = []
     this.lastReveal = null
     this.style =
@@ -66,6 +70,7 @@ const Canvas = {
     this.onKeyDown = (e) => this.spaceDown(e)
     this.onKeyUp = (e) => this.spaceUp(e)
     this.onZoomReset = () => this.resetZoom()
+    this.onToggleSignatures = () => this.toggleSignatures()
     this.onSpaceRelease = () => this.releaseSpace()
     this.el.addEventListener("wheel", this.onWheel, {passive: false})
     this.el.addEventListener("pointerdown", this.onPointerDown)
@@ -77,6 +82,7 @@ const Canvas = {
     window.addEventListener("keydown", this.onKeyDown)
     window.addEventListener("keyup", this.onKeyUp)
     window.addEventListener("grasp:zoom-reset", this.onZoomReset)
+    window.addEventListener("grasp:toggle-signatures", this.onToggleSignatures)
     // A hold that ends while the page is in the background never delivers its keyup, which
     // would leave the canvas panning on the next press.
     window.addEventListener("blur", this.onSpaceRelease)
@@ -117,11 +123,12 @@ const Canvas = {
     window.removeEventListener("keydown", this.onKeyDown)
     window.removeEventListener("keyup", this.onKeyUp)
     window.removeEventListener("grasp:zoom-reset", this.onZoomReset)
+    window.removeEventListener("grasp:toggle-signatures", this.onToggleSignatures)
     window.removeEventListener("blur", this.onSpaceRelease)
     document.removeEventListener("visibilitychange", this.onSpaceRelease)
     document.body.classList.remove("grasp-space")
     document.body.classList.remove("grasp-dragging")
-    document.body.classList.remove("grasp-far")
+    document.body.classList.remove("grasp-signatures")
     this.resizeObserver.disconnect()
     this.style.remove()
   },
@@ -131,16 +138,11 @@ const Canvas = {
   applyView() {
     const {x, y, scale} = this.view
     this.style.textContent = `#stage{transform:translate(${Math.round(x)}px,${Math.round(y)}px) scale(${scale});--zoom:${scale}}`
-    // The scale is published as a custom property so the far-out rules can divide by it and
-    // keep a signature the same size on screen; the class lives on <body>, which the server
-    // never renders, so a patch mid-gesture cannot drop it.
-    const far = scale < FAR_SCALE
-    if (document.body.classList.contains("grasp-far") !== far) {
-      document.body.classList.toggle("grasp-far", far)
-      // Every card changes size on the flip, so every frame and every edge now ends somewhere
-      // else. The stage's ResizeObserver only reports that when the stage's box moves with them.
-      this.draw()
-    }
+    // The scale is published as a custom property so a counter-scaled rule can divide by it
+    // and hold a label at one size on screen. Those labels take a different box in stage units
+    // at every scale, so a frame drawn round them is only right for the scale it was drawn at;
+    // a pan leaves every box where it was and needs no redraw.
+    if (this.drawnScale !== scale) this.draw()
     if (this.zoomLevel) this.zoomLevel.textContent = `${Math.round(scale * 100)}%`
   },
 
@@ -202,17 +204,33 @@ const Canvas = {
       this.pushEvent("toggle_select", {card: card.id.replace("card-", "")})
       return
     }
-    const zoom = e.target.closest("#zoom-in, #zoom-out, #zoom-fit, #zoom-level")
-    if (!zoom) return
-    // The toolbar zoom buttons are client-only, so nothing should reach the server. They also
-    // give focus back: left holding it, they would swallow the Space that pans the canvas.
+    const control = e.target.closest(
+      "#zoom-in, #zoom-out, #zoom-fit, #zoom-level, #toggle-signatures",
+    )
+    if (!control) return
+    // The zoom buttons and the signature toggle are the hook's alone, so nothing should reach
+    // the server. They also give focus back: left holding it, they would swallow the Space
+    // that pans the canvas.
     e.stopPropagation()
     e.preventDefault()
-    zoom.blur()
-    if (zoom.id === "zoom-in") this.zoomBy(1.2)
-    else if (zoom.id === "zoom-out") this.zoomBy(1 / 1.2)
-    else if (zoom.id === "zoom-level") this.resetZoom()
+    control.blur()
+    if (control.id === "zoom-in") this.zoomBy(1.2)
+    else if (control.id === "zoom-out") this.zoomBy(1 / 1.2)
+    else if (control.id === "zoom-level") this.resetZoom()
+    else if (control.id === "toggle-signatures") this.toggleSignatures()
     else this.fit()
+  },
+
+  // Signature mode. The class lives on <body>, which the server never renders, so a patch
+  // cannot drop it; the button carries phx-update="ignore" for the same reason, the state it
+  // shows being the hook's. Every card changes size with the mode, so every frame and every
+  // edge now ends somewhere else, which only a redraw can say.
+  toggleSignatures() {
+    this.signatures = !this.signatures
+    document.body.classList.toggle("grasp-signatures", this.signatures)
+    const button = document.getElementById("toggle-signatures")
+    if (button) button.setAttribute("aria-pressed", String(this.signatures))
+    this.draw()
   },
 
   wheel(e) {
@@ -294,28 +312,9 @@ const Canvas = {
     this.applyView()
   },
 
-  // A fit that crosses the far threshold measures one layout and lands in another, because
-  // the scale it picks is what decides how big the cards are. The first pass puts that
-  // layout on screen, so a second one measures the box the chosen scale actually produces —
-  // one is enough, since a pass that does not cross the threshold is already a fixed point.
-  // Two passes that land on opposite sides of it have none: each scale lays the canvas out
-  // into the box the other measured, which is what makes repeated presses alternate. The
-  // threshold itself is the one scale both layouts agree on, so the fit is pinned there.
-  // The pan the second pass computed is kept rather than fitted a third time: it is out by
-  // the stage's own padding times the change in scale, which is a few pixels.
-  fit() {
-    const first = this.fitOnce()
-    if (first === null) return
-    const second = this.fitOnce()
-    if (second !== null && (first < FAR_SCALE) !== (second < FAR_SCALE)) {
-      this.view.scale = FAR_SCALE
-      this.applyView()
-    }
-  },
-
   // Fits the cards as they are laid out at this moment, answering the scale it applied, or
   // null when there is nothing on the canvas to fit.
-  fitOnce() {
+  fit() {
     // The frames are measured alongside the cards: a fit that showed only the cards would cut
     // the padding and the header off the sections holding them.
     const boxes = Array.from(this.el.querySelectorAll(".card, .frame"))
@@ -536,6 +535,7 @@ const Canvas = {
   // Frames first: they are measured from the cards, and drawing both from one read of the
   // layout keeps a dragged card's frame and its edges in step through the gesture.
   draw() {
+    this.drawnScale = this.view.scale
     this.drawFrames()
     this.drawConnectors()
   },
@@ -550,6 +550,7 @@ const Canvas = {
     if (!this.frameLayer) return
     const s = this.stage.getBoundingClientRect()
     const {scale} = this.view
+    const titleGap = FRAME_TITLE_GAP / scale
     this.frames = []
     const divs = []
     // Every box is read before the first header is moved. Writing `translate` invalidates the
@@ -599,9 +600,9 @@ const Canvas = {
         const naturalLeft = (titleBox.left - s.left) / scale - carried.x
         const naturalTop = (titleBox.top - s.top) / scale - carried.y
         const x = left - naturalLeft
-        const y = top - (height + FRAME_TITLE_GAP) - naturalTop
+        const y = top - (height + titleGap) - naturalTop
         title.style.translate = `${x}px ${y}px`
-        head = height + FRAME_TITLE_GAP + FRAME_PAD
+        head = height + titleGap + FRAME_PAD
       }
       const frame = {
         group,

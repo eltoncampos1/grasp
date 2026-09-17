@@ -39,8 +39,10 @@
   --diff-del-fg: #cf222e;
   --sidebar-width: 18rem;
   --code-size: 13px;
-  /* What a counter-scaled label measures on screen at any zoom: see body.grasp-far. */
+  /* What a counter-scaled label measures on screen at any zoom: see body.grasp-signatures. */
   --far-size: 10px;
+  /* A frame's name, held at this size on screen however far out the canvas is zoomed. */
+  --frame-title-size: 18px;
   --code-leading: 1.45;
   --mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
   --sans: system-ui, sans-serif;
@@ -86,9 +88,11 @@ kbd { font-family: var(--mono); background: var(--bg-sunken); border: 1px solid 
 
 .canvas { position: relative; overflow: hidden; padding: 0; background: var(--bg-sunken); cursor: grab; user-select: none; }
 .canvas .empty { position: absolute; inset-block-start: 40%; inset-inline: 0; text-align: center; }
-.toolbar { font-size: 13px; position: absolute; inset-block-start: var(--space-s); inset-inline-end: var(--space-s); z-index: 3; display: flex; gap: var(--space-xs); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space-xs); }
-.toolbar button { padding: 0 var(--space-s); color: var(--fg-muted); }
+.toolbar { font-size: 13px; position: absolute; inset-block-end: var(--space-m); inset-inline-start: 50%; translate: -50% 0; z-index: 3; display: flex; align-items: center; gap: var(--space-xs); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space-xs) var(--space-s); }
+.toolbar button { padding: var(--space-xs) var(--space-s); color: var(--fg-muted); }
 .toolbar button:hover { color: var(--fg); }
+.toolbar button[aria-pressed="true"] { color: var(--fg); background: var(--bg-sunken); border-radius: 4px; }
+.toolbar__sep { align-self: stretch; width: 1px; background: var(--border); margin-inline: var(--space-xs); }
 .toolbar__zoom { min-width: 3.5em; text-align: center; color: var(--fg-muted); cursor: pointer; font-variant-numeric: tabular-nums; }
 /* Space is held down: the whole canvas pans, so everything on it offers the pan cursor. */
 body.grasp-space .canvas, body.grasp-space .card { cursor: grab; }
@@ -109,13 +113,20 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 /* The section's own box only reserves room between sections; the frame a group is read as
    is drawn by the canvas hook round the cards wherever they have been dragged to. */
 .flow[data-grouped] { padding: var(--space-s) var(--space-m) var(--space-m); }
-.flow__title { display: flex; align-items: baseline; gap: var(--space-s); margin: 0 0 var(--space-s); font-family: var(--sans); font-size: 13px; color: var(--fg-muted); }
-.flow__title h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--fg); cursor: text; }
+/* A frame's header is counter-scaled by --zoom, which the canvas hook writes on #stage beside
+   the transform, so the name of a group reads at one size however far out the canvas is
+   zoomed: it is what tells one frame from another when the cards inside them are too small
+   to read. */
+.flow__title { display: flex; align-items: baseline; gap: calc(var(--space-s) / var(--zoom, 1)); margin: 0 0 calc(var(--space-s) / var(--zoom, 1)); font-family: var(--sans); font-size: calc(13px / var(--zoom, 1)); color: var(--fg-muted); }
+.flow__title h3 { margin: 0; font-size: calc(var(--frame-title-size) / var(--zoom, 1)); font-weight: 600; color: var(--fg); cursor: text; }
 .flow__title h3:hover { text-decoration: underline; text-decoration-style: dotted; }
+/* The whole header holds its size, not only the heading: a legible title beside a 3px card
+   count and a 3px ungroup button would be the same unreadability one step along. */
+.flow__count, .flow__title button { font-size: inherit; }
 /* A frame with no title still has a heading to click, so it reads as a name waiting to be
    given rather than as a gap in the header. */
 .flow__title .flow__title-text--empty { color: var(--fg-muted); font-style: italic; font-weight: 400; }
-.flow__rename input { font: inherit; font-size: 14px; font-weight: 600; padding: 2px var(--space-xs); border: 1px solid var(--border); border-radius: 4px; background: var(--bg-sunken); color: var(--fg); }
+.flow__rename input { font: inherit; font-size: calc(var(--frame-title-size) / var(--zoom, 1)); font-weight: 600; padding: 2px var(--space-xs); border: 1px solid var(--border); border-radius: 4px; background: var(--bg-sunken); color: var(--fg); }
 /* Callers to the left of what they call: one flex row of columns, each a stack of cards. */
 .columns { display: flex; align-items: flex-start; gap: var(--space-xl); }
 .column { display: flex; flex-direction: column; gap: var(--space-m); align-items: flex-start; }
@@ -219,30 +230,28 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .stub__text, .stub__docs { margin: 0 var(--space-m) var(--space-s); display: block; color: var(--fg-muted); }
 .stub__docs { color: var(--accent); }
 
-/* Semantic zoom. Under FAR_SCALE the canvas hook puts `grasp-far` on <body> and a card is
-   reduced to its header and the one line that names it: the code is a grey smear at that
-   size, and a head held at a legible size says more than a whole body rendered too small to
-   read. The counter-scaling divides by --zoom, which the hook writes on #stage beside the
-   transform, so each of these rules has to match inside the stage to see it. */
-body.grasp-far #stage .card__body, body.grasp-far #stage .card__also, body.grasp-far #stage .stub__text, body.grasp-far #stage .stub__docs { display: none; }
-body.grasp-far #stage .thread, body.grasp-far #stage .composer, body.grasp-far #stage .card__outdated { display: none; }
-body.grasp-far #stage .card__signature { display: block; font-size: calc(var(--far-size) / var(--zoom, 1)); padding: calc(var(--space-s) / var(--zoom, 1)) calc(var(--space-m) / var(--zoom, 1)); }
-/* Far out only the header and the signature ask for width, so the card's ceiling and floor
-   both go and it is exactly as wide as the wider of the two. */
-body.grasp-far #stage .card { min-width: 0; max-width: none; }
+/* Signature mode. The toolbar's `signatures` button and the `s` key put `grasp-signatures`
+   on <body>, and a card is reduced to its header and the one line that names it: a canvas
+   read for its shape says more that way than one where every body is on show, and the
+   signatures are held at a legible size however far out it is zoomed. The counter-scaling
+   divides by --zoom, which the canvas hook writes on #stage beside the transform, so each of
+   these rules has to match inside the stage to see it. */
+body.grasp-signatures #stage .card__body, body.grasp-signatures #stage .card__also, body.grasp-signatures #stage .stub__text, body.grasp-signatures #stage .stub__docs { display: none; }
+body.grasp-signatures #stage .thread, body.grasp-signatures #stage .composer, body.grasp-signatures #stage .card__outdated { display: none; }
+body.grasp-signatures #stage .card__signature { display: block; font-size: calc(var(--far-size) / var(--zoom, 1)); padding: calc(var(--space-s) / var(--zoom, 1)) calc(var(--space-m) / var(--zoom, 1)); }
+/* In this mode only the header and the signature ask for width, so the card's ceiling and
+   floor both go and it is exactly as wide as the wider of the two. */
+body.grasp-signatures #stage .card { min-width: 0; max-width: none; }
 /* The header is counter-scaled beside the signature rather than emptied: its badges, its
-   stats and its tint are what tell one far-out card from another, and its buttons stay
-   clickable, so a card can be closed or collapsed without zooming back in to it. Everything
+   stats and its tint are what tell one reduced card from another, and its buttons stay
+   clickable, so a card can be closed or collapsed without leaving the mode. Everything
    inside takes the header's size instead of its own: a file path rendered at 3px beside a
    legible title is no more use than the body that was dropped. */
-body.grasp-far #stage .card__header { font-size: calc(var(--far-size) / var(--zoom, 1)); gap: calc(var(--space-s) / var(--zoom, 1)); padding: calc(var(--space-xs) / var(--zoom, 1)) calc(var(--space-m) / var(--zoom, 1)); }
-body.grasp-far #stage .card__title, body.grasp-far #stage .card__kind, body.grasp-far #stage .badge, body.grasp-far #stage .card__stats, body.grasp-far #stage .card__tools { font-size: inherit; }
-body.grasp-far #stage .card__kind { margin-inline-start: calc(var(--space-s) / var(--zoom, 1)); }
-body.grasp-far #stage .card__tools { gap: calc(var(--space-s) / var(--zoom, 1)); }
-body.grasp-far #stage .badge { padding: 0 calc(var(--space-s) / var(--zoom, 1)); }
-/* The whole section header holds its size, not only the heading: a legible title beside a
-   3px card count and a 3px ungroup button would be the same unreadability one step along. */
-body.grasp-far #stage .flow__title, body.grasp-far #stage .flow__title h3 { font-size: calc(var(--far-size) / var(--zoom, 1)); }
+body.grasp-signatures #stage .card__header { font-size: calc(var(--far-size) / var(--zoom, 1)); gap: calc(var(--space-s) / var(--zoom, 1)); padding: calc(var(--space-xs) / var(--zoom, 1)) calc(var(--space-m) / var(--zoom, 1)); }
+body.grasp-signatures #stage .card__title, body.grasp-signatures #stage .card__kind, body.grasp-signatures #stage .badge, body.grasp-signatures #stage .card__stats, body.grasp-signatures #stage .card__tools { font-size: inherit; }
+body.grasp-signatures #stage .card__kind { margin-inline-start: calc(var(--space-s) / var(--zoom, 1)); }
+body.grasp-signatures #stage .card__tools { gap: calc(var(--space-s) / var(--zoom, 1)); }
+body.grasp-signatures #stage .badge { padding: 0 calc(var(--space-s) / var(--zoom, 1)); }
 
 .palette-backdrop { position: fixed; inset: 0; background: var(--backdrop); z-index: 9; }
 .palette { position: fixed; inset-block-start: 12vh; inset-inline: 0; margin-inline: auto; z-index: 10; width: min(48rem, 90vw); padding: 0; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); background: var(--bg-raised); color: var(--fg); }
@@ -258,7 +267,7 @@ body.grasp-far #stage .flow__title, body.grasp-far #stage .flow__title h3 { font
 
 /* The canvas suppresses selection and offers the pan cursor; inside the panel the pointer
    is for reading and typing, so both are handed back. */
-.chat { position: absolute; inset-block-end: var(--space-m); inset-inline-end: var(--space-m); z-index: 4; width: 28rem; max-height: 60vh; display: flex; flex-direction: column; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-size: 13px; user-select: text; cursor: auto; }
+.chat { position: absolute; inset-block-end: calc(var(--space-m) + 3rem); inset-inline-end: var(--space-m); z-index: 4; width: 28rem; max-height: 60vh; display: flex; flex-direction: column; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-size: 13px; user-select: text; cursor: auto; }
 /* A display of its own outranks the user agent's [hidden] rule, so the closed panel needs
    its own. */
 .chat[hidden] { display: none; }

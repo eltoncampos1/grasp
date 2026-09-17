@@ -761,17 +761,22 @@ defmodule GraspWeb.ReviewLive do
           >
             sidebar
           </button>
+          <span class="toolbar__sep" aria-hidden="true"></span>
           <button type="button" id="zoom-out" title="Zoom out">−</button>
           <span id="zoom-level" class="toolbar__zoom" phx-update="ignore" title="Reset zoom (⌘0)">100%</span>
-          <button type="button" id="zoom-fit" title="Fit all cards">fit</button>
           <button type="button" id="zoom-in" title="Zoom in">+</button>
+          <button type="button" id="zoom-fit" title="Fit all cards">fit</button>
+          <span class="toolbar__sep" aria-hidden="true"></span>
+          <%!-- The mode is the canvas hook's, written on <body> and on this button, so a patch
+          must leave the button alone or it would render a pressed toggle as unpressed. --%>
           <button
             type="button"
-            id="toggle-chat"
-            phx-click="chat_toggle"
-            title="Ask the agent (⌘I)"
+            id="toggle-signatures"
+            phx-update="ignore"
+            aria-pressed="false"
+            title="Show signatures instead of code (s)"
           >
-            ask
+            signatures
           </button>
           <button
             type="button"
@@ -780,6 +785,14 @@ defmodule GraspWeb.ReviewLive do
             title="Return cards to the automatic layout"
           >
             reset layout
+          </button>
+          <button
+            type="button"
+            id="toggle-chat"
+            phx-click="chat_toggle"
+            title="Ask the agent (⌘I)"
+          >
+            ask
           </button>
         </div>
         <p :if={@forest.cards == %{}} class="empty">

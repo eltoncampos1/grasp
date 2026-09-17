@@ -46,6 +46,10 @@ const Keys = {
         this.pushEvent("collapse_focused", {})
       } else if (e.key === "d") {
         this.pushEvent("toggle_view_focused", {})
+      } else if (e.key === "s") {
+        // Signature mode is the Canvas hook's, so this is hook to hook through the DOM rather
+        // than a round trip to the server.
+        window.dispatchEvent(new CustomEvent("grasp:toggle-signatures"))
       } else if (e.key === "Escape") {
         // The palette and any field have already returned above, so Escape here is aimed at
         // the canvas and means the cards picked out on it are let go.
