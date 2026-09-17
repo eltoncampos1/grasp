@@ -12,7 +12,8 @@ config :grasp,
   comments_path: nil,
   editor: nil,
   agent_command: "claude",
-  agent_model: nil
+  agent_model: nil,
+  gh_command: "gh"
 
 config :esbuild,
   version: "0.25.4",

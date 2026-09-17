@@ -154,6 +154,11 @@ defmodule Grasp.CommentsTest do
         author: "human",
         created_at: "2026-09-17T09:00:00Z",
         resolved: false,
+        github: %{
+          id: 55_123,
+          url: "https://github.com/acme/sample_app/pull/42#discussion_r55123",
+          published_at: "2026-09-17T09:03:00Z"
+        },
         replies: [
           %{
             id: 2,
@@ -173,6 +178,7 @@ defmodule Grasp.CommentsTest do
         author: "agent",
         created_at: "2026-09-17T09:02:00Z",
         resolved: true,
+        github: nil,
         replies: []
       }
     ]
@@ -231,6 +237,58 @@ defmodule Grasp.CommentsTest do
 
     assert Comments.snippet(record("SampleApp.Greeter.greet/2"), "old", 1) == nil
     assert Comments.snippet(nil, "new", 1) == nil
+  end
+
+  test "mark_published/2 stamps a thread with its GitHub review comment", %{
+    function_id: function_id
+  } do
+    {:ok, thread} = add(function_id, %{})
+    assert thread.github == nil
+
+    url = "https://github.com/acme/sample_app/pull/42#discussion_r55123"
+    assert {:ok, published} = Comments.mark_published(thread.id, %{id: 55_123, url: url})
+
+    assert %{id: 55_123, url: ^url, published_at: published_at} = published.github
+    assert {:ok, _datetime, _offset} = DateTime.from_iso8601(published_at)
+    assert {:ok, ^published} = Comments.fetch(thread.id)
+  end
+
+  test "mark_published/2 does not know an id no thread holds" do
+    assert Comments.mark_published(9_999_999, %{id: 1, url: "https://example.test/r1"}) ==
+             {:error, :unknown}
+  end
+
+  test "the github stamp survives encode and decode", %{function_id: function_id} do
+    {:ok, thread} = add(function_id, %{})
+
+    {:ok, published} =
+      Comments.mark_published(thread.id, %{id: 77, url: "https://example.test/r77"})
+
+    document = Comments.encode([published], published.id + 1)
+    assert {:ok, {[decoded], _next_id, 0}} = Comments.decode(document)
+    assert decoded == published
+  end
+
+  test "a thread written without a github stamp decodes with none", %{function_id: function_id} do
+    {:ok, thread} = add(function_id, %{})
+    document = Comments.encode([thread], thread.id + 1)
+
+    assert {:ok, {[decoded], _next_id, 0}} = Comments.decode(document)
+    assert decoded.github == nil
+    refute document |> Jason.decode!() |> Map.fetch!("comments") |> hd() |> Map.has_key?("github")
+  end
+
+  test "a thread whose github stamp is malformed is dropped" do
+    comment =
+      String.replace(
+        one_comment(),
+        ~s("resolved": false),
+        ~s("github": {"id": "x"}, "resolved": false)
+      )
+
+    document = ~s({"version": 1, "next_id": 9, "comments": [) <> comment <> "]}"
+
+    assert {:ok, {[], _next_id, 1}} = Comments.decode(document)
   end
 
   @tag :tmp_dir

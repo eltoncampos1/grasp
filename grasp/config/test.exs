@@ -17,5 +17,8 @@ config :grasp,
 # The suite never runs the real CLI: this stand-in prints a canned stream-json run.
 config :grasp, agent_command: Path.expand("test/support/fake_claude.sh", __DIR__ <> "/..")
 
+# Nor the real GitHub CLI: this stand-in answers canned pull request JSON.
+config :grasp, gh_command: Path.expand("test/support/fake_gh.sh", __DIR__ <> "/..")
+
 config :logger, level: :warning
 config :phoenix, :plug_init_mode, :runtime

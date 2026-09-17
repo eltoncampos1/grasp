@@ -35,6 +35,11 @@ defmodule Grasp.Comments do
   highest id the document holds, so a truncated or hand-edited `next_id` cannot make the
   next comment overwrite an existing one.
 
+  A thread published to a pull request carries the `github` stamp `mark_published/2` writes:
+  the review comment's id, its URL and the moment it was posted. The stamp is what tells a
+  later publish that the thread is already on GitHub, and the id is what a reply is addressed
+  to, so it belongs with the thread rather than in a ledger of its own.
+
   Every successful mutation broadcasts `:comments_changed` on the `"comments"` topic.
   """
 
@@ -48,6 +53,7 @@ defmodule Grasp.Comments do
   @type side :: String.t()
   @type store :: GenServer.server()
   @type reply :: %{id: pos_integer(), author: author(), body: String.t(), created_at: String.t()}
+  @type github :: %{id: pos_integer(), url: String.t(), published_at: String.t()}
   @type thread :: %{
           id: pos_integer(),
           function_id: String.t(),
@@ -58,6 +64,7 @@ defmodule Grasp.Comments do
           author: author(),
           created_at: String.t(),
           resolved: boolean(),
+          github: github() | nil,
           replies: [reply()]
         }
 
@@ -126,6 +133,17 @@ defmodule Grasp.Comments do
   @spec set_resolved(pos_integer(), boolean()) :: {:ok, thread()} | {:error, :unknown}
   def set_resolved(id, resolved) when is_integer(id) and is_boolean(resolved),
     do: GenServer.call(__MODULE__, {:set_resolved, id, resolved})
+
+  @doc """
+  Stamps the thread `id` with the GitHub review comment `%{id, url}` it was published as.
+
+  `published_at` is the moment of the stamp, in the same ISO 8601 UTC spelling as
+  `created_at`. A thread stamped twice keeps the latest comment.
+  """
+  @spec mark_published(pos_integer(), %{id: pos_integer(), url: String.t()}) ::
+          {:ok, thread()} | {:error, :unknown}
+  def mark_published(id, comment) when is_integer(id) and is_map(comment),
+    do: GenServer.call(__MODULE__, {:mark_published, id, comment})
 
   @doc "Deletes the thread `id` and its replies; an unknown id changes nothing."
   @spec delete(pos_integer()) :: :ok
@@ -261,6 +279,18 @@ defmodule Grasp.Comments do
 
       {:ok, thread} ->
         thread = %{thread | resolved: resolved}
+        state = %{state | threads: Map.put(state.threads, id, thread)}
+        {:reply, {:ok, thread}, commit(state)}
+
+      :error ->
+        {:reply, {:error, :unknown}, state}
+    end
+  end
+
+  def handle_call({:mark_published, id, %{id: comment_id, url: url}}, _from, state) do
+    case Map.fetch(state.threads, id) do
+      {:ok, thread} ->
+        thread = %{thread | github: %{id: comment_id, url: url, published_at: now()}}
         state = %{state | threads: Map.put(state.threads, id, thread)}
         {:reply, {:ok, thread}, commit(state)}
 
@@ -432,6 +462,7 @@ defmodule Grasp.Comments do
          author: author,
          created_at: now(),
          resolved: false,
+         github: nil,
          replies: []
        }}
     end
@@ -481,7 +512,7 @@ defmodule Grasp.Comments do
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
 
   defp encode_thread(thread) do
-    %{
+    encoded = %{
       "id" => thread.id,
       "function_id" => thread.function_id,
       "side" => thread.side,
@@ -493,6 +524,18 @@ defmodule Grasp.Comments do
       "resolved" => thread.resolved,
       "replies" => Enum.map(thread.replies, &encode_reply/1)
     }
+
+    encode_github(encoded, thread.github)
+  end
+
+  defp encode_github(encoded, nil), do: encoded
+
+  defp encode_github(encoded, github) do
+    Map.put(encoded, "github", %{
+      "id" => github.id,
+      "url" => github.url,
+      "published_at" => github.published_at
+    })
   end
 
   defp encode_reply(reply) do
@@ -538,7 +581,8 @@ defmodule Grasp.Comments do
               author in @authors do
     snippet = Map.get(comment, "snippet")
 
-    if is_nil(snippet) or is_binary(snippet) do
+    with true <- is_nil(snippet) or is_binary(snippet),
+         {:ok, github} <- decode_github(Map.get(comment, "github")) do
       {replies, dropped} = decode_replies(Map.get(comment, "replies", []))
 
       {:ok,
@@ -552,14 +596,23 @@ defmodule Grasp.Comments do
          author: author,
          created_at: created_at,
          resolved: Map.get(comment, "resolved") == true,
+         github: github,
          replies: replies
        }, dropped}
     else
-      :error
+      _malformed -> :error
     end
   end
 
   defp decode_thread(_comment), do: :error
+
+  defp decode_github(nil), do: {:ok, nil}
+
+  defp decode_github(%{"id" => id, "url" => url, "published_at" => published_at})
+       when is_integer(id) and id > 0 and is_binary(url) and is_binary(published_at),
+       do: {:ok, %{id: id, url: url, published_at: published_at}}
+
+  defp decode_github(_github), do: :error
 
   defp decode_replies(replies) when is_list(replies) do
     {decoded, dropped} =
