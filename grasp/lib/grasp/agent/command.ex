@@ -7,9 +7,13 @@ defmodule Grasp.Agent.Command do
   `--mcp-config`. `--strict-mcp-config` keeps the developer's own `.mcp.json` out of the
   run, and the tool allowlist follows the chat's mode. In `read` mode it is the grasp tools
   plus `Read`, `Grep` and `Glob`, with nothing that writes files or runs commands. In `edit`
-  mode it also carries `Edit`, `Write` and a `Bash` narrowed to `mix` and to the two read-only
-  git commands, so the agent can act on a review comment and rebuild the index, and still
-  cannot reach for an arbitrary shell command.
+  mode it also carries `Edit`, `Write` and a `Bash` narrowed to `mix`, to the read-only git
+  commands, to `git fetch` and `git switch`, and to the two `gh` subcommands that read a pull
+  request and check it out, so the agent can act on a review comment, rebuild the index and
+  put a pull request's branch in the working tree, and still cannot reach for an arbitrary
+  shell command. The branch-changing command is `git switch` rather than `git checkout`:
+  checkout also discards files, while switch refuses to leave uncommitted changes behind
+  unless it is told to — and the prompt forbids telling it to.
 
   The system prompt names the viewer session the agent is driving; every grasp card tool
   takes that session, so an agent that forgets it would arrange cards on a canvas nobody is
@@ -18,8 +22,12 @@ defmodule Grasp.Agent.Command do
   function being described twice, and that a question about a change starts from the list
   of changed functions rather than from a search. Several flows asked for at once become
   one group per flow, so each is framed and titled on the canvas instead of running into
-  its neighbour. It closes on the mode: what `read` refuses, and what `edit` owes the canvas
-  after an edit — a format, a rebuilt index, and cards laid out over the code as it now is.
+  its neighbour. A pull request asked for by number has its own recipe — check the branch
+  out, rebuild the index against the pull request's base, reload it, then lay the change
+  out — which `edit` mode spells out step by step and `read` mode answers with the one
+  sentence that sends the user to the mode that can run it. It closes on the mode: what
+  `read` refuses, and what `edit` owes the canvas after an edit — a format, a rebuilt index,
+  and cards laid out over the code as it now is.
   """
 
   alias Grasp.Index
@@ -30,7 +38,7 @@ defmodule Grasp.Agent.Command do
   @read_tools "Read,Grep,Glob"
   @read_allowed_tools "mcp__grasp,Read,Grep,Glob"
   @edit_tools "Read,Grep,Glob,Edit,Write,Bash"
-  @edit_allowed_tools "mcp__grasp,Read,Grep,Glob,Edit,Write,Bash(mix:*),Bash(git status:*),Bash(git diff:*)"
+  @edit_allowed_tools "mcp__grasp,Read,Grep,Glob,Edit,Write,Bash(mix:*),Bash(git status:*),Bash(git diff:*),Bash(git fetch:*),Bash(git switch:*),Bash(gh pr view:*),Bash(gh pr checkout:*)"
 
   @type option ::
           {:command, String.t()}
@@ -101,6 +109,8 @@ defmodule Grasp.Agent.Command do
 
     The reviewer leaves comments on lines of the cards, the way review comments are left on a pull request. list_comments returns the open ones: the function each thread sits on, the line and the text of that line, the body and the replies. When you are asked to address, answer or handle the comments, take them one at a time — read what the thread points at with get_function or Read, act on what it asks, then reply_comment with one or two sentences on what you did and resolve_comment to close it. add_comment leaves a remark of your own on a line worth the reviewer's attention.
 
+    #{pull_request(mode, reindex)}
+
     #{closing(mode, reindex)}
     """
     |> String.trim_trailing()
@@ -128,6 +138,24 @@ defmodule Grasp.Agent.Command do
       end
 
     "mix grasp.index" <> base <> out(index.project["root"], watched_path)
+  end
+
+  @doc """
+  `reindex` rebuilt against `base` instead of the ref the index carries.
+
+  The `--out` the viewer's own reindex command names is kept, so a rebuild for a pull
+  request still writes the file the viewer watches; only the base ref changes, and a
+  command with no `--base` at all gains one.
+  """
+  @spec reindex_against(String.t(), String.t()) :: String.t()
+  def reindex_against(reindex, base) when is_binary(reindex) and is_binary(base) do
+    out =
+      case Regex.run(~r/--out\s+(\S+)/, reindex) do
+        [_match, path] -> " --out #{path}"
+        nil -> ""
+      end
+
+    "mix grasp.index --base #{base}" <> out
   end
 
   @doc "The URL of this viewer's MCP endpoint, on the loopback address the endpoint serves."
@@ -161,6 +189,25 @@ defmodule Grasp.Agent.Command do
 
   defp allowed_tools("edit"), do: @edit_allowed_tools
   defp allowed_tools(_read), do: @read_allowed_tools
+
+  defp pull_request("edit", reindex) do
+    """
+    When the user asks you to open, review or look at a pull request by number:
+    1. Run `gh pr view N --json baseRefName,headRefName,title,url` to learn the base branch the pull request targets and its title.
+    2. Run `git status --porcelain`. If it prints anything, stop: tell the user the working tree has uncommitted changes, name the files it listed, and do nothing else. Never stash, reset, switch with `--discard-changes` or otherwise touch their work.
+    3. Run `gh pr checkout N`. The branch is checked out in the user's own working tree, not a copy.
+    4. Run `git fetch origin <base>` for the base branch you read in step 1, so the ref the index compares against is on this machine.
+    5. Rebuild the index from the project root with `#{reindex_against(reindex, "origin/<base>")}`.
+    6. Call reload_index, so what you read next is the index the rebuild wrote rather than the one it replaced.
+    7. Call list_changes, trace each changed function back to its entry points with find_paths, then call set_cards with the roots at the entry points and one group per flow, each group titled after what that flow does. Reply in two sentences that name the pull request's title.
+    Comments stay in `.grasp/comments.json` until they are resolved, so list_comments can answer with threads left on a branch other than the one now checked out.
+    """
+    |> String.trim_trailing()
+  end
+
+  defp pull_request(_read, _reindex) do
+    "When the user asks you to open, review or look at a pull request by number: the chat has to be switched to edit mode before a branch can be checked out, so say that, and offer to review whatever branch is already indexed."
+  end
 
   defp closing("edit", reindex) do
     "You may edit files under the project root and run mix. After editing: run `mix format` on the files you touched; rebuild the index from the project root with `#{reindex}` — the viewer reloads the cards from it within a couple of seconds; then arrange the cards again (set_cards or highlight_card) so the diagram shows the code as it now is. Keep every change to what the comments ask for, and say what you changed."

@@ -278,6 +278,16 @@ next prompt, and survives New conversation. Nothing is sandboxed: edit mode is t
 editing your working tree, so point it at a branch you can throw away and read the diff
 before you keep it.
 
+Edit mode also takes "Open PR 1212". The agent reads the pull request with `gh pr view` for
+its base branch and title, checks the tree is clean, and — if it is not — stops there and
+tells you which files have uncommitted changes rather than stashing or discarding anything.
+On a clean tree it runs `gh pr checkout`, fetches the base branch, rebuilds the index
+against it with the same `--out` the viewer is watching, reloads the viewer and lays the
+change out one group per flow. `gh` has to be installed and signed in, and the checkout
+happens in your own working tree — the branch you were on is the branch you switched away
+from, so finish what you were doing first. The commands this admits beyond edit mode's own
+are `git fetch`, `git switch`, `gh pr view` and `gh pr checkout`.
+
 The panel's Model select picks which model the CLI runs: the four aliases `haiku`,
 `sonnet`, `opus` and `fable`, or `default` to leave the CLI on whatever `--agent-model` /
 `GRASP_AGENT_MODEL` set, or on its own default when neither did. A pick takes effect on

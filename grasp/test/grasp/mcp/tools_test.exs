@@ -194,6 +194,23 @@ defmodule Grasp.MCP.ToolsTest do
     end
   end
 
+  describe "reload_index" do
+    test "re-reads the watched file and reports what it now holds" do
+      {:reply, resp, _} = Tools.ReloadIndex.execute(%{}, %Frame{})
+
+      refute resp.isError
+      body = json!(resp)
+
+      index = Grasp.IndexStore.get()
+
+      assert body["path"] == Grasp.IndexStore.path()
+      assert body["functions"] == length(Grasp.Index.functions(index))
+      assert body["changed"] == length(Grasp.Index.changed_functions(index))
+      assert body["changed"] > 0
+      assert body["base_ref"] == "main"
+    end
+  end
+
   describe "the card lookup" do
     test "answers the card, or the message a tool replies with when there is none" do
       name = "t-#{System.unique_integer([:positive])}"
