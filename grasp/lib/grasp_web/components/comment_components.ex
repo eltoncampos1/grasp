@@ -21,7 +21,11 @@ defmodule GraspWeb.CommentComponents do
   attr :thread, :map, required: true
   attr :card_id, :integer, required: true
   attr :expanded, :boolean, default: false
-  attr :outdated, :boolean, doc: "quotes the line the thread was written on", default: false
+
+  attr :outdated, :boolean,
+    doc: "drawn in the card's footer, quoting the line it was written on",
+    default: false
+
   attr :composing, :map, doc: "the open composer, which may be this thread's reply", default: nil
 
   @doc """
@@ -59,7 +63,7 @@ defmodule GraspWeb.CommentComponents do
       data-resolved={to_string(@thread.resolved)}
     >
       <p :if={@outdated} class="thread__snippet">
-        <span class="thread__label">Outdated · L{@thread.line}</span>
+        <span class="thread__label">{aside_label(@thread)}</span>
         <code>{@thread.snippet}</code>
       </p>
       <button
@@ -136,6 +140,12 @@ defmodule GraspWeb.CommentComponents do
     </form>
     """
   end
+
+  # Why a thread sits in the card's footer instead of under a line. A comment on the base
+  # side is still current — the view the card is in simply draws no deleted lines — so it is
+  # named for the side it was written on rather than reported as stale.
+  defp aside_label(%{side: "old"} = thread), do: "Old · L#{thread.line}"
+  defp aside_label(thread), do: "Outdated · L#{thread.line}"
 
   # The two writers a thread can hold, named as the reviewer would say them rather than as
   # the store records them.

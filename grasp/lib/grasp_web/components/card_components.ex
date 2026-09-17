@@ -143,12 +143,26 @@ defmodule GraspWeb.CardComponents do
       |> Map.get(record["id"], [])
       |> Enum.group_by(&Anchor.place(&1, record))
 
+    # A placement the view does not draw would otherwise take the thread off the card
+    # altogether — a comment on a deleted line is anchored on the base side, which the source
+    # view has no line for — so it joins the footer until the view that draws it is back.
+    {placed, hidden} =
+      placements
+      |> Map.drop([:outdated, :orphan])
+      |> Map.split(Enum.map(lines, &{&1.side, &1.line}))
+
+    aside =
+      placements
+      |> Map.get(:outdated, [])
+      |> Enum.concat(Enum.flat_map(hidden, fn {_anchor, threads} -> threads end))
+      |> Enum.sort_by(& &1.id)
+
     assigns =
       assign(assigns,
         focused?: forest.focus == card.id,
         lines: lines,
-        placed: Map.drop(placements, [:outdated, :orphan]),
-        outdated: Map.get(placements, :outdated, []),
+        placed: placed,
+        outdated: aside,
         expanded_threads: assigns.expanded_threads || MapSet.new(),
         dx: dx,
         dy: dy,

@@ -77,9 +77,13 @@ defmodule GraspWeb.CommentsLiveTest do
     assert has_element?(view, "#thread-#{id} .comment__body", body)
     refute has_element?(view, "#thread-#{id} .comment__body", reply)
 
+    view |> element("#thread-#{id} .thread__actions button", "reply") |> render_click()
+    assert has_element?(view, "#thread-#{id} form.composer")
+
     view |> element("#thread-#{id} .comment__delete") |> render_click()
 
     refute has_element?(view, "#thread-#{id}")
+    assert composing(view) == nil
   end
 
   test "a blank body keeps the composer rather than writing an empty comment", %{
@@ -153,11 +157,39 @@ defmodule GraspWeb.CommentsLiveTest do
 
     view |> form("#card-1 form.composer", %{"body" => body}) |> render_submit()
 
+    assert has_element?(view, "#card-1 .thread .comment__body", body)
+
+    html = render(view)
+    assert before?(html, ~s(data-base-line="3"), body)
+    assert before?(html, body, ~s(data-line="10"))
+  end
+
+  test "a comment on a deleted line waits in the footer while the card reads as source", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @shout)
+    body = unique("the branch dropped this clause")
+
+    view |> element("#card-1 .line[data-op='del'] .ln") |> render_click()
+    view |> form("#card-1 form.composer", %{"body" => body}) |> render_submit()
+
     id = thread_id(body)
-    assert has_element?(view, "#card-1 .line[data-op='del'] + #thread-#{id}")
+    assert has_element?(view, "#card-1 .card__body #thread-#{id}")
+    refute has_element?(view, "#card-1 footer.card__outdated #thread-#{id}")
+
+    view |> element("#card-1 .card__view") |> render_click()
+
+    assert has_element?(view, "#card-1[data-view='source']")
+    assert has_element?(view, "#card-1 footer.card__outdated #thread-#{id}")
+    assert has_element?(view, "#thread-#{id} .thread__snippet", "Old · L3")
   end
 
   defp unique(text), do: "#{text} ##{System.unique_integer([:positive])}"
+
+  # The composer's anchor is the view's own state and shows in no markup once the thread it
+  # replies to is gone, so this is the only place a test can see it was let go of.
+  defp composing(view), do: :sys.get_state(view.pid).socket.assigns.composing
 
   defp thread_id(body) do
     thread = Enum.find(Comments.list(include_resolved: true), &(&1.body == body))

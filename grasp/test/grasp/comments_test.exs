@@ -233,9 +233,11 @@ defmodule Grasp.CommentsTest do
     assert Comments.snippet(nil, "new", 1) == nil
   end
 
-  test "a store keeps what it can read of a damaged file and moves the file aside" do
-    path = tmp_path()
-    File.mkdir_p!(Path.dirname(path))
+  @tag :tmp_dir
+  test "a store keeps what it can read of a damaged file and moves the file aside", %{
+    tmp_dir: tmp_dir
+  } do
+    path = Path.join(tmp_dir, "comments.json")
 
     File.write!(
       path,
@@ -256,9 +258,9 @@ defmodule Grasp.CommentsTest do
     assert Enum.map(threads, & &1.id) == [7, 10]
   end
 
-  test "a store that could not read its file at all keeps the file aside" do
-    path = tmp_path()
-    File.mkdir_p!(Path.dirname(path))
+  @tag :tmp_dir
+  test "a store that could not read its file at all keeps the file aside", %{tmp_dir: tmp_dir} do
+    path = Path.join(tmp_dir, "comments.json")
     File.write!(path, "{not json")
 
     log =
@@ -281,14 +283,6 @@ defmodule Grasp.CommentsTest do
 
   defp isolated_attrs do
     %{function_id: "Test.Isolated.run/0", side: "new", line: 1, body: "later", author: "human"}
-  end
-
-  defp tmp_path do
-    Path.join([
-      System.tmp_dir!(),
-      "grasp-comments-#{System.unique_integer([:positive])}",
-      "comments.json"
-    ])
   end
 
   defp comments_json, do: "[" <> one_comment() <> "]"

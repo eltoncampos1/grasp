@@ -418,9 +418,11 @@ defmodule GraspWeb.ReviewLive do
       {nil, _reply} ->
         {:noreply, socket}
 
+      # The reply box lives inside the thread it answers, so deleting the thread takes the
+      # box with it and the anchor it was open at now names nothing.
       {thread_id, nil} ->
         Grasp.Comments.delete(thread_id)
-        {:noreply, refresh_comments(socket)}
+        {:noreply, socket |> forget_reply_box(thread_id) |> refresh_comments()}
 
       {thread_id, reply_id} ->
         Grasp.Comments.delete_reply(thread_id, reply_id)
@@ -468,6 +470,13 @@ defmodule GraspWeb.ReviewLive do
   # the write visible before the broadcast arrives — which is what a disconnected view, and a
   # test asserting on the very next render, depend on.
   defp refresh_comments(socket), do: assign(socket, comments: Grasp.Comments.by_function())
+
+  defp forget_reply_box(socket, thread_id) do
+    case socket.assigns.composing do
+      %{reply_to: ^thread_id} -> assign(socket, composing: nil)
+      _elsewhere -> socket
+    end
+  end
 
   # A new thread records the line as its author read it: the snippet comes from the record
   # the card is drawing, which is what lets the anchor find the line again after it moves.
