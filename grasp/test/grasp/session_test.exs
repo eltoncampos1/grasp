@@ -7,6 +7,9 @@ defmodule Grasp.SessionTest do
   alias Grasp.Session.Disk
   alias Grasp.Session.Forest
 
+  # Long enough for the 150 ms debounce to fire more than once while the moves keep coming.
+  @drag_ms 450
+
   setup do
     name = "t-#{System.unique_integer([:positive])}"
     :ok = Session.ensure(name)
@@ -234,7 +237,7 @@ defmodule Grasp.SessionTest do
       :ok = Session.ensure(name)
       card = Session.open_root(name, "SampleApp.Greeter.greet/2").focus
 
-      assert wait_for_file(Path.join(tmp_dir, name <> ".json"))
+      assert wait_until(fn -> File.exists?(Path.join(tmp_dir, name <> ".json")) end)
 
       [{pid, _registered}] = Registry.lookup(Grasp.SessionRegistry, name)
       :ok = GenServer.stop(pid)
@@ -264,7 +267,7 @@ defmodule Grasp.SessionTest do
       Session.open_root(name, "SampleApp.Greeter.greet/2")
       path = Path.join(tmp_dir, name <> ".json")
 
-      assert wait_for_file(path)
+      assert wait_until(fn -> File.exists?(path) end)
       assert Session.delete(name) == :ok
       assert_receive {:session_deleted, ^name}
 
@@ -273,26 +276,90 @@ defmodule Grasp.SessionTest do
       refute name in Session.list()
     end
 
-    test "two mutations in one burst are written once", %{tmp_dir: tmp_dir} do
+    test "a drag is coalesced into a write every so often, not one per move", %{tmp_dir: tmp_dir} do
       name = "burst-#{System.unique_integer([:positive])}"
       :ok = Session.ensure(name)
       path = Path.join(tmp_dir, name <> ".json")
-
       card = Session.open_root(name, "SampleApp.Greeter.greet/2").focus
-      Session.move(name, card, {10, 10})
 
-      refute File.exists?(path)
-      assert wait_for_file(path)
+      collector = spawn_link(fn -> collect(path, []) end)
+      moves = drag(name, card, System.monotonic_time(:millisecond) + @drag_ms)
+      send(collector, {:stop, self()})
 
-      assert {:ok, written} = Disk.read(name, nil)
-      assert Forest.card(written, card).offset == {10, 10}
+      assert_receive {:written, written}, 1_000
+
+      # Writes land while the moves are still coming — a timer restarted by every move would
+      # write nothing until the drag stopped — and there are far fewer of them than moves,
+      # since the window cannot hold more than one write every 150 ms.
+      assert length(written) >= 2
+      assert length(written) <= div(@drag_ms, 150) + 2
+      assert moves > length(written)
+
+      assert wait_until(fn ->
+               match?({:ok, %{offset: {^moves, ^moves}}}, last_card(name, card))
+             end)
+    end
+
+    test "a session whose file could not be kept aside writes nothing", %{tmp_dir: tmp_dir} do
+      name = "locked-#{System.unique_integer([:positive])}"
+      locked = Path.join(tmp_dir, "locked")
+      File.mkdir_p!(locked)
+      path = Path.join(locked, name <> ".json")
+      File.write!(path, "not json")
+      File.chmod!(locked, 0o500)
+      on_exit(fn -> File.chmod!(locked, 0o700) end)
+      Application.put_env(:grasp, :sessions_dir, locked)
+
+      :ok = Session.ensure(name)
+      assert Session.get(name) == Forest.new()
+
+      Session.open_root(name, "SampleApp.Greeter.greet/2")
+      Process.sleep(300)
+
+      assert File.read!(path) == "not json"
+      assert File.ls!(locked) == [name <> ".json"]
     end
   end
 
-  # A write is debounced, so the file appears a moment after the mutation that asks for it.
-  defp wait_for_file(path, attempts \\ 100) do
+  # Moves every 20 ms until `deadline`, as a drag does, answering how many were made.
+  defp drag(name, card, deadline, moves \\ 0) do
+    if System.monotonic_time(:millisecond) >= deadline do
+      moves
+    else
+      Session.move(name, card, {moves + 1, moves + 1})
+      Process.sleep(20)
+      drag(name, card, deadline, moves + 1)
+    end
+  end
+
+  # Every distinct document the file held while the drag ran, so a write that replaced
+  # another is counted rather than only the last one being seen.
+  defp collect(path, written) do
+    written =
+      case File.read(path) do
+        {:ok, document} -> if document in written, do: written, else: [document | written]
+        {:error, _unwritten} -> written
+      end
+
+    receive do
+      {:stop, from} -> send(from, {:written, Enum.reverse(written)})
+    after
+      5 -> collect(path, written)
+    end
+  end
+
+  defp last_card(name, card) do
+    case Disk.read(name, nil) do
+      {:ok, forest} -> {:ok, Forest.card(forest, card)}
+      other -> other
+    end
+  end
+
+  # A write is debounced, so what it puts on disk is there a moment after the mutation that
+  # asked for it.
+  defp wait_until(condition, attempts \\ 100) do
     cond do
-      File.exists?(path) ->
+      condition.() ->
         true
 
       attempts == 0 ->
@@ -300,7 +367,7 @@ defmodule Grasp.SessionTest do
 
       true ->
         Process.sleep(10)
-        wait_for_file(path, attempts - 1)
+        wait_until(condition, attempts - 1)
     end
   end
 end

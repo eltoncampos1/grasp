@@ -37,6 +37,35 @@ defmodule Grasp.Session.DiskTest do
     refute File.exists?(path)
   end
 
+  test "a file that could not be moved aside is reported as still there", %{
+    name: name,
+    tmp_dir: tmp_dir
+  } do
+    locked = Path.join(tmp_dir, "locked")
+    File.mkdir_p!(locked)
+    path = Path.join(locked, name <> ".json")
+    File.write!(path, "not json")
+    File.chmod!(locked, 0o500)
+    on_exit(fn -> File.chmod!(locked, 0o700) end)
+    Application.put_env(:grasp, :sessions_dir, locked)
+
+    assert Disk.read(name, nil) == {:error, {:corrupt, path, :not_moved}}
+    assert File.read!(path) == "not json"
+  end
+
+  test "a name that is not a session name reaches no file", %{tmp_dir: tmp_dir} do
+    outside = Path.join(tmp_dir, "outside.json")
+
+    assert Disk.path("../outside") == nil
+    assert Disk.write("../outside", Forest.new()) == :ok
+    assert Disk.read("../outside", nil) == :empty
+    assert Disk.delete("../outside") == :ok
+
+    refute File.exists?(outside)
+    assert File.ls!(tmp_dir) == []
+    assert Disk.saved() == []
+  end
+
   test "saved/0 names the written sessions, sorted", %{name: name} do
     assert Disk.write("zeta-" <> name, Forest.new()) == :ok
     assert Disk.write("alpha-" <> name, Forest.new()) == :ok

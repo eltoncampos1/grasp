@@ -17,6 +17,17 @@ defmodule Grasp.Session.Disk do
   renamed to `<name>.json.corrupt` before the session starts empty: rewriting over it would
   destroy the only copy of an arrangement someone may still want to recover by hand. A
   second damaged file is kept beside the first, under a timestamp, rather than over it.
+
+  When that move cannot be made — a read-only directory, a name the file system refuses —
+  `read/2` says so with `{:error, {:corrupt, path, :not_moved}}` instead of naming a copy
+  that is not there, and `Grasp.Session` takes it as the instruction it is: that session
+  runs in memory for the rest of its life and writes nothing, because the file it would
+  write over is the reviewer's only copy. Putting the directory right and restarting the
+  viewer is what brings the session back to disk.
+
+  A session name is the file name, so `path/1` answers nil for a name `valid_name?/1`
+  refuses and every call here becomes the no-op it is for a viewer with no directory at
+  all: a name that is not a session name reaches no file rather than an unintended one.
   """
 
   require Logger
@@ -39,22 +50,32 @@ defmodule Grasp.Session.Disk do
     end
   end
 
-  @doc "The file the session `name` is written to, or nil when there is no directory."
+  @doc """
+  The file the session `name` is written to.
+
+  Nil when there is no directory, and nil for a name `valid_name?/1` refuses: the name is
+  joined to a directory and read back as a name, so one that could name another file names
+  no file at all.
+  """
   @spec path(String.t()) :: Path.t() | nil
   def path(name) when is_binary(name) do
-    case dir() do
-      nil -> nil
-      dir -> Path.join(dir, name <> ".json")
+    with true <- valid_name?(name),
+         dir when is_binary(dir) <- dir() do
+      Path.join(dir, name <> ".json")
+    else
+      _no_file -> nil
     end
   end
 
   @doc """
   Reads the session `name`, pruning it against `index` as `Forest.load/2` does.
 
-  `:empty` when there is no directory and when the session has no file yet — both mean the
-  same thing to a session starting up: begin with an empty graph. A file that cannot be
-  decoded is moved aside and `{:error, {:corrupt, moved_to}}` names where it went, leaving
-  the caller to say so and start empty.
+  `:empty` when there is no file to read — no directory, a name that is not a session name,
+  or a session that has never been written — which all mean the same thing to a session
+  starting up: begin with an empty graph. A file that cannot be decoded is moved aside and
+  `{:error, {:corrupt, moved_to}}` names where it went; when the move itself failed,
+  `{:error, {:corrupt, path, :not_moved}}` names the file still sitting there, which the
+  caller must not write over.
   """
   @spec read(String.t(), Grasp.Index.t() | nil) :: {:ok, Forest.t()} | :empty | {:error, term()}
   def read(name, index) when is_binary(name) do
@@ -67,14 +88,17 @@ defmodule Grasp.Session.Disk do
   @doc """
   Writes `forest` as the session `name`, replacing whatever was there.
 
-  `:ok` when there is no directory: a viewer with nowhere to write is not a viewer that
+  `:ok` when there is no file to write: a viewer with nowhere to write is not a viewer that
   fails to draw.
   """
   @spec write(String.t(), Forest.t()) :: :ok | {:error, term()}
   def write(name, %Forest{} = forest) when is_binary(name) do
-    case path(name) do
+    with path when is_binary(path) <- path(name),
+         {:ok, document} <- Jason.encode(Forest.dump(forest), pretty: true) do
+      write_file(path, document)
+    else
       nil -> :ok
-      path -> write_file(path, Jason.encode!(Forest.dump(forest), pretty: true))
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -145,7 +169,16 @@ defmodule Grasp.Session.Disk do
          {:ok, forest} <- Forest.load(document, index) do
       {:ok, forest}
     else
-      _undecodable -> {:error, {:corrupt, keep_aside(path)}}
+      _undecodable -> corrupt(path)
+    end
+  end
+
+  # The file is reported as moved only when it moved: a caller told it was kept aside is a
+  # caller that will write over the path, and there would be nothing left to recover.
+  defp corrupt(path) do
+    case keep_aside(path) do
+      {:ok, kept} -> {:error, {:corrupt, kept}}
+      :error -> {:error, {:corrupt, path, :not_moved}}
     end
   end
 
@@ -161,11 +194,14 @@ defmodule Grasp.Session.Disk do
         else: kept
 
     case File.rename(path, kept) do
-      :ok -> Logger.warning("grasp: kept the unreadable session file as #{kept}")
-      {:error, reason} -> Logger.warning("grasp: could not keep #{kept}: #{inspect(reason)}")
-    end
+      :ok ->
+        {:ok, kept}
 
-    kept
+      # The reason the move failed is the one part of this the caller is not handed back.
+      {:error, reason} ->
+        Logger.warning("grasp: could not keep #{kept}: #{inspect(reason)}")
+        :error
+    end
   end
 
   defp write_file(path, document) do

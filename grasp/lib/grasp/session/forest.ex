@@ -785,22 +785,28 @@ defmodule Grasp.Session.Forest do
 
   `:error` for a document of another version and for one whose fields do not decode: an id
   that is not a positive integer, a `view` or `context` that names nothing, an `offset` that
-  is not two integers, an edge naming a card the document does not hold, or a group a card
-  claims to belong to and the document does not describe. A half-written file is therefore
-  refused whole rather than drawn in part.
+  is not two integers, a `highlight` that is neither a call nor a pair of line numbers, a
+  colour outside the palette, an edge naming a card the document does not hold, or a group a
+  card claims to belong to and the document does not describe. A half-written file is
+  therefore refused whole rather than drawn in part, and a card the renderer would crash on
+  never reaches it.
 
   With an `index`, a card whose `function_id` the index no longer holds is dropped together
   with the edges touching it, and a group left with no members goes as well, so a file
-  written before a branch changed never draws a card nothing can render. Focus falls back to
-  the lowest surviving card id, and to nil when nothing survives. A nil index prunes
+  written before a branch changed never draws a card nothing can render. A nil index prunes
   nothing, which is what a caller reading a file for its contents rather than for display
   wants.
 
-  The counters are never lowered: they are taken as dumped, or one past the highest id the
-  document holds when that is higher, so a truncated or hand-edited file cannot hand out an
-  id a card or a group already carries.
+  Focus is left as the document wrote it, so `load/2` against no index returns what `dump/1`
+  was given — a graph focused on nothing comes back focused on nothing. It moves only when
+  the card it names is not there: to the lowest surviving card id, and to nil when nothing
+  survives.
+
+  The id and group counters are never lowered: they are taken as dumped, or one past the
+  highest id the document holds when that is higher, so a truncated or hand-edited file
+  cannot hand out an id a card or a group already carries.
   """
-  @spec load(map(), Grasp.Index.t() | nil) :: {:ok, t()} | :error
+  @spec load(term(), Grasp.Index.t() | nil) :: {:ok, t()} | :error
   def load(document, index)
 
   def load(%{"version" => 1} = document, index) do
@@ -810,7 +816,7 @@ defmodule Grasp.Session.Forest do
          {:ok, edges} <- decode_edges(Map.get(document, "edges"), cards),
          {:ok, focus} <- decode_focus(Map.get(document, "focus")),
          {:ok, next_id} <- decode_counter(document, "next_id"),
-         {:ok, next_color} <- decode_counter(document, "next_color"),
+         {:ok, next_color} <- decode_color(Map.get(document, "next_color")),
          {:ok, next_group} <- decode_counter(document, "next_group") do
       forest = %__MODULE__{
         cards: cards,
@@ -818,7 +824,7 @@ defmodule Grasp.Session.Forest do
         groups: groups,
         focus: focus,
         next_id: counter(next_id, Map.keys(cards)),
-        next_color: rem(next_color, @palette_size),
+        next_color: next_color,
         next_group: counter(next_group, Map.keys(groups))
       }
 
@@ -858,7 +864,7 @@ defmodule Grasp.Session.Forest do
 
     with {:ok, view} <- decode_name(view, [:auto, :source, :diff]),
          {:ok, context} <- decode_name(context, [:auto, :hunks, :full]),
-         true <- is_nil(highlight) or is_map(highlight),
+         {:ok, highlight} <- decode_highlight(highlight),
          true <- is_nil(group) or (is_integer(group) and group > 0) do
       {:ok,
        %{
@@ -889,6 +895,21 @@ defmodule Grasp.Session.Forest do
 
   defp decode_name(_name, _allowed), do: :error
 
+  # A highlight is read straight back out to build a key and to shade lines, so only the two
+  # shapes those readers know are accepted: anything else would load and then crash the page
+  # it is drawn on.
+  defp decode_highlight(nil), do: {:ok, nil}
+
+  defp decode_highlight(%{"call" => target} = highlight)
+       when is_binary(target) and map_size(highlight) == 1,
+       do: {:ok, highlight}
+
+  defp decode_highlight(%{"lines" => [first, last]} = highlight)
+       when is_integer(first) and is_integer(last) and map_size(highlight) == 1,
+       do: {:ok, highlight}
+
+  defp decode_highlight(_highlight), do: :error
+
   defp decode_groups(groups) when is_list(groups) do
     Enum.reduce_while(groups, {:ok, %{}}, fn group, {:ok, decoded} ->
       case group do
@@ -912,18 +933,9 @@ defmodule Grasp.Session.Forest do
 
   defp decode_edges(edges, cards) when is_list(edges) do
     Enum.reduce_while(edges, {:ok, []}, fn edge, {:ok, decoded} ->
-      case edge do
-        %{"from" => from, "to" => to, "target" => target, "color" => color}
-        when is_binary(target) and is_integer(color) and color >= 0 ->
-          if is_map_key(cards, from) and is_map_key(cards, to) do
-            edge = %{from: from, to: to, target: target, color: rem(color, @palette_size)}
-            {:cont, {:ok, [edge | decoded]}}
-          else
-            {:halt, :error}
-          end
-
-        _malformed ->
-          {:halt, :error}
+      case decode_edge(edge, cards) do
+        {:ok, edge} -> {:cont, {:ok, [edge | decoded]}}
+        :error -> {:halt, :error}
       end
     end)
     |> case do
@@ -933,6 +945,18 @@ defmodule Grasp.Session.Forest do
   end
 
   defp decode_edges(_edges, _cards), do: :error
+
+  defp decode_edge(%{"from" => from, "to" => to, "target" => target, "color" => color}, cards)
+       when is_binary(target) do
+    with {:ok, color} <- decode_color(color),
+         true <- is_map_key(cards, from) and is_map_key(cards, to) do
+      {:ok, %{from: from, to: to, target: target, color: color}}
+    else
+      _malformed -> :error
+    end
+  end
+
+  defp decode_edge(_edge, _cards), do: :error
 
   defp decode_focus(nil), do: {:ok, nil}
   defp decode_focus(focus) when is_integer(focus) and focus > 0, do: {:ok, focus}
@@ -944,6 +968,11 @@ defmodule Grasp.Session.Forest do
       _malformed -> :error
     end
   end
+
+  defp decode_color(color) when is_integer(color) and color >= 0 and color < @palette_size,
+    do: {:ok, color}
+
+  defp decode_color(_color), do: :error
 
   defp counter(dumped, ids), do: Enum.reduce(ids, max(dumped, 1), &max(&2, &1 + 1))
 
@@ -957,6 +986,10 @@ defmodule Grasp.Session.Forest do
 
     drop(forest, gone)
   end
+
+  # A graph that focuses nothing is a graph `close/2` left with nowhere to go, not a graph
+  # missing its focus, so it comes back as it was written.
+  defp refocus(%__MODULE__{focus: nil} = forest), do: forest
 
   defp refocus(forest) do
     if is_map_key(forest.cards, forest.focus) do

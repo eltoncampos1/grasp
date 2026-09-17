@@ -822,6 +822,44 @@ defmodule Grasp.Session.ForestTest do
       assert loaded.next_id == forest.next_id
     end
 
+    test "a graph that focuses nothing comes back focusing nothing" do
+      {forest, _greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+      {forest, wrap} = Forest.open_root(forest, "SampleApp.Formatter.wrap/1")
+      forest = Forest.close(forest, wrap)
+
+      assert forest.focus == nil
+      assert map_size(forest.cards) == 1
+
+      assert Forest.load(Forest.dump(forest), nil) == {:ok, forest}
+    end
+
+    test "a highlight of a shape the cards cannot draw is refused" do
+      {forest, greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+
+      for highlight <- [
+            %{"call" => %{}},
+            %{"lines" => [%{}, 1]},
+            %{"lines" => [1]},
+            %{"lines" => [1, 2], "call" => "SampleApp.Formatter.wrap/1"},
+            %{"elsewhere" => 1}
+          ] do
+        document = forest |> Forest.set_highlight(greeter, highlight) |> Forest.dump()
+
+        assert Forest.load(document, nil) == :error
+      end
+    end
+
+    test "a colour outside the palette is refused" do
+      {forest, greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+      {forest, _wrap} = Forest.open_child(forest, greeter, "SampleApp.Formatter.wrap/1")
+      document = Forest.dump(forest)
+
+      assert Forest.load(%{document | "next_color" => 8}, nil) == :error
+
+      edges = Enum.map(document["edges"], &Map.put(&1, "color", 9))
+      assert Forest.load(%{document | "edges" => edges}, nil) == :error
+    end
+
     test "a document of another version is refused" do
       assert Forest.load(%{Forest.dump(Forest.new()) | "version" => 2}, nil) == :error
     end

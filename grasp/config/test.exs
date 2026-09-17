@@ -9,11 +9,12 @@ config :grasp, GraspWeb.Endpoint,
 config :grasp, index_path: "test/fixtures/index.json"
 
 # The fixture index names a project root that need not exist, and the suite must never write
-# inside the repository: comments and sessions go to one temporary place per run.
+# inside the repository: comments go to one temporary file per run.
 config :grasp,
   comments_path:
     Path.join(System.tmp_dir!(), "grasp-test-#{System.os_time(:millisecond)}/comments.json")
 
+# And the sessions to a temporary directory of their own, one per run.
 config :grasp,
   sessions_dir:
     Path.join(System.tmp_dir!(), "grasp-test-sessions-#{System.os_time(:millisecond)}")

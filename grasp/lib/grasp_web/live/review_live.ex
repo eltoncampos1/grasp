@@ -25,6 +25,7 @@ defmodule GraspWeb.ReviewLive do
   import GraspWeb.Sidebar
 
   alias Grasp.{Index, IndexStore, Links, Session}
+  alias Grasp.Session.Disk
   alias Grasp.Session.Forest
 
   @groups GraspWeb.Sidebar.group_kinds()
@@ -33,6 +34,15 @@ defmodule GraspWeb.ReviewLive do
   @impl true
   def mount(params, _session, socket) do
     name = Map.get(params, "name", "default")
+
+    if Disk.valid_name?(name),
+      do: {:ok, mount_session(socket, name)},
+      else: {:ok, push_navigate(socket, to: "/")}
+  end
+
+  # A name that is not a session name names a file the viewer would have to write, so the
+  # tab is sent to the default session rather than opening a session under it.
+  defp mount_session(socket, name) do
     :ok = Session.ensure(name)
     :ok = Grasp.Agent.ensure(name)
 
@@ -45,32 +55,31 @@ defmodule GraspWeb.ReviewLive do
 
     index = IndexStore.get()
 
-    {:ok,
-     assign(socket,
-       name: name,
-       index: index,
-       index_error: IndexStore.last_error(),
-       index_path: IndexStore.path(),
-       forest: Session.get(name),
-       expanded_module: nil,
-       expanded_groups: default_expanded(index, length(Grasp.Comments.list())),
-       callers_open: nil,
-       renaming_group: nil,
-       comments: Grasp.Comments.by_function(),
-       composing: nil,
-       expanded_threads: MapSet.new(),
-       expanded_folds: MapSet.new(),
-       selected: MapSet.new(),
-       palette_open?: false,
-       palette_query: "",
-       palette_results: [],
-       palette_selected: 0,
-       sidebar_open?: true,
-       chat_open?: false,
-       chat_error: nil,
-       agent: Grasp.Agent.get(name),
-       editor: Application.get_env(:grasp, :editor)
-     )}
+    assign(socket,
+      name: name,
+      index: index,
+      index_error: IndexStore.last_error(),
+      index_path: IndexStore.path(),
+      forest: Session.get(name),
+      expanded_module: nil,
+      expanded_groups: default_expanded(index, length(Grasp.Comments.list())),
+      callers_open: nil,
+      renaming_group: nil,
+      comments: Grasp.Comments.by_function(),
+      composing: nil,
+      expanded_threads: MapSet.new(),
+      expanded_folds: MapSet.new(),
+      selected: MapSet.new(),
+      palette_open?: false,
+      palette_query: "",
+      palette_results: [],
+      palette_selected: 0,
+      sidebar_open?: true,
+      chat_open?: false,
+      chat_error: nil,
+      agent: Grasp.Agent.get(name),
+      editor: Application.get_env(:grasp, :editor)
+    )
   end
 
   @impl true

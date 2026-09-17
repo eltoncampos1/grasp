@@ -22,6 +22,11 @@ defmodule Grasp.Session do
   the index between one run and the next never reaches the canvas. A reload of the index
   while the session runs does not prune it: the card stays, showing what the reader was
   looking at, until the next restart reads the file back.
+
+  A session writes only when it knows what its file holds. One whose file could not be read,
+  or could not be moved aside after failing to decode, runs in memory for the rest of its
+  life: the arrangement on disk is the reviewer's only copy, and overwriting it with an
+  empty canvas would be the one loss the restart was meant to prevent.
   """
 
   use GenServer
@@ -189,8 +194,10 @@ defmodule Grasp.Session do
   @doc """
   Deletes the session `name`: its cards are forgotten and its file is removed.
 
-  `{:session_deleted, name}` is broadcast on the session's topic before the process stops,
-  so a tab showing it leaves for another session while this one is still there to answer.
+  The order is broadcast, then stop, then remove the file: `{:session_deleted, name}` goes
+  out on the session's topic while the process is still there to answer a tab that has not
+  finished leaving. The broadcast is asynchronous, so a subscriber may well read it after
+  the session has gone; it says what happened, not when.
   The default session may be deleted like any other — deleting it clears the canvas rather
   than taking it away, since the next visit to `/` starts it again, empty.
   """
@@ -220,20 +227,27 @@ defmodule Grasp.Session do
     # never runs, losing whatever mutation the debounce timer was still holding.
     Process.flag(:trap_exit, true)
 
-    forest =
+    {forest, writable} =
       case Disk.read(name, Grasp.IndexStore.get()) do
         {:ok, forest} ->
-          forest
+          {forest, true}
 
         :empty ->
-          Forest.new()
+          {Forest.new(), true}
+
+        {:error, {:corrupt, kept}} ->
+          Logger.warning("grasp: the session #{name} did not decode; kept it as #{kept}")
+          {Forest.new(), true}
 
         {:error, reason} ->
-          Logger.warning("grasp: could not read the session #{name}: #{inspect(reason)}")
-          Forest.new()
+          Logger.warning(
+            "grasp: the session #{name} will not be written to disk: #{inspect(reason)}"
+          )
+
+          {Forest.new(), false}
       end
 
-    {:ok, %{name: name, forest: forest, dirty: false, timer: nil}}
+    {:ok, %{name: name, forest: forest, dirty: false, timer: nil, writable: writable}}
   end
 
   @impl true
@@ -247,14 +261,14 @@ defmodule Grasp.Session do
       end
 
     broadcast(state.name, forest)
-    {:reply, forest, schedule_write(%{state | forest: forest})}
+    {:reply, forest, store(state, forest)}
   end
 
   def handle_call({:replace, specs}, _from, state) do
     case Forest.replace(specs) do
       {:ok, forest} ->
         broadcast(state.name, forest)
-        {:reply, {:ok, forest}, schedule_write(%{state | forest: forest})}
+        {:reply, {:ok, forest}, store(state, forest)}
 
       {:error, _reason} = error ->
         {:reply, error, state}
@@ -264,13 +278,19 @@ defmodule Grasp.Session do
   @impl true
   def handle_info(:flush, state), do: {:noreply, %{flush(state) | timer: nil}}
 
-  def handle_info(_message, state), do: {:noreply, state}
-
   @impl true
   def terminate(_reason, state) do
     flush(state)
     :ok
   end
+
+  # A call that left the graph as it was — an unknown card id, a focus that is already
+  # there — is not a new arrangement to save.
+  defp store(%{forest: forest} = state, forest), do: state
+
+  defp store(state, forest), do: schedule_write(%{state | forest: forest})
+
+  defp schedule_write(%{writable: false} = state), do: state
 
   # One timer per burst: a mutation arriving while one is pending rides on it rather than
   # pushing it further out, so a stream of moves is written at a steady rate instead of

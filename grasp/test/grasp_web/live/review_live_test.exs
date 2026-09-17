@@ -532,6 +532,11 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#canvas")
   end
 
+  test "a name that is not a session name is sent to the default session", %{conn: conn} do
+    assert {:error, {:live_redirect, %{to: "/"}}} = live(conn, "/?name=../../../x")
+    assert {:error, {:live_redirect, %{to: "/"}}} = live(conn, "/s/a.b")
+  end
+
   test "the canvas wraps the cards in a pannable stage with a frame and connector layer and a toolbar",
        %{view: view} do
     assert has_element?(
