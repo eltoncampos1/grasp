@@ -8,7 +8,9 @@ defmodule Mix.Tasks.Grasp.Serve do
                       [--agent-command claude] [--agent-model MODEL]
 
   The index is the file `mix grasp.index` wrote in the target project. The viewer binds
-  to 127.0.0.1 and reloads the index whenever the file changes.
+  to 127.0.0.1 and reloads the index whenever the file changes. Review comments live
+  beside it, in `.grasp/comments.json` under the indexed project's root, and are read on
+  boot and rewritten after every change so they persist across restarts.
 
   ## Options
 

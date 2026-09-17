@@ -22,7 +22,7 @@ that agent for you from a panel beside the canvas.
 Indexed against a base branch, the same canvas reviews a pull request: the sidebar leads
 with what the branch changed, and a modified card swaps between its source and its diff.
 
-Planned: sessions saved to disk, and annotations and guided tours the agent can author.
+Planned: sessions saved to disk, and guided tours the agent can author.
 
 Grasp exists because agents now write more code than humans can comfortably review with
 a text editor and a unified diff.
@@ -78,8 +78,12 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
   edge from each of them. A caller opened this way, or a callee opened by clicking a call,
   joins the group of the card it was opened from when it is new to the canvas, so it lands
   in the column beside that card inside the same frame.
-- Click a line number to comment; ⌘/Ctrl+Enter saves, Escape cancels; reply, resolve, delete
-  on the thread.
+- Click a line number to comment — hover it first for the `+` that marks it clickable.
+  ⌘/Ctrl+Enter saves, Escape cancels; reply, resolve or reopen, delete on the thread. A
+  resolved thread collapses to one line and expands on click. A thread whose line moved
+  re-anchors wherever its text went; one that matches nowhere sits in the card's footer,
+  outdated. The sidebar's Comments group lists every open thread under its module and jumps
+  to the line when you click it.
 - Arrow keys walk the graph, `x` closes the focused card, `Shift+x` closes it together
   with everything that had no other way to be reached, `c` collapses it, ⌘K opens the
   palette.
@@ -143,6 +147,9 @@ In the viewer:
 - **A removed function opens as a card of its own**, tinted and showing the source the base
   had. Its `file:line` is the base commit's, so it is printed rather than linked into your
   editor.
+- **A deleted line takes a comment too.** In the diff body, the line numbers on the base
+  side are clickable the same way as any other; a thread left there sits under that line of
+  the diff, on the code the branch removed.
 
 ## MCP
 
@@ -188,8 +195,10 @@ Arranging the cards:
   Each card is `{key, function_id, parent_key?, group?, highlight?}`; a card hangs under an
   earlier one by naming its `key`, and two entries naming the same function are one card
   with an edge from each. `group` is a title: cards sharing one are framed together under
-  it, which is how several flows land on one canvas without running together. Nothing
-  changes unless every card is good.
+  it, which is how several flows land on one canvas without running together. A card that
+  names no group takes its parent's, so a hop added under a card that is already framed
+  lands in the same frame without repeating the title. Nothing changes unless every card is
+  good.
 - `open_card(name, function_id, parent_card_id?, highlight?)` — add one card, called by
   another or standing on its own. A function already on screen gains an edge instead of a
   second card.
@@ -232,7 +241,9 @@ Comments:
 `get_function` carries a function's open threads under `comments`, so reading the code and
 reading what the reviewer said about it is one call. Comments belong to the project, not to
 a session: they are kept in `.grasp/comments.json` beside the index and show on whatever
-canvas draws the function.
+canvas draws the function. The file travels with the checkout — commit it alongside the
+changes it is about if you want the discussion to go with the PR, or add it to
+`.gitignore` if you'd rather keep review chatter out of the repository.
 
 Arranging a flow, end to end. Asked "show me what happens when SampleApp accepts an
 order", an agent calls `list_entry_points(query: "order")` to find the route,
@@ -260,10 +271,12 @@ under the project root — which is what makes "address all the comments and upd
 diagram afterwards" a thing you can ask for. It works a comment at a time: reads what the
 thread points at, makes the change, replies with what it did and resolves the thread; then
 it runs `mix format` on what it touched, rebuilds the index with the same `mix grasp.index`
-flags the viewer is watching, and lays the cards out again over the code as it now reads.
-The switch takes effect on the next prompt, and survives New conversation. Nothing is
-sandboxed: edit mode is the agent editing your working tree, so point it at a branch you
-can throw away and read the diff before you keep it.
+flags the viewer is watching — which needs `grasp_index` set up as a dev dependency of the
+reviewed project, as in Quick start above, or there is no `mix grasp.index` task to run —
+and lays the cards out again over the code as it now reads. The switch takes effect on the
+next prompt, and survives New conversation. Nothing is sandboxed: edit mode is the agent
+editing your working tree, so point it at a branch you can throw away and read the diff
+before you keep it.
 
 The panel's Model select picks which model the CLI runs: the four aliases `haiku`,
 `sonnet`, `opus` and `fable`, or `default` to leave the CLI on whatever `--agent-model` /
