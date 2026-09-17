@@ -262,6 +262,19 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
+  # A group drag carries deltas rather than the offset each card lands on: the members start
+  # from offsets of their own and keep their places relative to one another, so the frame drawn
+  # round them moves unchanged. Membership is untouched — a group is moved, not regrouped.
+  def handle_event("move_group", %{"group" => group, "dx" => dx, "dy" => dy}, socket) do
+    case {int(group), int(dx), int(dy)} do
+      {id, dx, dy} when is_integer(id) and is_integer(dx) and is_integer(dy) ->
+        mutate(socket, &Session.shift_group(&1, id, {dx, dy}))
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("reset_layout", _params, socket),
     do: mutate(socket, &Session.reset_offsets/1)
 

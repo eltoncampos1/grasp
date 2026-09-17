@@ -439,7 +439,10 @@ header or by Ctrl-dragging anywhere on it. The drag shows an inline translate at
 pushes `move_card` on release; the offset is stored on the card (`Forest.move/3`) and
 re-rendered as `--dx`/`--dy` on the node. A drag moves that one card: with a card reachable
 from several callers there is no subtree to carry along. "Reset layout"
-(`Forest.reset_offsets/1`) clears every offset at once.
+(`Forest.reset_offsets/1`) clears every offset at once. Ctrl-dragging a frame's title moves
+the group as one: the hook pushes `move_group` with the deltas, and `Forest.shift_group/3`
+adds them to every member's offset, so the cards keep their places relative to one another
+and the frame travels unchanged.
 
 Edges are an SVG overlay, not CSS: the hook walks the open call sites, measures each one
 and the callee's card, and draws a cubic path between them, so a line follows a card that

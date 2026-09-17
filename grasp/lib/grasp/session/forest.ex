@@ -479,6 +479,32 @@ defmodule Grasp.Session.Forest do
     end
   end
 
+  @doc """
+  Adds `{dx, dy}` to the offset of every card in `group_id`, moving the group as one piece.
+
+  The members keep their positions relative to one another, which is what makes the frame
+  drawn round them travel unchanged. Deltas rather than an absolute offset, since the cards
+  start from offsets of their own. An unknown group changes nothing.
+  """
+  @spec shift_group(t(), group_id(), {integer(), integer()}) :: t()
+  def shift_group(%__MODULE__{} = forest, group_id, {dx, dy})
+      when is_integer(dx) and is_integer(dy) do
+    if Map.has_key?(forest.groups, group_id) do
+      cards =
+        Map.new(forest.cards, fn
+          {id, %{group: ^group_id, offset: {x, y}} = card} ->
+            {id, %{card | offset: {x + dx, y + dy}}}
+
+          {id, card} ->
+            {id, card}
+        end)
+
+      %{forest | cards: cards}
+    else
+      forest
+    end
+  end
+
   @doc "Clears every card's offset so the graph returns to its automatic layout."
   @spec reset_offsets(t()) :: t()
   def reset_offsets(%__MODULE__{} = forest) do

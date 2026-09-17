@@ -615,6 +615,23 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#card-1[data-dx='0'][data-dy='0']")
   end
 
+  test "dragging a frame's title moves every card of that group", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    Session.open_root(name, @perform)
+    Session.open_root(name, @show)
+    Session.new_group(name, "Greeting", [1, 2])
+    render_hook(view, "move_card", %{"card" => 2, "dx" => 5, "dy" => 5})
+
+    render_hook(view, "move_group", %{"group" => 1, "dx" => 40, "dy" => -10})
+
+    assert has_element?(view, "#flow-1 #card-1[data-dx='40'][data-dy='-10']")
+    assert has_element?(view, "#flow-1 #card-2[data-dx='45'][data-dy='-5']")
+    assert has_element?(view, "#card-3[data-dx='0'][data-dy='0']")
+
+    render_hook(view, "move_group", %{"group" => "nope", "dx" => 1, "dy" => 1})
+    assert has_element?(view, "#flow-1 #card-1[data-dx='40'][data-dy='-10']")
+  end
+
   test "an unhandled direction or an unparsable card id leaves the view alive", %{
     view: view,
     name: name

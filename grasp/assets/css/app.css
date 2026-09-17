@@ -98,7 +98,7 @@ kbd { font-family: var(--mono); background: var(--bg-sunken); border: 1px solid 
 body.grasp-space .canvas, body.grasp-space .card { cursor: grab; }
 /* A gesture in progress. The hook sets this class because it calls preventDefault() on the
    pointerdown that starts the drag, which stops :active from ever matching. */
-body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cursor: grabbing; }
+body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, body.grasp-dragging .flow__title { cursor: grabbing; }
 .stage { position: absolute; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; }
 .connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 0; }
 .connectors .edge { fill: none; stroke: var(--edge-color, var(--border)); stroke-width: 2; }
@@ -117,7 +117,7 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
    the transform, so the name of a group reads at one size however far out the canvas is
    zoomed: it is what tells one frame from another when the cards inside them are too small
    to read. */
-.flow__title { display: flex; align-items: baseline; gap: calc(var(--space-s) / var(--zoom, 1)); margin: 0 0 calc(var(--space-s) / var(--zoom, 1)); font-family: var(--sans); font-size: calc(13px / var(--zoom, 1)); color: var(--fg-muted); }
+.flow__title { cursor: default; display: flex; align-items: baseline; gap: calc(var(--space-s) / var(--zoom, 1)); margin: 0 0 calc(var(--space-s) / var(--zoom, 1)); font-family: var(--sans); font-size: calc(13px / var(--zoom, 1)); color: var(--fg-muted); }
 .flow__title h3 { margin: 0; font-size: calc(var(--frame-title-size) / var(--zoom, 1)); font-weight: 600; color: var(--fg); cursor: text; }
 .flow__title h3:hover { text-decoration: underline; text-decoration-style: dotted; }
 /* The whole header holds its size, not only the heading: a legible title beside a 3px card

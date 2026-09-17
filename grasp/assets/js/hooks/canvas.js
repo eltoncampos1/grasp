@@ -21,6 +21,8 @@
 // the one line that names it. The zoom decides nothing about it, so a canvas stays as it is
 // read wherever it is panned or zoomed to.
 //
+// A frame's title is a handle too: Ctrl+drag on it moves every card of that group at once.
+//
 // A card is dragged by its header, or from anywhere on it with Ctrl held; holding Space turns
 // the whole canvas, cards included, into a pan surface. A card dropped anywhere inside another
 // group's frame joins that group — the drop is decided against the rectangles the hook drew —
@@ -392,6 +394,13 @@ const Canvas = {
     // preventDefault the browser begins a text range that smears over every card the pointer
     // crosses on the way to the next one.
     if (e.shiftKey && e.target.closest(".card")) return e.preventDefault()
+    // Ctrl is what separates the two gestures a frame's header carries: with it the header is
+    // the handle the whole group is dragged by, without it a press on the title is the rename
+    // click. The header's own controls are pressed rather than dragged from.
+    const ctrlTitle = e.ctrlKey && e.target.closest(".flow__title")
+    if (ctrlTitle && !e.target.closest("button, a, input")) {
+      return this.beginGroupDrag(e, ctrlTitle)
+    }
     const ctrlCard = e.ctrlKey && e.target.closest(".card")
     if (ctrlCard) return this.beginCardDrag(e, ctrlCard, true)
     const header = e.target.closest(".card__header")
@@ -424,6 +433,33 @@ const Canvas = {
     }
   },
 
+  // Every card of the group travels by the same displacement, so the cards keep their places
+  // relative to one another and the frame the hook draws round them follows from their boxes.
+  beginGroupDrag(e, title) {
+    const flow = title.closest(".flow")
+    if (!flow) return
+    e.preventDefault()
+    document.body.classList.add("grasp-dragging")
+    this.drag = {
+      kind: "group",
+      ctrl: true,
+      pointerId: e.pointerId,
+      flow,
+      group: Number(flow.dataset.group),
+      nodes: [...flow.querySelectorAll(".node")].map((node) => {
+        const card = node.querySelector(".card")
+        return {
+          node,
+          dx: parseInt(card?.dataset.dx || "0", 10),
+          dy: parseInt(card?.dataset.dy || "0", 10),
+        }
+      }),
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+    }
+  },
+
   beginPan(e) {
     e.preventDefault()
     document.body.classList.add("grasp-dragging")
@@ -436,6 +472,14 @@ const Canvas = {
       y: this.view.y,
       moved: false,
     }
+  },
+
+  // The nodes a drag carries, each with the offset the server last rendered it at: a card drag
+  // holds its one node inline, a group drag a list of them, and a pan none.
+  dragNodes(drag) {
+    if (drag.kind === "card") return [drag]
+    if (drag.kind === "group") return drag.nodes
+    return []
   },
 
   // A second pointer — a touch, a pen, the other half of a pinch — reports its own stream of
@@ -462,9 +506,11 @@ const Canvas = {
       // rounds the pan: the card then travels in whole pixels and does not shimmer. At a scale
       // other than 1 it keeps whatever subpixel phase its layout gave it — it is not on a grid.
       const s = this.view.scale
-      const tx = Math.round((this.drag.dx + mx / s) * s) / s
-      const ty = Math.round((this.drag.dy + my / s) * s) / s
-      this.drag.node.style.translate = `${tx}px ${ty}px`
+      for (const {node, dx, dy} of this.dragNodes(this.drag)) {
+        const tx = Math.round((dx + mx / s) * s) / s
+        const ty = Math.round((dy + my / s) * s) / s
+        node.style.translate = `${tx}px ${ty}px`
+      }
       this.draw()
     }
   },
@@ -487,8 +533,9 @@ const Canvas = {
     if (this.otherPointer(e)) return
     const drag = this.endDrag()
     this.suppressClick = false
-    if (drag.kind === "card") {
-      drag.node.style.translate = ""
+    const nodes = this.dragNodes(drag)
+    if (nodes.length) {
+      nodes.forEach(({node}) => (node.style.translate = ""))
       this.draw()
     }
   },
@@ -507,6 +554,18 @@ const Canvas = {
       const group = this.groupUnder(e, drag)
       const move = {card: drag.id, dx, dy}
       this.pushEvent("move_card", group === null ? move : {...move, group})
+    } else if (drag.kind === "group") {
+      const {scale} = this.view
+      const dx = Math.round((e.clientX - drag.startX) / scale)
+      const dy = Math.round((e.clientY - drag.startY) / scale)
+      // Each node is left on the whole-pixel offset the server is about to render, so a group
+      // put back where it already sat produces no diff to clear the drag's fractional
+      // translate and needs none. A group drag decides no membership: the cards move together
+      // and stay in the group they are the members of.
+      for (const {node, dx: x, dy: y} of drag.nodes) {
+        node.style.translate = `${x + dx}px ${y + dy}px`
+      }
+      this.pushEvent("move_group", {group: drag.group, dx, dy})
     }
   },
 

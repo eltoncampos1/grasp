@@ -73,6 +73,8 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
   goes, and the header and the syntax-highlighted line naming each function are scaled up so
   they stay readable however far out you are. The header's buttons keep working, so you can
   close or collapse a card without leaving the mode. Press it again for the code back.
+- Ctrl+drag a frame's title to move the whole group: every card inside travels together and
+  keeps its place relative to the others. Without Ctrl, clicking the title renames the group.
 - A frame's title keeps its size at any zoom, so you can read which group is which from far
   enough out that the cards inside it are specks.
 - ⌘M toggles the sidebar. On macOS the browser may take ⌘M for "minimise window", in

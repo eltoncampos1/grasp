@@ -284,6 +284,21 @@ defmodule Grasp.Session.ForestTest do
     assert Forest.card(forest, b).offset == {0, 0}
   end
 
+  test "shift_group/3 adds to every member's offset and leaves the rest alone" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+    {forest, c} = Forest.open_child(forest, a, "C.h/2")
+    {forest, group} = Forest.new_group(forest, "Flow", [a, b])
+
+    forest = forest |> Forest.move(b, {5, 5}) |> Forest.shift_group(group, {40, -10})
+
+    assert Forest.card(forest, a).offset == {40, -10}
+    assert Forest.card(forest, b).offset == {45, -5}
+    assert Forest.card(forest, c).offset == {0, 0}
+
+    assert Forest.shift_group(forest, group + 999, {1, 1}) == forest
+  end
+
   describe "highlights" do
     test "set_highlight stores a call or a line range and ignores unknown ids" do
       {forest, id} = Forest.open_root(Forest.new(), "A.f/1")

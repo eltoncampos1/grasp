@@ -88,6 +88,14 @@ defmodule Grasp.Session do
   @spec move(name(), Forest.id(), {integer(), integer()}) :: Forest.t()
   def move(name, card_id, {dx, dy}), do: mutate(name, &Forest.move(&1, card_id, {dx, dy}))
 
+  @doc """
+  Adds `{dx, dy}` to the layout offset of every card in `group_id`, moving the group as one.
+  An unknown group changes nothing.
+  """
+  @spec shift_group(name(), Forest.group_id(), {integer(), integer()}) :: Forest.t()
+  def shift_group(name, group_id, {dx, dy}),
+    do: mutate(name, &Forest.shift_group(&1, group_id, {dx, dy}))
+
   @doc "Clears every card's offset, returning the cards to their automatic layout."
   @spec reset_offsets(name()) :: Forest.t()
   def reset_offsets(name), do: mutate(name, &Forest.reset_offsets/1)
