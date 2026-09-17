@@ -459,7 +459,6 @@ const Canvas = {
       kind: "group",
       ctrl: true,
       pointerId: e.pointerId,
-      flow,
       group: Number(flow.dataset.group),
       nodes: [...flow.querySelectorAll(".node")].map((node) => {
         const card = node.querySelector(".card")

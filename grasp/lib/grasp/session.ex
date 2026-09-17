@@ -93,7 +93,7 @@ defmodule Grasp.Session do
   An unknown group changes nothing.
   """
   @spec shift_group(name(), Forest.group_id(), {integer(), integer()}) :: Forest.t()
-  def shift_group(name, group_id, {dx, dy}),
+  def shift_group(name, group_id, {dx, dy}) when is_integer(dx) and is_integer(dy),
     do: mutate(name, &Forest.shift_group(&1, group_id, {dx, dy}))
 
   @doc "Clears every card's offset, returning the cards to their automatic layout."
