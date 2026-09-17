@@ -49,8 +49,8 @@ defmodule Grasp.Comments.Publisher do
   since `gh` runs from it and reads the repository it belongs to.
 
   An error is only ever the review not being publishable at all — a number that is not a
-  pull request number, no checkout, no pull request, no diff. Once those are in hand every thread is attempted, and what happened to
-  each is in the report.
+  pull request number, no checkout, no pull request, no diff. Once those are in hand every
+  thread is attempted, and what happened to each is in the report.
   """
   @spec publish(Index.t(), keyword()) :: {:ok, report()} | {:error, String.t()}
   def publish(%Index{} = index, opts \\ []) when is_list(opts) do
