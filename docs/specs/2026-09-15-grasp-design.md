@@ -695,6 +695,11 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 - **Frames overlap when cards are dragged across.** A frame follows its cards wherever they
   go, so two frames can cover the same ground; nothing pushes them apart, and a drop inside
   both joins the later section. Reset layout untangles them.
+- **Opening a pull request switches the working tree.** `gh pr checkout` runs in the
+  reader's checkout, so the branch they had is gone from disk until they switch back, and
+  the recipe refuses on a dirty tree rather than stashing for them. `gh` has to be installed
+  and signed in. A worktree per pull request would leave the tree alone, but the viewer is
+  started on one index path and cannot yet follow a root that moves.
 - **Edit mode trusts the CLI's allowlist.** `Bash(mix:*)` admits every mix task, including
   ones that write outside the project; there is no sandbox beyond what Claude Code applies.
   The mode is off unless the reader turns it on, and per viewer session.
@@ -780,6 +785,11 @@ first reference. Results are JSON text content, so any MCP client can read them.
   ids and blank bodies are tool errors. `get_function` carries `comments`, the function's
   open threads with the same fields. There is no tool that deletes a comment: what a
   reviewer wrote is theirs to remove, from the card.
+- `reload_index()` makes the store read the watched index file now, instead of at its next
+  mtime poll, and answers the loaded index's summary: `path`, `functions`, `changed`,
+  `base_ref`, `branch` and `head` (the last three null without git). An agent that has just
+  rebuilt the index calls it before `list_changes`, so it never reads the file the rebuild
+  replaced. A file that does not load is a tool error carrying the store's reason.
 - Later milestones add `set_tour`/`tour_goto`, resources and the `build_review_tour` prompt.
 
 Registering in Claude Code:
@@ -818,9 +828,12 @@ conversation.
   `set_mode/2`, recorded on the runner like the model and read when the next command is
   built; `read` unless picked). In `read` mode the tools are as above. In `edit` mode the
   built-in tools are `Read Grep Glob Edit Write Bash` and the pre-approved set is
-  `mcp__grasp Read Grep Glob Edit Write Bash(mix:*) Bash(git status:*) Bash(git diff:*)`, so
-  the agent can change files under the project root and run mix — nothing else runs
-  without the CLI asking, and headless it cannot ask. The appended system prompt tells the
+  `mcp__grasp Read Grep Glob Edit Write Bash(mix:*) Bash(git status:*) Bash(git diff:*)
+  Bash(git fetch:*) Bash(git switch:*) Bash(gh pr view:*) Bash(gh pr checkout:*)`, so the
+  agent can change files under the project root, run mix, and bring a pull request's branch
+  into the working tree — nothing else runs without the CLI asking, and headless it cannot
+  ask. `git switch` rather than `git checkout`: the latter also discards files, and the
+  former refuses to leave changes behind unless told to, which the prompt forbids. The appended system prompt tells the
   agent in either mode what review comments are and how to answer them; in `edit` mode it
   adds the working order: act on the comment, `mix format` the touched files, rebuild the
   index with the command the prompt spells out (`mix grasp.index`, with the `--base` the
@@ -828,6 +841,17 @@ conversation.
   the cards reload from it, and only then arrange the cards again. In `read` mode a comment
   that asks for a code change is answered with the change the agent would make and a note
   that the chat must be switched to edit mode.
+- "Open PR 1212" is one prompt in `edit` mode. The system prompt carries the recipe: read
+  the pull request with `gh pr view N --json baseRefName,headRefName,title,url`; check that
+  `git status --porcelain` prints nothing and stop, saying so, when it does — the checkout
+  happens in the reader's own working tree, and a dirty tree is theirs to deal with, never
+  the agent's; `gh pr checkout N`; `git fetch origin <base>`; rebuild the index against
+  `origin/<base>` (the `--out` the viewer watches when that is not the default); call
+  `reload_index` so the viewer reads the new file at once rather than on its next poll;
+  then `list_changes` and `set_cards` with one group per flow, roots at the entry points,
+  so the whole change is on the canvas in frames. Comments from an earlier review of another
+  branch stay in `.grasp/comments.json` until resolved or deleted; the prompt says so. In
+  `read` mode the same request is answered with a note to switch the chat to edit mode.
 - The runner parses the JSON stream line by line: `assistant` text blocks stream into the
   transcript, `tool_use` blocks become tool rows showing the tool name and its main
   argument, `tool_result` blocks mark the row done or failed, `system/init` records the
@@ -880,7 +904,8 @@ conversation.
 5. PR mode: base ref extraction, change badges, Changes sidebar, diff view, `list_changes`.
    Done, then groups and semantic zoom (5.1, 5.2), selection (5.3) and, in 5.4, review
    comments with the agent's edit mode, frames that follow their cards, and the far-zoom
-   retune.
+   retune; 5.5 opens a pull request from the chat (`gh pr checkout` in place, rebuild
+   against the base, `reload_index`, one group per flow).
 6. Sessions on disk: persistence of the forest and its groups.
 7. Tours: `set_tour`, `tour_goto`, the tour bar, resources and the `build_review_tour`
    prompt.
