@@ -34,6 +34,19 @@ declares.
 The document shape is described in `docs/specs/2026-09-15-grasp-design.md` at the repo
 root under "Index JSON".
 
+## Running the viewer
+
+```
+mix grasp.serve [--index .grasp/index.json] [--viewer PATH] [--editor vscode]
+```
+
+The viewer is a Phoenix application and is never a dependency of the project it reviews,
+so this task runs it from a checkout of the Grasp repository: `--viewer PATH`, else
+`GRASP_VIEWER`, else `~/.grasp/viewer`. A checkout that is not there yet is cloned from
+`--repo URL`, else `GRASP_VIEWER_REPO`, else the repository on GitHub, and one without its
+dependencies or its built assets gets them before the viewer starts. `--port`, `--editor`,
+`--agent-command` and `--agent-model` are passed to the viewer, which validates them.
+
 ## Tests
 
 ```

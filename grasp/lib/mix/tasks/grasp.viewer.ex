@@ -1,11 +1,14 @@
-defmodule Mix.Tasks.Grasp.Serve do
-  @shortdoc "Serves the Grasp viewer for an index file"
+defmodule Mix.Tasks.Grasp.Viewer do
+  @shortdoc "Serves the Grasp viewer for an index file; `mix grasp.serve` in the reviewed project runs it"
 
   @moduledoc """
-  Starts the Grasp viewer.
+  Starts the Grasp viewer, the task `mix grasp.serve` runs in the reviewed project.
 
-      mix grasp.serve --index PATH [--port 4040] [--editor vscode]
-                      [--agent-command claude] [--agent-model MODEL]
+      mix grasp.viewer --index PATH [--port 4040] [--editor vscode]
+                       [--agent-command claude] [--agent-model MODEL]
+
+  Run it from this repository's `grasp/` directory. From the project under review,
+  `mix grasp.serve` — the launcher in `grasp_index` — finds a checkout and runs this.
 
   The index is the file `mix grasp.index` wrote in the target project. The viewer binds
   to 127.0.0.1 and reloads the index whenever the file changes. Review comments live
@@ -41,40 +44,40 @@ defmodule Mix.Tasks.Grasp.Serve do
     {opts, _rest, invalid} = OptionParser.parse(args, strict: @switches)
 
     if invalid != [] do
-      Mix.raise("grasp.serve: unknown options #{inspect(Enum.map(invalid, &elem(&1, 0)))}")
+      Mix.raise("grasp.viewer: unknown options #{inspect(Enum.map(invalid, &elem(&1, 0)))}")
     end
 
     index =
       opts[:index] || System.get_env("GRASP_INDEX") ||
-        Mix.raise("grasp.serve: --index PATH is required")
+        Mix.raise("grasp.viewer: --index PATH is required")
 
     index = Path.expand(index)
 
-    unless File.regular?(index), do: Mix.raise("grasp.serve: no such file #{index}")
+    unless File.regular?(index), do: Mix.raise("grasp.viewer: no such file #{index}")
 
     editor = opts[:editor]
 
     if editor && editor not in @editors do
-      Mix.raise("grasp.serve: --editor must be one of #{Enum.join(@editors, ", ")}")
+      Mix.raise("grasp.viewer: --editor must be one of #{Enum.join(@editors, ", ")}")
     end
 
     agent_command = opts[:agent_command]
 
     if agent_command && is_nil(System.find_executable(agent_command)) do
-      Mix.raise("grasp.serve: --agent-command #{agent_command} is not an executable")
+      Mix.raise("grasp.viewer: --agent-command #{agent_command} is not an executable")
     end
 
     agent_model = opts[:agent_model]
 
     if agent_model == "" do
-      Mix.raise("grasp.serve: --agent-model must name a model")
+      Mix.raise("grasp.viewer: --agent-model must name a model")
     end
 
     # The store loads the index again at boot; one extra decode buys a readable error here
     # instead of a viewer that comes up empty and explains nothing.
     case Grasp.Index.load(index) do
       {:ok, _index} -> :ok
-      {:error, reason} -> Mix.raise("grasp.serve: cannot read #{index}: #{inspect(reason)}")
+      {:error, reason} -> Mix.raise("grasp.viewer: cannot read #{index}: #{inspect(reason)}")
     end
 
     System.put_env("GRASP_INDEX", index)

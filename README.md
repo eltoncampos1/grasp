@@ -31,7 +31,7 @@ a text editor and a unified diff.
 
 - `grasp_index/` — the indexer. Added to a target project as a dev dependency;
   `mix grasp.index` writes a JSON index of every function, its resolved calls, and the
-  project's entry points.
+  project's entry points, and `mix grasp.serve` runs the viewer against it.
 - `grasp/` — the viewer. A Phoenix LiveView app that serves the index as a card canvas.
 
 See `docs/specs/2026-09-15-grasp-design.md` for the design.
@@ -47,16 +47,25 @@ In the project you want to review:
 
 ```
 mix deps.get && mix grasp.index
-```
-
-Then, from this repo:
-
-```
-cd grasp && mix setup && mix grasp.serve --index /path/to/project/.grasp/index.json --editor vscode
+mix grasp.serve --editor vscode
 ```
 
 Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or press
 ⌘K, and click any call inside a card to open the callee next to it.
+
+`mix grasp.serve` runs the viewer from a checkout of this repository, since the viewer is
+never a dependency of the project it reviews. Point it at a checkout you already have with
+`--viewer PATH` or `GRASP_VIEWER`; with neither, it looks in `~/.grasp/viewer` and clones
+the repository there the first time, then fetches the viewer's dependencies and builds its
+assets. That first run takes a few minutes and later ones start straight away.
+
+### Working on Grasp itself
+
+The viewer has its own task, run from this repository against any project's index:
+
+```
+cd grasp && mix setup && mix grasp.viewer --index /path/to/project/.grasp/index.json --editor vscode
+```
 
 ## Gestures
 
@@ -341,8 +350,7 @@ The CLI has to be installed and signed in already — the panel runs whatever `c
   leave the CLI on its own default.
 
 ```
-cd grasp && mix grasp.serve --index /path/to/project/.grasp/index.json \
-  --agent-command /opt/homebrew/bin/claude --agent-model opus
+mix grasp.serve --agent-command /opt/homebrew/bin/claude --agent-model opus
 ```
 
 ## License

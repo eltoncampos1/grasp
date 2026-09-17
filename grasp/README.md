@@ -6,8 +6,11 @@ index as a branching tree of function cards.
 ```
 cd grasp
 mix setup
-mix grasp.serve --index /path/to/project/.grasp/index.json [--port 4040] [--editor vscode]
+mix grasp.viewer --index /path/to/project/.grasp/index.json [--port 4040] [--editor vscode]
 ```
+
+From the project under review, `mix grasp.serve` — the launcher in `grasp_index` — finds a
+checkout of this repository and runs the same task inside it.
 
 The first `mix deps.get` downloads Lumis' precompiled NIF, and the first cards rendered
 load the tree-sitter grammars they need — Elixir, plus HTML, CSS and JavaScript for a
