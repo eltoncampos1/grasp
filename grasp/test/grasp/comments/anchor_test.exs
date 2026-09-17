@@ -57,6 +57,13 @@ defmodule Grasp.Comments.AnchorTest do
     assert Anchor.place(old_thread(1, nil), record) == :outdated
   end
 
+  test "a source ending in a line break has no line past its last" do
+    record = %{"source" => "def run do\n  :ok\nend\n", "span" => %{"start_line" => 1}}
+
+    assert Anchor.place(thread(3, "end"), record) == {:new, 3}
+    assert Anchor.place(thread(4, nil), record) == :outdated
+  end
+
   test "a comment whose function has left the index is an orphan" do
     assert Anchor.place(thread(11, "total = Enum.sum(list)"), nil) == :orphan
     assert Anchor.place(old_thread(1, nil), nil) == :orphan

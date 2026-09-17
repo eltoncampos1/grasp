@@ -1,6 +1,8 @@
 defmodule Grasp.CommentsTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   alias Grasp.Comments
 
   setup do
@@ -42,7 +44,7 @@ defmodule Grasp.CommentsTest do
     {:ok, thread} = add(function_id, %{})
 
     assert path = Comments.path()
-    assert {:ok, {threads, next_id}} = path |> File.read!() |> Comments.decode()
+    assert {:ok, {threads, next_id, 0}} = path |> File.read!() |> Comments.decode()
     assert next_id > thread.id
     assert Enum.any?(threads, &(&1.id == thread.id and &1.body == thread.body))
   end
@@ -178,15 +180,34 @@ defmodule Grasp.CommentsTest do
     document = Comments.encode(threads, 4)
 
     assert document =~ "\n"
-    assert Comments.decode(document) == {:ok, {threads, 4}}
+    assert Comments.decode(document) == {:ok, {threads, 4, 0}}
+  end
+
+  test "decode/1 corrects a counter that lags behind the ids it hands out" do
+    document = ~s({"version": 1, "next_id": 2, "comments": #{comments_json()}})
+
+    assert {:ok, {[thread], next_id, 0}} = Comments.decode(document)
+    assert thread.id == 7
+    assert next_id == 10
+  end
+
+  test "decode/1 keeps the entries it can read and counts the rest" do
+    document =
+      ~s({"version": 1, "next_id": 20, "comments": [{"id": "x"}, #{one_comment()}, null]})
+
+    assert {:ok, {[thread], 20, 2}} = Comments.decode(document)
+    assert thread.id == 7
   end
 
   test "decode/1 refuses a document it cannot read" do
     assert {:error, _reason} = Comments.decode("not json")
     assert {:error, _reason} = Comments.decode(~s({"version": 2, "next_id": 1, "comments": []}))
     assert {:error, _reason} = Comments.decode(~s({"version": 1, "next_id": 1}))
-    assert {:error, _reason} = Comments.decode(~s({"version": 1, "next_id": 1, "comments": [{}]}))
-    assert Comments.decode(~s({"version": 1, "next_id": 1, "comments": []})) == {:ok, {[], 1}}
+
+    assert Comments.decode(~s({"version": 1, "next_id": 1, "comments": [{}]})) ==
+             {:ok, {[], 1, 1}}
+
+    assert Comments.decode(~s({"version": 1, "next_id": 1, "comments": []})) == {:ok, {[], 1, 0}}
   end
 
   test "snippet/3 reads the line off the record it is written on" do
@@ -210,6 +231,73 @@ defmodule Grasp.CommentsTest do
 
     assert Comments.snippet(record("SampleApp.Greeter.greet/2"), "old", 1) == nil
     assert Comments.snippet(nil, "new", 1) == nil
+  end
+
+  test "a store keeps what it can read of a damaged file and moves the file aside" do
+    path = tmp_path()
+    File.mkdir_p!(Path.dirname(path))
+
+    File.write!(
+      path,
+      ~s({"version": 1, "next_id": 9, "comments": [{"id": "x"}, #{one_comment()}]})
+    )
+
+    log =
+      capture_log(fn ->
+        store = start_isolated(path)
+
+        assert [%{id: 7, body: "worth a look"}] = GenServer.call(store, {:list, []})
+        assert {:ok, _thread} = GenServer.call(store, {:add, isolated_attrs()})
+      end)
+
+    assert log =~ "dropped 1 unreadable entry"
+    assert File.exists?(path <> ".corrupt")
+    assert {:ok, {threads, _next_id, 0}} = path |> File.read!() |> Comments.decode()
+    assert Enum.map(threads, & &1.id) == [7, 10]
+  end
+
+  test "a store that could not read its file at all keeps the file aside" do
+    path = tmp_path()
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, "{not json")
+
+    log =
+      capture_log(fn ->
+        store = start_isolated(path)
+
+        assert GenServer.call(store, {:list, []}) == []
+        assert {:ok, _thread} = GenServer.call(store, {:add, isolated_attrs()})
+      end)
+
+    assert log =~ "could not read comments"
+    assert File.read!(path <> ".corrupt") == "{not json"
+    assert {:ok, {[%{id: 1}], 2, 0}} = path |> File.read!() |> Comments.decode()
+  end
+
+  defp start_isolated(path) do
+    name = :"comments_#{System.unique_integer([:positive])}"
+    start_supervised!({Comments, [path: path, name: name]})
+  end
+
+  defp isolated_attrs do
+    %{function_id: "Test.Isolated.run/0", side: "new", line: 1, body: "later", author: "human"}
+  end
+
+  defp tmp_path do
+    Path.join([
+      System.tmp_dir!(),
+      "grasp-comments-#{System.unique_integer([:positive])}",
+      "comments.json"
+    ])
+  end
+
+  defp comments_json, do: "[" <> one_comment() <> "]"
+
+  defp one_comment do
+    ~s({"id": 7, "function_id": "Test.Fn.run/0", "side": "new", "line": 1, "snippet": null,) <>
+      ~s( "body": "worth a look", "author": "human", "created_at": "2026-09-17T09:00:00Z",) <>
+      ~s( "resolved": false, "replies": [{"id": 9, "author": "agent", "body": "ok",) <>
+      ~s( "created_at": "2026-09-17T09:01:00Z"}]})
   end
 
   defp add(function_id, attrs) do

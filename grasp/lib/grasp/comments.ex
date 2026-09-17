@@ -28,6 +28,13 @@ defmodule Grasp.Comments do
   behind. A file that cannot be read, parsed or written is a warning and never a crash —
   losing the viewer over a comment file would be a worse failure than losing the file.
 
+  A file the store could not fully read is salvaged rather than discarded: entries it
+  cannot decode are skipped and the rest are kept, and the file is renamed to
+  `<path>.corrupt` before the next write, so a rewrite never silently replaces a history
+  someone still wants. The id counter is likewise recomputed on every read as one past the
+  highest id the document holds, so a truncated or hand-edited `next_id` cannot make the
+  next comment overwrite an existing one.
+
   Every successful mutation broadcasts `:comments_changed` on the `"comments"` topic.
   """
 
@@ -61,11 +68,14 @@ defmodule Grasp.Comments do
   Starts the store.
 
   `:path` overrides the file to read and write, taking precedence over the
-  `:grasp, :comments_path` setting and over the path derived from the project root.
+  `:grasp, :comments_path` setting and over the path derived from the project root, and
+  `:name` registers the store under a name other than the module, for a second store
+  running beside the application's.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    {name, opts} = Keyword.pop(opts, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: name)
   end
 
   @doc "Subscribes the caller to `:comments_changed` messages."
@@ -80,7 +90,7 @@ defmodule Grasp.Comments do
   """
   @spec list() :: [thread()]
   @spec list(keyword()) :: [thread()]
-  def list(opts \\ []), do: GenServer.call(__MODULE__, {:list, opts})
+  def list(opts \\ []) when is_list(opts), do: GenServer.call(__MODULE__, {:list, opts})
 
   @doc "Every thread, resolved ones included, grouped by function id and sorted by id."
   @spec by_function() :: %{String.t() => [thread()]}
@@ -88,7 +98,7 @@ defmodule Grasp.Comments do
 
   @doc "Fetches the thread `id`."
   @spec fetch(pos_integer()) :: {:ok, thread()} | :error
-  def fetch(id), do: GenServer.call(__MODULE__, {:fetch, id})
+  def fetch(id) when is_integer(id), do: GenServer.call(__MODULE__, {:fetch, id})
 
   @doc """
   Opens a thread from `%{function_id, side, line, body, author, snippet}`.
@@ -98,23 +108,25 @@ defmodule Grasp.Comments do
   reads when the comment is written.
   """
   @spec add(map()) :: {:ok, thread()} | {:error, :invalid}
-  def add(attrs), do: GenServer.call(__MODULE__, {:add, attrs})
+  def add(attrs) when is_map(attrs), do: GenServer.call(__MODULE__, {:add, attrs})
 
   @doc "Appends a reply `%{body, author}` to the thread `id`, returning the whole thread."
   @spec reply(pos_integer(), map()) :: {:ok, thread()} | {:error, :unknown | :invalid}
-  def reply(id, attrs), do: GenServer.call(__MODULE__, {:reply, id, attrs})
+  def reply(id, attrs) when is_integer(id) and is_map(attrs),
+    do: GenServer.call(__MODULE__, {:reply, id, attrs})
 
   @doc "Marks the thread `id` resolved or unresolved."
   @spec set_resolved(pos_integer(), boolean()) :: {:ok, thread()} | {:error, :unknown}
-  def set_resolved(id, resolved), do: GenServer.call(__MODULE__, {:set_resolved, id, resolved})
+  def set_resolved(id, resolved) when is_integer(id) and is_boolean(resolved),
+    do: GenServer.call(__MODULE__, {:set_resolved, id, resolved})
 
   @doc "Deletes the thread `id` and its replies; an unknown id changes nothing."
   @spec delete(pos_integer()) :: :ok
-  def delete(id), do: GenServer.call(__MODULE__, {:delete, id})
+  def delete(id) when is_integer(id), do: GenServer.call(__MODULE__, {:delete, id})
 
   @doc "Deletes one reply of a thread; an unknown thread or reply changes nothing."
   @spec delete_reply(pos_integer(), pos_integer()) :: :ok
-  def delete_reply(thread_id, reply_id),
+  def delete_reply(thread_id, reply_id) when is_integer(thread_id) and is_integer(reply_id),
     do: GenServer.call(__MODULE__, {:delete_reply, thread_id, reply_id})
 
   @doc "The file the threads are written to, or `nil` when they are held in memory only."
@@ -152,12 +164,14 @@ defmodule Grasp.Comments do
   end
 
   @doc false
-  @spec decode(String.t()) :: {:ok, {[thread()], pos_integer()}} | {:error, term()}
+  @spec decode(String.t()) ::
+          {:ok, {[thread()], pos_integer(), non_neg_integer()}} | {:error, term()}
   def decode(binary) do
     with {:ok, document} <- Jason.decode(binary),
-         {:ok, next_id, comments} <- document_parts(document),
-         {:ok, threads} <- decode_threads(comments) do
-      {:ok, {Enum.sort_by(threads, & &1.id), next_id}}
+         {:ok, next_id, comments} <- document_parts(document) do
+      {threads, dropped} = decode_threads(comments)
+      threads = Enum.sort_by(threads, & &1.id)
+      {:ok, {threads, counter(threads, next_id), dropped}}
     end
   end
 
@@ -165,8 +179,16 @@ defmodule Grasp.Comments do
   def init(opts) do
     :ok = Grasp.IndexStore.subscribe()
     override = Keyword.get(opts, :path) || Application.get_env(:grasp, :comments_path)
-    state = %{path: override || derived_path(), override: not is_nil(override)}
-    {:ok, read(Map.merge(state, %{threads: %{}, next_id: 1}))}
+
+    state = %{
+      path: override || derived_path(),
+      override: not is_nil(override),
+      threads: %{},
+      next_id: 1,
+      corrupt: false
+    }
+
+    {:ok, read(state)}
   end
 
   @impl true
@@ -225,8 +247,11 @@ defmodule Grasp.Comments do
     end
   end
 
-  def handle_call({:set_resolved, id, resolved}, _from, state) when is_boolean(resolved) do
+  def handle_call({:set_resolved, id, resolved}, _from, state) do
     case Map.fetch(state.threads, id) do
+      {:ok, %{resolved: ^resolved} = thread} ->
+        {:reply, {:ok, thread}, state}
+
       {:ok, thread} ->
         thread = %{thread | resolved: resolved}
         state = %{state | threads: Map.put(state.threads, id, thread)}
@@ -280,47 +305,76 @@ defmodule Grasp.Comments do
   def handle_info(_message, state), do: {:noreply, state}
 
   defp commit(state) do
-    write(state)
+    state = persist(state)
     Phoenix.PubSub.broadcast(Grasp.PubSub, @topic, :comments_changed)
     state
   end
 
-  defp read(%{path: nil} = state), do: %{state | threads: %{}, next_id: 1}
+  defp read(%{path: nil} = state), do: empty(state, false)
 
   defp read(state) do
     case File.read(state.path) do
-      {:ok, binary} ->
-        case decode(binary) do
-          {:ok, {threads, next_id}} ->
-            %{state | threads: Map.new(threads, &{&1.id, &1}), next_id: next_id}
-
-          {:error, reason} ->
-            Logger.warning("grasp: could not read comments #{state.path}: #{inspect(reason)}")
-            %{state | threads: %{}, next_id: 1}
-        end
-
-      {:error, :enoent} ->
-        %{state | threads: %{}, next_id: 1}
-
-      {:error, reason} ->
-        Logger.warning("grasp: could not read comments #{state.path}: #{inspect(reason)}")
-        %{state | threads: %{}, next_id: 1}
+      {:ok, binary} -> decode_file(binary, state)
+      {:error, :enoent} -> empty(state, false)
+      {:error, reason} -> empty(log_read_failure(state, reason), true)
     end
   end
 
-  defp write(%{path: nil}), do: :ok
+  defp decode_file(binary, state) do
+    case decode(binary) do
+      {:ok, {threads, next_id, 0}} ->
+        %{state | threads: Map.new(threads, &{&1.id, &1}), next_id: next_id, corrupt: false}
 
-  defp write(state) do
-    document = encode(sorted(state.threads), state.next_id)
+      {:ok, {threads, next_id, dropped}} ->
+        entries = if dropped == 1, do: "entry", else: "entries"
+        Logger.warning("grasp: dropped #{dropped} unreadable #{entries} from #{state.path}")
 
-    with :ok <- File.mkdir_p(Path.dirname(state.path)),
-         :ok <- File.write(state.path, document) do
-      :ok
-    else
+        %{state | threads: Map.new(threads, &{&1.id, &1}), next_id: next_id, corrupt: true}
+
+      {:error, reason} ->
+        empty(log_read_failure(state, reason), true)
+    end
+  end
+
+  defp empty(state, corrupt), do: %{state | threads: %{}, next_id: 1, corrupt: corrupt}
+
+  defp log_read_failure(state, reason) do
+    Logger.warning("grasp: could not read comments #{state.path}: #{inspect(reason)}")
+    state
+  end
+
+  defp persist(%{path: nil} = state), do: state
+
+  defp persist(state) do
+    state = keep_corrupt_aside(state)
+
+    case write(state.path, encode(sorted(state.threads), state.next_id)) do
+      :ok ->
+        state
+
       {:error, reason} ->
         Logger.warning("grasp: could not write comments #{state.path}: #{inspect(reason)}")
-        :ok
+        state
     end
+  end
+
+  defp write(path, document) do
+    with :ok <- File.mkdir_p(Path.dirname(path)), do: File.write(path, document)
+  end
+
+  # Rewriting the document would drop whatever the last read could not decode, so the file
+  # it came from is moved aside first and the reviewer keeps a copy to recover by hand.
+  defp keep_corrupt_aside(%{corrupt: false} = state), do: state
+
+  defp keep_corrupt_aside(state) do
+    kept = state.path <> ".corrupt"
+
+    case File.rename(state.path, kept) do
+      :ok -> Logger.warning("grasp: kept the unreadable comments file as #{kept}")
+      {:error, reason} -> Logger.warning("grasp: could not keep #{kept}: #{inspect(reason)}")
+    end
+
+    %{state | corrupt: false}
   end
 
   defp derived_path do
@@ -335,10 +389,18 @@ defmodule Grasp.Comments do
 
   defp sorted(threads), do: threads |> Map.values() |> Enum.sort_by(& &1.id)
 
+  # One past the highest id the document holds, so a `next_id` that lags behind its own
+  # comments — truncated write, hand edit, merge — cannot hand out an id already in use.
+  defp counter(threads, next_id) do
+    Enum.reduce(threads, max(next_id, 1), fn thread, counter ->
+      Enum.reduce(thread.replies, max(counter, thread.id + 1), &max(&2, &1.id + 1))
+    end)
+  end
+
   defp reply_error(state, id),
     do: if(Map.has_key?(state.threads, id), do: :invalid, else: :unknown)
 
-  defp build_thread(attrs, id) when is_map(attrs) do
+  defp build_thread(attrs, id) do
     with {:ok, function_id} <- binary_field(attrs, :function_id),
          {:ok, side} <- member_field(attrs, :side, @sides),
          {:ok, line} <- line_field(attrs),
@@ -360,16 +422,12 @@ defmodule Grasp.Comments do
     end
   end
 
-  defp build_thread(_attrs, _id), do: :error
-
-  defp build_reply(attrs, id) when is_map(attrs) do
+  defp build_reply(attrs, id) do
     with {:ok, author} <- member_field(attrs, :author, @authors),
          {:ok, body} <- body_field(attrs) do
       {:ok, %{id: id, author: author, body: body, created_at: now()}}
     end
   end
-
-  defp build_reply(_attrs, _id), do: :error
 
   defp binary_field(attrs, key) do
     case Map.get(attrs, key) do
@@ -438,12 +496,15 @@ defmodule Grasp.Comments do
   defp document_parts(document), do: {:error, {:invalid_document, document}}
 
   defp decode_threads(comments) do
-    Enum.reduce_while(comments, {:ok, []}, fn comment, {:ok, threads} ->
-      case decode_thread(comment) do
-        {:ok, thread} -> {:cont, {:ok, [thread | threads]}}
-        {:error, _reason} = error -> {:halt, error}
-      end
-    end)
+    {threads, dropped} =
+      Enum.reduce(comments, {[], 0}, fn comment, {threads, dropped} ->
+        case decode_thread(comment) do
+          {:ok, thread, reply_drops} -> {[thread | threads], dropped + reply_drops}
+          :error -> {threads, dropped + 1}
+        end
+      end)
+
+    {Enum.reverse(threads), dropped}
   end
 
   defp decode_thread(
@@ -462,8 +523,9 @@ defmodule Grasp.Comments do
               author in @authors do
     snippet = Map.get(comment, "snippet")
 
-    with true <- is_nil(snippet) or is_binary(snippet),
-         {:ok, replies} <- decode_replies(Map.get(comment, "replies", [])) do
+    if is_nil(snippet) or is_binary(snippet) do
+      {replies, dropped} = decode_replies(Map.get(comment, "replies", []))
+
       {:ok,
        %{
          id: id,
@@ -476,30 +538,32 @@ defmodule Grasp.Comments do
          created_at: created_at,
          resolved: Map.get(comment, "resolved") == true,
          replies: replies
-       }}
+       }, dropped}
     else
-      false -> {:error, {:invalid_comment, comment}}
-      {:error, _reason} = error -> error
+      :error
     end
   end
 
-  defp decode_thread(comment), do: {:error, {:invalid_comment, comment}}
+  defp decode_thread(_comment), do: :error
 
   defp decode_replies(replies) when is_list(replies) do
-    Enum.reduce_while(replies, {:ok, []}, fn reply, {:ok, decoded} ->
-      case decode_reply(reply) do
-        {:ok, reply} -> {:cont, {:ok, decoded ++ [reply]}}
-        {:error, _reason} = error -> {:halt, error}
-      end
-    end)
+    {decoded, dropped} =
+      Enum.reduce(replies, {[], 0}, fn reply, {decoded, dropped} ->
+        case decode_reply(reply) do
+          {:ok, reply} -> {[reply | decoded], dropped}
+          :error -> {decoded, dropped + 1}
+        end
+      end)
+
+    {Enum.reverse(decoded), dropped}
   end
 
-  defp decode_replies(replies), do: {:error, {:invalid_replies, replies}}
+  defp decode_replies(_replies), do: {[], 1}
 
   defp decode_reply(%{"id" => id, "author" => author, "body" => body, "created_at" => created_at})
        when is_integer(id) and id > 0 and is_binary(body) and is_binary(created_at) and
               author in @authors,
        do: {:ok, %{id: id, author: author, body: body, created_at: created_at}}
 
-  defp decode_reply(reply), do: {:error, {:invalid_reply, reply}}
+  defp decode_reply(_reply), do: :error
 end

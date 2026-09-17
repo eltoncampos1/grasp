@@ -74,11 +74,21 @@ defmodule Grasp.Comments.Anchor do
   defp number(source, start) when is_binary(source) do
     source
     |> String.split("\n")
+    |> drop_trailing_break()
     |> Enum.with_index(start)
     |> Enum.map(fn {text, number} -> {number, text} end)
   end
 
   defp number(_source, _start), do: nil
+
+  # A source ending in a line break splits into a final empty element, which is the break
+  # itself rather than a line of the function; numbering it would offer a line past the end.
+  defp drop_trailing_break(lines) do
+    case Enum.reverse(lines) do
+      ["" | [_ | _] = rest] -> Enum.reverse(rest)
+      _single_or_unterminated -> lines
+    end
+  end
 
   defp start_line(record) do
     case record["span"] do
