@@ -397,15 +397,17 @@ everything that hung off it alone, `c` collapses it.
 
 The canvas pans by dragging empty background, by holding Space and dragging from anywhere
 (cards included), or with the wheel; Ctrl or Cmd with the wheel zooms about the cursor. A
-toolbar carries the sidebar toggle, zoom out, a zoom readout that resets to 100% when
-clicked, fit, zoom in and "reset layout". The view — `{x, y, scale}` — lives only in the
+toolbar floats at the bottom centre of the canvas, the way drawing tools place theirs, and
+carries the sidebar toggle, zoom out, a zoom readout that resets to 100% when clicked, zoom
+in, fit, the signature-mode toggle (below), "reset layout" and the chat toggle; the chat
+panel docks above it. The view — `{x, y, scale}` — lives only in the
 canvas hook and is written to a stylesheet rule for the stage rather than to an inline
 style, so a LiveView patch cannot wipe it mid-gesture. A wheel over something that can
 scroll itself — a code body scrolled sideways, an open callers menu — is left to that
 element.
 
-Zoom out past 0.5 and the canvas reads semantically rather than optically: the hook puts
-`grasp-far` on `<body>`, and every card drops its body, its "Also calls" footer and, on a
+Signature mode is the reader's choice, not the zoom's: the toolbar's `signatures` toggle (or
+`s`) puts `grasp-signatures` on `<body>`, and while it is on every card drops its body, its "Also calls" footer and, on a
 stub, its prose and its hexdocs link, keeping its header and one line — the function's head.
 `Grasp.Highlight.signature/1` renders that head from the same memoised token pieces the body
 is built from, so it reads as code rather than as a plain-text label; it carries no gutter
@@ -415,20 +417,22 @@ and no call spans, because a call site at that scale is too small to aim at.
 `@spec` sit above it, without the indentation it was written at and without its trailing
 `do` — and `CardComponents.signature/1` takes its text for the title a pointer reads. A stub,
 or a record with no definition in it, falls back to `Mod.fun/arity`. The header, that line
-and a section's header are sized as `--far-size / --zoom` — 10px divided by the scale the
-hook writes on the stage beside the transform — so they measure 10px on screen at every zoom
-while everything around them shrinks; everything inside the header takes the header's size,
+are sized as `--far-size / --zoom` — 10px divided by the scale the hook writes on the stage
+beside the transform — so they measure 10px on screen at every zoom while everything around
+them shrinks; everything inside the header takes the header's size,
 rather than each element keeping a size the zoom has already shrunk past reading. The card's
 width floor and ceiling go with the body, leaving each card as wide as the wider of its
 header and its signature. The header keeps its badges, its stats and its tint, which is what
 marks a removed function, and its buttons stay live, so a far-out card can be closed or
-collapsed without zooming back in to it.
+collapsed without zooming back in to it. The mode is the browser's, like the view: the hook
+holds it, marks the toggle pressed, and nothing on the server knows it, so a patch cannot
+drop it. An automatic switch at a zoom threshold is what this replaces — the flip came at a
+zoom the reader had not chosen and made every card change size under the pointer.
 
-Because the class decides how big the cards are, "fit" fits in two passes: the first applies
-a scale and so lays out the canvas the second measures. Two passes that land on opposite
-sides of the threshold have no fixed point — each scale produces the box the other measured —
-so the fit is pinned at the threshold, the one scale both layouts agree on, rather than
-alternating between them on repeated presses.
+A group's title is read at every zoom: the frame header — title, count and `ungroup` — is
+sized as `--frame-title-size / --zoom` (18px for the title, 13px for the rest) in every mode,
+so it measures the same on screen whether the canvas is at 25% or 250%. The hook redraws the
+frames whenever the scale changes, since the header's box in stage units changes with it.
 
 Each card carries a persistent offset from its automatic position, set by dragging its
 header or by Ctrl-dragging anywhere on it. The drag shows an inline translate at once and
