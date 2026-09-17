@@ -78,6 +78,8 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
   edge from each of them. A caller opened this way, or a callee opened by clicking a call,
   joins the group of the card it was opened from when it is new to the canvas, so it lands
   in the column beside that card inside the same frame.
+- Click a line number to comment; ⌘/Ctrl+Enter saves, Escape cancels; reply, resolve, delete
+  on the thread.
 - Arrow keys walk the graph, `x` closes the focused card, `Shift+x` closes it together
   with everything that had no other way to be reached, `c` collapses it, ⌘K opens the
   palette.

@@ -185,6 +185,33 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
 .card__also-label { color: var(--fg-muted); }
 .also { color: var(--accent); }
 .also[data-open="true"] { outline: 2px solid var(--edge-color); outline-offset: 1px; border-radius: 2px; }
+/* Review comments. A thread and its composer sit between two lines of code, inside a block
+   that is monospace and preformatted, so both set their own type and wrapping back. Text
+   inside them is selected and the pointer reads as prose, not as a card to drag. */
+.thread, .composer { font-family: var(--sans); font-size: 13px; white-space: normal; user-select: text; cursor: auto; }
+.thread { margin-block: var(--space-xs); padding: var(--space-s) var(--space-m); border-inline-start: 2px solid var(--accent); background: var(--bg-sunken); }
+.thread--resolved, .thread--outdated { border-inline-start-color: var(--fg-faint); }
+.thread__snippet { margin: 0 0 var(--space-xs); color: var(--fg-muted); }
+.thread__label { margin-inline-end: var(--space-s); }
+.thread__snippet code { font-family: var(--mono); font-size: var(--code-size); }
+.thread__toggle { padding: 0; color: var(--fg-muted); font-size: 12px; }
+.thread__toggle:hover { color: var(--accent); }
+.comment { display: grid; grid-template-columns: auto auto 1fr auto; align-items: baseline; gap: var(--space-xs) var(--space-s); margin-block: var(--space-xs); }
+.comment__author { padding: 0 var(--space-s); border-radius: 999px; background: var(--bg); color: var(--fg-muted); font-size: 11px; }
+.comment[data-author="agent"] .comment__author { background: var(--accent-soft); color: var(--accent); }
+.comment time { color: var(--fg-subtle); font-size: 11px; }
+.comment__delete { grid-column: 4; padding: 0 var(--space-xs); color: var(--fg-faint); }
+.comment__delete:hover { color: var(--danger); }
+.comment__body { grid-column: 1 / -1; margin: 0; white-space: pre-wrap; }
+.thread__actions { display: flex; gap: var(--space-m); }
+.thread__actions button { padding: 0; color: var(--fg-muted); font-size: 12px; }
+.thread__actions button:hover { color: var(--accent); }
+.composer { display: block; padding: var(--space-s) var(--space-m); }
+.composer textarea { font: inherit; font-family: var(--sans); width: 100%; padding: var(--space-s); color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); resize: vertical; }
+.composer button { margin: var(--space-xs) var(--space-s) 0 0; padding: 1px var(--space-s); color: var(--fg-muted); border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px; }
+.composer button[type="submit"] { color: var(--accent); }
+.card__outdated { padding: var(--space-s) 0; border-top: 1px solid var(--border); }
+
 .stub .card__header { border-bottom: 0; }
 .stub__text, .stub__docs { margin: 0 var(--space-m) var(--space-s); display: block; color: var(--fg-muted); }
 .stub__docs { color: var(--accent); }
@@ -195,6 +222,7 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card { cu
    read. The counter-scaling divides by --zoom, which the hook writes on #stage beside the
    transform, so each of these rules has to match inside the stage to see it. */
 body.grasp-far #stage .card__body, body.grasp-far #stage .card__also, body.grasp-far #stage .stub__text, body.grasp-far #stage .stub__docs { display: none; }
+body.grasp-far #stage .thread, body.grasp-far #stage .composer, body.grasp-far #stage .card__outdated { display: none; }
 body.grasp-far #stage .card__signature { display: block; font-size: calc(var(--far-size) / var(--zoom, 1)); padding: calc(var(--space-s) / var(--zoom, 1)) calc(var(--space-m) / var(--zoom, 1)); }
 /* Far out only the header and the signature ask for width, so the card's ceiling and floor
    both go and it is exactly as wide as the wider of the two. */

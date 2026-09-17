@@ -6,9 +6,10 @@ import Palette from "./hooks/palette"
 import Keys from "./hooks/keys"
 import Canvas from "./hooks/canvas"
 import Chat from "./hooks/chat"
+import Composer from "./hooks/composer"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
-const liveSocket = new LiveSocket("/live", Socket, {params: {_csrf_token: csrfToken}, hooks: {Palette, Keys, Canvas, Chat}})
+const liveSocket = new LiveSocket("/live", Socket, {params: {_csrf_token: csrfToken}, hooks: {Palette, Keys, Canvas, Chat, Composer}})
 
 liveSocket.connect()
 window.liveSocket = liveSocket

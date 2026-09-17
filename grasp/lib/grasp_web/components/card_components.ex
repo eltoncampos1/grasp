@@ -11,6 +11,9 @@ defmodule GraspWeb.CardComponents do
 
   use GraspWeb, :html
 
+  import GraspWeb.CommentComponents
+
+  alias Grasp.Comments.Anchor
   alias Grasp.Diff
   alias Grasp.Index
   alias Grasp.Session.Forest
@@ -33,6 +36,9 @@ defmodule GraspWeb.CardComponents do
   attr :editor, :string, default: nil
   attr :callers_open, :integer, default: nil
   attr :selected, :boolean, default: false
+  attr :comments, :map, doc: "every thread of the project, keyed by function id", default: %{}
+  attr :composing, :map, doc: "the anchor a comment is being written at", default: nil
+  attr :expanded_threads, :any, doc: "ids of the resolved threads shown in full", default: nil
 
   # The drag hook translates the node rather than the card, so the offset survives a
   # re-render: LiveView owns the card's attributes, and the node is where the hand-placed
@@ -54,6 +60,9 @@ defmodule GraspWeb.CardComponents do
         editor={@editor}
         callers_open={@callers_open}
         selected={@selected}
+        comments={@comments}
+        composing={@composing}
+        expanded_threads={@expanded_threads}
       />
     </div>
     """
@@ -67,6 +76,9 @@ defmodule GraspWeb.CardComponents do
   attr :editor, :string, default: nil
   attr :callers_open, :integer, default: nil
   attr :selected, :boolean, default: false
+  attr :comments, :map, doc: "every thread of the project, keyed by function id", default: %{}
+  attr :composing, :map, doc: "the anchor a comment is being written at", default: nil
+  attr :expanded_threads, :any, doc: "ids of the resolved threads shown in full", default: nil
 
   def card(assigns) do
     case Index.fetch_function(assigns.index, assigns.card.function_id) do
@@ -96,7 +108,7 @@ defmodule GraspWeb.CardComponents do
   end
 
   defp function_card(assigns) do
-    %{forest: forest, index: index, card: card, record: record} = assigns
+    %{forest: forest, index: index, card: card, record: record, comments: comments} = assigns
 
     external? = fn target -> match?(:error, Index.fetch_function(index, target)) end
 
@@ -118,9 +130,26 @@ defmodule GraspWeb.CardComponents do
       highlight: card.highlight
     ]
 
+    lines =
+      if view == :diff,
+        do: Grasp.Highlight.diff_lines(record, highlight_opts),
+        else: Grasp.Highlight.lines(record, highlight_opts)
+
+    # A thread names a line, not a rendered one: the code under it moves, so where each one
+    # belongs is decided against the record about to be drawn. Anything the anchor can no
+    # longer find keeps its place in the footer instead of being dropped.
+    placements =
+      comments
+      |> Map.get(record["id"], [])
+      |> Enum.group_by(&Anchor.place(&1, record))
+
     assigns =
       assign(assigns,
         focused?: forest.focus == card.id,
+        lines: lines,
+        placed: Map.drop(placements, [:outdated, :orphan]),
+        outdated: Map.get(placements, :outdated, []),
+        expanded_threads: assigns.expanded_threads || MapSet.new(),
         dx: dx,
         dy: dy,
         change: change,
@@ -134,11 +163,6 @@ defmodule GraspWeb.CardComponents do
         hidden_count: Forest.hidden_count(forest, card.id),
         view: view,
         gutter: gutter_columns(record),
-        body:
-          if(view == :diff,
-            do: Grasp.Highlight.render_diff(record, highlight_opts),
-            else: Grasp.Highlight.render(record, highlight_opts)
-          ),
         # A removed function's file and line are the base commit's: the line may hold
         # something else on this branch, or the file may be gone, so there is nothing to
         # open and the card prints the location as plain text.
@@ -245,7 +269,34 @@ defmodule GraspWeb.CardComponents do
         </div>
       </header>
       <p class="card__signature lumis" title={@signature}>{@signature_html}</p>
-      <div class="card__body lumis" style={"--gutter: #{@gutter}ch"}>{@body}</div>
+      <%!-- The lines are rendered one at a time so a thread can sit between two of them.
+      Whitespace between the children here is ordinary white-space, which the body does not
+      preserve — only the lines themselves are preformatted. --%>
+      <div class="card__body lumis" style={"--gutter: #{@gutter}ch"}>
+        <%= for line <- @lines do %>
+          {raw(line.html)}<.thread
+            :for={thread <- Map.get(@placed, {line.side, line.line}, [])}
+            thread={thread}
+            card_id={@card.id}
+            expanded={MapSet.member?(@expanded_threads, thread.id)}
+            composing={@composing}
+          /><.composer
+            :if={composing_at?(@composing, @card.id, line.side, line.line)}
+            composing={@composing}
+            card_id={@card.id}
+          />
+        <% end %>
+      </div>
+      <footer :if={@outdated != []} class="card__outdated">
+        <.thread
+          :for={thread <- @outdated}
+          thread={thread}
+          card_id={@card.id}
+          expanded={MapSet.member?(@expanded_threads, thread.id)}
+          composing={@composing}
+          outdated
+        />
+      </footer>
       <footer :if={@record["hidden_calls"] != []} class="card__also">
         <span class="card__also-label">Also calls</span>
         <button
@@ -262,6 +313,19 @@ defmodule GraspWeb.CardComponents do
     </article>
     """
   end
+
+  # Where the composer for a new thread is drawn. A reply is not placed here: it belongs
+  # inside the thread it answers, which renders it itself.
+  defp composing_at?(
+         %{card: card, side: side, line: line, reply_to: nil},
+         card_id,
+         line_side,
+         number
+       )
+       when card == card_id and line == number,
+       do: to_string(line_side) == side
+
+  defp composing_at?(_composing, _card_id, _side, _number), do: false
 
   # Columns the gutter reserves: enough for the highest number the body prints — the span's
   # last line, which is also the highest the diff view prints, since a deleted line prints

@@ -8,6 +8,11 @@ defmodule GraspWeb.ReviewLive do
   — from this browser, another tab, or an MCP client later — renders everywhere. Which cards
   are selected is this tab's alone (`selected`): a selection is a gesture half-finished, and
   broadcasting it would move the cards another reader is picking out.
+
+  Review threads arrive the same way and belong to the project rather than to the session, so
+  a comment written here shows on every card drawing that function everywhere. What is this
+  tab's own is where a comment is being written (`composing`) and which resolved threads have
+  been opened back up (`expanded_threads`) — both are one reader mid-gesture.
   """
 
   use GraspWeb, :live_view
@@ -33,6 +38,7 @@ defmodule GraspWeb.ReviewLive do
       :ok = Session.subscribe(name)
       :ok = Grasp.Agent.subscribe(name)
       :ok = IndexStore.subscribe()
+      :ok = Grasp.Comments.subscribe()
     end
 
     index = IndexStore.get()
@@ -48,6 +54,9 @@ defmodule GraspWeb.ReviewLive do
        expanded_groups: default_expanded(index),
        callers_open: nil,
        renaming_group: nil,
+       comments: Grasp.Comments.by_function(),
+       composing: nil,
+       expanded_threads: MapSet.new(),
        selected: MapSet.new(),
        palette_open?: false,
        palette_query: "",
@@ -88,6 +97,10 @@ defmodule GraspWeb.ReviewLive do
        index_path: IndexStore.path()
      )}
   end
+
+  # Comments belong to the project rather than to this session, so a thread written in
+  # another tab — or by the agent — lands on every card drawing that function.
+  def handle_info(:comments_changed, socket), do: {:noreply, refresh_comments(socket)}
 
   def handle_info(_other, socket), do: {:noreply, socket}
 
@@ -343,6 +356,97 @@ defmodule GraspWeb.ReviewLive do
   def handle_event("palette_open", %{"id" => id} = params, socket) when is_binary(id),
     do: open_from_palette(socket, id, child?(params))
 
+  def handle_event("comment_start", %{"card" => card, "side" => side, "line" => line}, socket)
+      when side in ~w(new old) do
+    case {int(card), int(line)} do
+      {card_id, number} when is_integer(card_id) and is_integer(number) and number > 0 ->
+        {:noreply,
+         socket
+         |> close_overlays()
+         |> assign(composing: %{card: card_id, side: side, line: number, reply_to: nil})}
+
+      _garbage ->
+        {:noreply, socket}
+    end
+  end
+
+  # A reply is anchored where its thread is: the composer renders inside the thread, and the
+  # side and line it carries are the thread's, so a submit says what it answers either way.
+  def handle_event("comment_reply", %{"card" => card, "id" => id}, socket) do
+    with card_id when is_integer(card_id) <- int(card),
+         thread_id when is_integer(thread_id) <- int(id),
+         {:ok, thread} <- Grasp.Comments.fetch(thread_id) do
+      composing = %{card: card_id, side: thread.side, line: thread.line, reply_to: thread.id}
+      {:noreply, assign(socket, composing: composing)}
+    else
+      _unknown_thread -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("comment_cancel", _params, socket),
+    do: {:noreply, assign(socket, composing: nil)}
+
+  # A blank body is the Comment button pressed on an empty box, which says nothing about
+  # wanting the box closed, so the draft and the anchor both stay where they are.
+  def handle_event("comment_save", %{"body" => body} = params, socket) when is_binary(body) do
+    if String.trim(body) == "" do
+      {:noreply, socket}
+    else
+      write_comment(socket, body, params)
+      {:noreply, socket |> assign(composing: nil) |> refresh_comments()}
+    end
+  end
+
+  def handle_event("comment_resolve", %{"id" => id, "resolved" => resolved}, socket)
+      when resolved in ~w(true false) do
+    case int(id) do
+      nil ->
+        {:noreply, socket}
+
+      thread_id ->
+        Grasp.Comments.set_resolved(thread_id, resolved == "true")
+
+        {:noreply,
+         socket
+         |> assign(expanded_threads: MapSet.delete(socket.assigns.expanded_threads, thread_id))
+         |> refresh_comments()}
+    end
+  end
+
+  def handle_event("comment_delete", %{"id" => id} = params, socket) do
+    case {int(id), int(params["reply"])} do
+      {nil, _reply} ->
+        {:noreply, socket}
+
+      {thread_id, nil} ->
+        Grasp.Comments.delete(thread_id)
+        {:noreply, refresh_comments(socket)}
+
+      {thread_id, reply_id} ->
+        Grasp.Comments.delete_reply(thread_id, reply_id)
+        {:noreply, refresh_comments(socket)}
+    end
+  end
+
+  # Only a resolved thread is ever collapsed, so the set holds the few the reader has asked
+  # to see again rather than the state of every thread on the canvas.
+  def handle_event("toggle_thread", %{"id" => id}, socket) do
+    case int(id) do
+      nil ->
+        {:noreply, socket}
+
+      thread_id ->
+        expanded = socket.assigns.expanded_threads
+
+        toggled =
+          if MapSet.member?(expanded, thread_id),
+            do: MapSet.delete(expanded, thread_id),
+            else: MapSet.put(expanded, thread_id)
+
+        {:noreply, assign(socket, expanded_threads: toggled)}
+    end
+  end
+
   # Events are addressed by name and card id from the DOM, so a stale tab or a hand-made
   # message must be dropped rather than take the whole page down with it.
   def handle_event(_event, _params, socket), do: {:noreply, socket}
@@ -360,9 +464,45 @@ defmodule GraspWeb.ReviewLive do
 
   defp refresh_agent(socket), do: assign(socket, agent: Grasp.Agent.get(socket.assigns.name))
 
+  # The store broadcasts every change to this process as well, so re-reading here only makes
+  # the write visible before the broadcast arrives — which is what a disconnected view, and a
+  # test asserting on the very next render, depend on.
+  defp refresh_comments(socket), do: assign(socket, comments: Grasp.Comments.by_function())
+
+  # A new thread records the line as its author read it: the snippet comes from the record
+  # the card is drawing, which is what lets the anchor find the line again after it moves.
+  defp write_comment(socket, body, params) do
+    case int(params["reply_to"]) do
+      nil -> open_thread(socket, body, params)
+      reply_to -> Grasp.Comments.reply(reply_to, %{body: body, author: "human"})
+    end
+  end
+
+  defp open_thread(socket, body, params) do
+    side = params["side"]
+
+    with true <- side in ~w(new old),
+         line when is_integer(line) <- int(params["line"]),
+         function_id when is_binary(function_id) <- function_id(socket, int(params["card"])),
+         %Index{} = index <- socket.assigns.index,
+         {:ok, record} <- Index.fetch_function(index, function_id) do
+      Grasp.Comments.add(%{
+        function_id: function_id,
+        side: side,
+        line: line,
+        body: body,
+        author: "human",
+        snippet: Grasp.Comments.snippet(record, side, line)
+      })
+    else
+      _garbage -> :ok
+    end
+  end
+
   # Whatever the last click opened stands alone: the callers menu and the rename form are
   # closed together so that opening one is what closes the other.
-  defp close_overlays(socket), do: assign(socket, callers_open: nil, renaming_group: nil)
+  defp close_overlays(socket),
+    do: assign(socket, callers_open: nil, renaming_group: nil, composing: nil)
 
   defp clear_selection(socket), do: assign(socket, selected: MapSet.new())
 
@@ -684,6 +824,9 @@ defmodule GraspWeb.ReviewLive do
                     editor={@editor}
                     callers_open={@callers_open}
                     selected={MapSet.member?(@selected, id)}
+                    comments={@comments}
+                    composing={@composing}
+                    expanded_threads={@expanded_threads}
                   />
                 </div>
               </div>
