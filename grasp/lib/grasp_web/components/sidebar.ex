@@ -30,7 +30,7 @@ defmodule GraspWeb.Sidebar do
   Above the groups is the session menu: the name of the session being read, and under it
   every session the viewer is running or has saved. A row navigates to that canvas, the ×
   beside it forgets the session and its file, and the field under the list opens a session
-  by name, whether or not one of that name exists. The session being read carries no × ,
+  by name, whether or not one of that name exists. The session being read carries no ×,
   since deleting it would take away the canvas the click was made on.
 
   Which group opens on arrival is decided by `default_expanded/2`, at mount and again
@@ -127,7 +127,9 @@ defmodule GraspWeb.Sidebar do
         id="session-menu"
         class="session"
         phx-click="toggle_session_menu"
+        aria-haspopup="true"
         aria-expanded={to_string(@open?)}
+        aria-controls="session-list"
       >
         <span class="session__name">{@name}</span>
         <span class="session__chevron" aria-hidden="true">▾</span>
@@ -136,6 +138,7 @@ defmodule GraspWeb.Sidebar do
       bound only then and Escape reaches nothing else. --%>
       <div
         :if={@open?}
+        id="session-list"
         class="session__menu"
         phx-window-keydown="close_session_menu"
         phx-key="Escape"
@@ -149,7 +152,7 @@ defmodule GraspWeb.Sidebar do
             >
               {session}
             </.link>
-            <%!-- The session being read has no × : leaving it would delete the canvas out from
+            <%!-- The session being read has no ×: leaving it would delete the canvas out from
             under the reader who clicked it. --%>
             <button
               :if={session != @name}

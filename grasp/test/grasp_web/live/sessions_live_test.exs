@@ -15,9 +15,15 @@ defmodule GraspWeb.SessionsLiveTest do
     Application.put_env(:grasp, :sessions_dir, tmp_dir)
     on_exit(fn -> Application.put_env(:grasp, :sessions_dir, previous) end)
 
-    name = "menu-#{System.unique_integer([:positive])}"
+    unique = System.unique_integer([:positive])
+    name = "menu-#{unique}"
+    other = "other-#{unique}"
+    # Sessions outlive the test that starts them, and `Grasp.Session.list/0` is what the menu
+    # renders, so what this module starts it takes away again.
+    on_exit(fn -> Enum.each([name, other], &Session.delete/1) end)
+
     {:ok, view, _html} = live(conn, "/s/#{name}")
-    %{view: view, name: name}
+    %{view: view, name: name, other: other}
   end
 
   test "the header names the session, and the menu marks it as the one being read", %{
@@ -52,9 +58,9 @@ defmodule GraspWeb.SessionsLiveTest do
 
   test "another session is listed, and deleting it forgets its cards and its file", %{
     view: view,
-    name: name
+    name: name,
+    other: other
   } do
-    other = "other-#{System.unique_integer([:positive])}"
     :ok = Session.ensure(other)
     Session.open_root(other, @greet)
 

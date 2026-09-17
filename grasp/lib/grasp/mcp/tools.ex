@@ -6,8 +6,6 @@ defmodule Grasp.MCP.Tools do
   alias Grasp.Session.Disk
   alias Grasp.Session.Forest
 
-  @name_error "session names are letters, digits, - and _, up to 40 characters"
-
   @doc "The loaded index, or the tool error every index-reading tool replies with when none is loaded."
   @spec index() :: {:ok, Grasp.Index.t()} | {:error, Response.t()}
   def index, do: index(Grasp.IndexStore.get())
@@ -33,7 +31,7 @@ defmodule Grasp.MCP.Tools do
       :ok = Session.ensure(session)
       {:ok, session}
     else
-      {:error, Response.error(Response.tool(), @name_error)}
+      {:error, Response.error(Response.tool(), Disk.name_rule())}
     end
   end
 

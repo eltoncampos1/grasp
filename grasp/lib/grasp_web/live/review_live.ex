@@ -30,8 +30,6 @@ defmodule GraspWeb.ReviewLive do
 
   @groups GraspWeb.Sidebar.group_kinds()
   @no_command "claude command not found; set GRASP_AGENT_COMMAND"
-  # The same sentence the MCP tools refuse a session name with: one rule, said one way.
-  @bad_session_name "session names are letters, digits, - and _, up to 40 characters"
 
   @impl true
   def mount(params, _session, socket) do
@@ -339,7 +337,6 @@ defmodule GraspWeb.ReviewLive do
       {:noreply,
        socket
        |> close_overlays()
-       |> clear_flash(:error)
        |> assign(session_menu_open?: true, sessions: Session.list(), new_session_name: "")}
     end
   end
@@ -355,13 +352,20 @@ defmodule GraspWeb.ReviewLive do
     if Disk.valid_name?(name) do
       {:noreply, socket |> clear_flash(:error) |> push_navigate(to: session_path(name))}
     else
-      {:noreply, socket |> assign(new_session_name: name) |> put_flash(:error, @bad_session_name)}
+      {:noreply, socket |> assign(new_session_name: name) |> put_flash(:error, Disk.name_rule())}
     end
   end
 
+  # The name arrives from the page, so it is checked the way `mount/3` checks the one in the
+  # URL: a name no session could carry addresses no file and no process, and deleting under
+  # it would broadcast to a topic nothing is listening on.
   def handle_event("delete_session", %{"name" => name}, socket) when is_binary(name) do
-    :ok = Session.delete(name)
-    {:noreply, assign(socket, sessions: Session.list())}
+    if Disk.valid_name?(name) do
+      :ok = Session.delete(name)
+      {:noreply, assign(socket, sessions: Session.list())}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_event("move_focus", %{"dir" => dir}, socket) when dir in ~w(parent child next prev),
@@ -641,14 +645,18 @@ defmodule GraspWeb.ReviewLive do
   # Whatever the last click opened stands alone: the callers menu, the rename form, the
   # comment composer and the session menu are closed together so that opening one is what
   # closes the other. Escape closes the session menu through here as well.
-  defp close_overlays(socket),
-    do:
-      assign(socket,
-        callers_open: nil,
-        renaming_group: nil,
-        composing: nil,
-        session_menu_open?: false
-      )
+  # The error the page reports is one of these overlays' own — a name the session menu
+  # refused — so it goes when the gesture that raised it is over.
+  defp close_overlays(socket) do
+    socket
+    |> clear_flash(:error)
+    |> assign(
+      callers_open: nil,
+      renaming_group: nil,
+      composing: nil,
+      session_menu_open?: false
+    )
+  end
 
   defp clear_selection(socket), do: assign(socket, selected: MapSet.new())
 
@@ -864,16 +872,19 @@ defmodule GraspWeb.ReviewLive do
       data-sidebar={to_string(@sidebar_open?)}
     >
       <%!-- The page reports one kind of thing this way — a gesture the viewer refused — so the
-      message stands until it is read and clicked away. --%>
-      <p
+      message stands until the next gesture closes it or the reader dismisses it. Dismissing
+      it is what the element does, so it is a button: it takes focus and answers the keyboard
+      rather than the mouse alone. --%>
+      <button
         :if={Phoenix.Flash.get(@flash, :error)}
+        type="button"
         class="flash"
         role="alert"
         phx-click="lv:clear-flash"
         phx-value-key="error"
       >
         {Phoenix.Flash.get(@flash, :error)}
-      </p>
+      </button>
       <aside :if={@sidebar_open?} class="sidebar">
         <h1 class="brand">Grasp</h1>
         <p class="sidebar__project">

@@ -272,6 +272,9 @@ defmodule Grasp.SessionTest do
       assert_receive {:session_deleted, ^name}
 
       refute File.exists?(path)
+
+      # `delete/1` returns with the name already free, so a caller redrawing the list from its
+      # return is never told the session it just deleted is still running.
       assert Registry.lookup(Grasp.SessionRegistry, name) == []
       refute name in Session.list()
     end

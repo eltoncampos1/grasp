@@ -146,6 +146,16 @@ defmodule Grasp.Session.Disk do
   def valid_name?(name) when is_binary(name), do: Regex.match?(@name, name)
   def valid_name?(_name), do: false
 
+  @doc """
+  The rule `valid_name?/1` applies, as the sentence a refused name is answered with.
+
+  It lives beside the rule so the viewer and the MCP tools refuse a name in the same words:
+  a reviewer typing a name into the sidebar and an agent passing one over MCP are being told
+  about the same regex.
+  """
+  @spec name_rule() :: String.t()
+  def name_rule, do: "session names are letters, digits, - and _, up to 40 characters"
+
   defp derived_dir do
     with %Grasp.Index{} = index <- Grasp.IndexStore.get(),
          root when is_binary(root) <- index.project["root"],

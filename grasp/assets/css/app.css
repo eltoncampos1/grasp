@@ -78,7 +78,9 @@ kbd { font-family: var(--mono); background: var(--bg-sunken); border: 1px solid 
 .session__new { margin-block-start: var(--space-xs); padding-block-start: var(--space-xs); border-top: 1px solid var(--border); }
 .session__new input { width: 100%; font: inherit; font-family: var(--mono); font-size: 13px; padding: var(--space-xs) var(--space-s); border: 1px solid var(--border); border-radius: 4px; background: var(--bg-sunken); color: var(--fg); }
 
-.flash { position: fixed; z-index: 20; inset-block-start: var(--space-m); inset-inline-start: 50%; translate: -50% 0; margin: 0; padding: var(--space-s) var(--space-m); background: var(--bg-raised); border: 1px solid var(--danger); border-radius: var(--radius); box-shadow: var(--shadow); color: var(--danger); font-size: 13px; cursor: pointer; }
+/* Under the palette's backdrop (z-index 9), so a message raised before ⌘K cannot sit over
+   the palette. */
+.flash { position: fixed; z-index: 8; inset-block-start: var(--space-m); inset-inline-start: 50%; translate: -50% 0; margin: 0; padding: var(--space-s) var(--space-m); background: var(--bg-raised); border: 1px solid var(--danger); border-radius: var(--radius); box-shadow: var(--shadow); color: var(--danger); font-size: 13px; cursor: pointer; }
 
 .entries { display: flex; flex-direction: column; padding-bottom: var(--space-l); }
 .group__title { position: sticky; inset-block-start: 0; z-index: 1; background: var(--bg-sunken); display: flex; align-items: center; gap: var(--space-xs); width: 100%; text-align: start; padding: var(--space-xs) var(--space-m); color: var(--fg-muted); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }

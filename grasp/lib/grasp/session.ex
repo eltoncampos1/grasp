@@ -42,6 +42,8 @@ defmodule Grasp.Session do
   alias Grasp.Session.Forest
 
   @flush_ms 150
+  # How long `delete/1` waits for the registry to let a stopped session's name go.
+  @unregister_ms 100
 
   @type name :: String.t()
 
@@ -214,6 +216,10 @@ defmodule Grasp.Session do
   the session has gone; it says what happened, not when.
   The default session may be deleted like any other — deleting it clears the canvas rather
   than taking it away, since the next visit to `/` starts it again, empty.
+
+  It returns once the name is free: `list/0` reads the registry, which releases a name a
+  moment after the process holding it goes down, so a caller redrawing the list from the
+  return of this would otherwise be told the session it just deleted is still running.
   """
   @spec delete(name()) :: :ok
   def delete(name) do
@@ -331,8 +337,25 @@ defmodule Grasp.Session do
 
   defp stop(name) do
     GenServer.stop(via(name))
+    await_unregistered(name, 0)
   catch
     :exit, _not_running -> :ok
+  end
+
+  # The registry unregisters a name from the monitor it holds, which is a message it has yet
+  # to handle when `GenServer.stop/1` returns. The wait is bounded: a registry that somehow
+  # never lets go is not worth blocking a delete over, and the file is removed either way.
+  defp await_unregistered(_name, waited) when waited >= @unregister_ms, do: :ok
+
+  defp await_unregistered(name, waited) do
+    case Registry.lookup(Grasp.SessionRegistry, name) do
+      [] ->
+        :ok
+
+      _still_registered ->
+        Process.sleep(1)
+        await_unregistered(name, waited + 1)
+    end
   end
 
   defp broadcast(name, forest),
