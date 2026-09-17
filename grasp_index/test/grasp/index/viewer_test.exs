@@ -4,6 +4,7 @@ defmodule Grasp.Index.ViewerTest do
   alias Grasp.Index.Viewer
 
   @argv ["--index", "/tmp/project/.grasp/index.json"]
+  @repo "https://example.com/grasp.git"
 
   describe "checkout/1" do
     test "serves the current directory when the current project is the viewer" do
@@ -31,6 +32,22 @@ defmodule Grasp.Index.ViewerTest do
                cwd: "/project",
                cwd_app: :acme
              ) == "/env"
+    end
+
+    test "reads a relative path from the directory it was given in" do
+      assert Viewer.checkout(
+               viewer: "../grasp",
+               env: %{},
+               cwd: "/work/sample_app",
+               cwd_app: :sample_app
+             ) == "/work/grasp"
+
+      assert Viewer.checkout(
+               viewer: nil,
+               env: %{"GRASP_VIEWER" => "checkouts/grasp"},
+               cwd: "/work/sample_app",
+               cwd_app: :sample_app
+             ) == "/work/sample_app/checkouts/grasp"
     end
 
     test "falls back to a directory under the home directory" do
@@ -64,8 +81,8 @@ defmodule Grasp.Index.ViewerTest do
       missing = Path.join(tmp_dir, "viewer")
       project = Path.join(missing, "grasp")
 
-      assert Viewer.steps(missing, "https://example.com/grasp.git", @argv) == [
-               {:clone, "https://example.com/grasp.git", missing},
+      assert Viewer.steps(missing, @repo, @argv) == [
+               {:clone, @repo, missing},
                {:deps, project},
                {:assets, project},
                {:serve, project, @argv}
@@ -76,9 +93,7 @@ defmodule Grasp.Index.ViewerTest do
     test "only serves a checkout with its dependencies and assets in place", %{tmp_dir: tmp_dir} do
       project = ready_checkout(tmp_dir)
 
-      assert Viewer.steps(tmp_dir, "https://example.com/grasp.git", @argv) == [
-               {:serve, project, @argv}
-             ]
+      assert Viewer.steps(tmp_dir, @repo, @argv) == [{:serve, project, @argv}]
     end
 
     @tag :tmp_dir
@@ -86,10 +101,7 @@ defmodule Grasp.Index.ViewerTest do
       project = ready_checkout(tmp_dir)
       File.rm_rf!(Path.join(project, "deps"))
 
-      assert Viewer.steps(tmp_dir, "https://example.com/grasp.git", @argv) == [
-               {:deps, project},
-               {:serve, project, @argv}
-             ]
+      assert Viewer.steps(tmp_dir, @repo, @argv) == [{:deps, project}, {:serve, project, @argv}]
     end
 
     @tag :tmp_dir
@@ -97,29 +109,62 @@ defmodule Grasp.Index.ViewerTest do
       project = ready_checkout(tmp_dir)
       File.rm!(Path.join(project, "priv/static/assets/app.js"))
 
-      assert Viewer.steps(tmp_dir, "https://example.com/grasp.git", @argv) == [
-               {:assets, project},
-               {:serve, project, @argv}
-             ]
+      assert Viewer.steps(tmp_dir, @repo, @argv) == [{:assets, project}, {:serve, project, @argv}]
     end
   end
 
-  describe "run/2" do
+  describe "run/3" do
     @tag :tmp_dir
     test "runs each command in the directory it belongs to", %{tmp_dir: tmp_dir} do
       checkout = Path.join(tmp_dir, "viewer")
       project = Path.join(checkout, "grasp")
-      url = "https://example.com/grasp.git"
-      {recorder, recorded} = recording_runner(0)
+      {recorder, recorded} = recording_runner(clones(project))
 
-      assert Viewer.run(Viewer.steps(checkout, url, @argv), recorder) == :ok
+      assert Viewer.run(Viewer.steps(checkout, @repo, @argv), recorder) == :ok
 
       assert recorded.() == [
-               {["git", "clone", url, checkout], tmp_dir},
+               {["git", "clone", "--progress", @repo, checkout], tmp_dir},
                {["mix", "deps.get"], project},
                {["mix", "assets.build"], project},
                {["mix", "grasp.viewer" | @argv], project}
              ]
+    end
+
+    @tag :tmp_dir
+    test "creates no directory of its own on the way to the checkout", %{tmp_dir: tmp_dir} do
+      checkout = Path.join(tmp_dir, "below/viewer")
+      {recorder, recorded} = recording_runner(0)
+
+      assert Viewer.run(Viewer.steps(checkout, @repo, @argv), recorder) ==
+               {:error, "#{checkout} is not a Grasp checkout (no mix.exs)"}
+
+      refute File.exists?(Path.join(tmp_dir, "below"))
+      assert recorded.() == [{["git", "clone", "--progress", @repo, checkout], tmp_dir}]
+    end
+
+    @tag :tmp_dir
+    test "takes the project from what the clone produced", %{tmp_dir: tmp_dir} do
+      checkout = Path.join(tmp_dir, "viewer")
+      {recorder, recorded} = recording_runner(clones(checkout))
+
+      assert Viewer.run(Viewer.steps(checkout, @repo, @argv), recorder) == :ok
+
+      assert recorded.() == [
+               {["git", "clone", "--progress", @repo, checkout], tmp_dir},
+               {["mix", "deps.get"], checkout},
+               {["mix", "assets.build"], checkout},
+               {["mix", "grasp.viewer" | @argv], checkout}
+             ]
+    end
+
+    @tag :tmp_dir
+    test "refuses a checkout with no Mix project in it", %{tmp_dir: tmp_dir} do
+      {recorder, recorded} = recording_runner(0)
+
+      assert Viewer.run(Viewer.steps(tmp_dir, @repo, @argv), recorder) ==
+               {:error, "#{tmp_dir} is not a Grasp checkout (no mix.exs)"}
+
+      assert recorded.() == []
     end
 
     @tag :tmp_dir
@@ -128,10 +173,29 @@ defmodule Grasp.Index.ViewerTest do
       File.rm_rf!(Path.join(project, "deps"))
       {recorder, recorded} = recording_runner(fn ["mix", "deps.get"], _dir -> 1 end)
 
-      assert Viewer.run(Viewer.steps(tmp_dir, "https://example.com/grasp.git", @argv), recorder) ==
+      assert Viewer.run(Viewer.steps(tmp_dir, @repo, @argv), recorder) ==
                {:error, "mix deps.get failed with status 1"}
 
       assert recorded.() == [{["mix", "deps.get"], project}]
+    end
+
+    @tag :tmp_dir
+    test "announces each step as it starts", %{tmp_dir: tmp_dir} do
+      checkout = Path.join(tmp_dir, "viewer")
+      project = Path.join(checkout, "grasp")
+      {recorder, _recorded} = recording_runner(clones(project))
+      {:ok, announced} = Agent.start_link(fn -> [] end)
+
+      assert Viewer.run(Viewer.steps(checkout, @repo, @argv), recorder, fn step ->
+               Agent.update(announced, &[step | &1])
+             end) == :ok
+
+      assert Agent.get(announced, &Enum.reverse/1) == [
+               {:clone, @repo, checkout},
+               {:deps, project},
+               {:assets, project},
+               {:serve, project, @argv}
+             ]
     end
   end
 
@@ -142,6 +206,19 @@ defmodule Grasp.Index.ViewerTest do
     File.write!(Path.join(project, "mix.exs"), "")
     File.write!(Path.join(project, "priv/static/assets/app.js"), "")
     project
+  end
+
+  # A runner standing in for a clone that left a Mix project at `project`.
+  defp clones(project) do
+    fn
+      ["git", "clone" | _rest], _dir ->
+        File.mkdir_p!(project)
+        File.write!(Path.join(project, "mix.exs"), "")
+        0
+
+      _argv, _dir ->
+        0
+    end
   end
 
   defp recording_runner(status) do

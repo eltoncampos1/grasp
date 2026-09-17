@@ -57,7 +57,9 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
 never a dependency of the project it reviews. Point it at a checkout you already have with
 `--viewer PATH` or `GRASP_VIEWER`; with neither, it looks in `~/.grasp/viewer` and clones
 the repository there the first time, then fetches the viewer's dependencies and builds its
-assets. That first run takes a few minutes and later ones start straight away.
+assets. That first run takes a few minutes and later ones start straight away. The path
+dependency above is already a checkout, so `GRASP_VIEWER=/path/to/grasp` points the
+launcher at the one you have and nothing is cloned.
 
 ### Working on Grasp itself
 
