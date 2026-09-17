@@ -266,9 +266,10 @@ edits no file and runs no command. The transcript shows each tool call as it hap
 kills the run, and New conversation starts over.
 
 The panel's Mode select switches that. In `edit files` the agent also gets `Edit`, `Write`
-and a `Bash` narrowed to `mix` and to `git status` and `git diff`, so it can change files
-under the project root — which is what makes "address all the comments and update the
-diagram afterwards" a thing you can ask for. It works a comment at a time: reads what the
+and a `Bash` narrowed to seven commands: `mix`, `git status`, `git diff`, `git fetch`,
+`git switch`, `gh pr view` and `gh pr checkout`. That lets it change files under the
+project root — which is what makes "address all the comments and update the diagram
+afterwards" a thing you can ask for. It works a comment at a time: reads what the
 thread points at, makes the change, replies with what it did and resolves the thread; then
 it runs `mix format` on what it touched, rebuilds the index with the same `mix grasp.index`
 flags the viewer is watching — which needs `grasp_index` set up as a dev dependency of the
@@ -285,8 +286,7 @@ On a clean tree it runs `gh pr checkout`, fetches the base branch, rebuilds the 
 against it with the same `--out` the viewer is watching, reloads the viewer and lays the
 change out one group per flow. `gh` has to be installed and signed in, and the checkout
 happens in your own working tree — the branch you were on is the branch you switched away
-from, so finish what you were doing first. The commands this admits beyond edit mode's own
-are `git fetch`, `git switch`, `gh pr view` and `gh pr checkout`.
+from, so finish what you were doing first.
 
 The panel's Model select picks which model the CLI runs: the four aliases `haiku`,
 `sonnet`, `opus` and `fable`, or `default` to leave the CLI on whatever `--agent-model` /
