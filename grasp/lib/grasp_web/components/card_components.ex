@@ -133,6 +133,7 @@ defmodule GraspWeb.CardComponents do
         callees: Forest.callees(forest, card.id),
         hidden_count: Forest.hidden_count(forest, card.id),
         view: view,
+        gutter: gutter_columns(record),
         body:
           if(view == :diff,
             do: Grasp.Highlight.render_diff(record, highlight_opts),
@@ -244,7 +245,7 @@ defmodule GraspWeb.CardComponents do
         </div>
       </header>
       <p class="card__signature lumis" title={@signature}>{@signature_html}</p>
-      <div class="card__body lumis">{@body}</div>
+      <div class="card__body lumis" style={"--gutter: #{@gutter}ch"}>{@body}</div>
       <footer :if={@record["hidden_calls"] != []} class="card__also">
         <span class="card__also-label">Also calls</span>
         <button
@@ -260,6 +261,14 @@ defmodule GraspWeb.CardComponents do
       </footer>
     </article>
     """
+  end
+
+  # Columns the gutter reserves: enough for the highest number the body prints — the span's
+  # last line, which is also the highest the diff view prints, since a deleted line prints
+  # none — and one more for the `+` that appears beside it on hover.
+  defp gutter_columns(record) do
+    last = record["span"]["end_line"] || record["span"]["start_line"] || 1
+    max(4, String.length(Integer.to_string(last)) + 1)
   end
 
   # The footer button for a hidden call is marked exactly as the call spans in the body are,

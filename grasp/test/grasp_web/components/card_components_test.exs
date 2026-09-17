@@ -32,8 +32,12 @@ defmodule GraspWeb.CardComponentsTest do
     test "the body is a block of lines rather than a single preformatted run of text" do
       html = render_card(@wrap)
 
-      assert html =~ ~s|<div class="card__body lumis">|
+      assert html =~ ~s|<div class="card__body lumis"|
       refute html =~ "<pre class=\"card__body"
+    end
+
+    test "the gutter is sized to the widest line number the body prints" do
+      assert render_card(@wrap) =~ ~s|style="--gutter: 4ch"|
     end
 
     test "a removed function's file is plain text, since the line is the base commit's" do

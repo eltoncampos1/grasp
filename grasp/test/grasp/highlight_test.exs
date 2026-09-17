@@ -172,7 +172,7 @@ defmodule Grasp.HighlightTest do
     assert LazyHTML.query(html, "span.line[data-line='12']") |> LazyHTML.text() == "12"
   end
 
-  test "emits nothing between line spans, since whitespace between them would widen the body" do
+  test "emits nothing between line spans, so no stray text node sits between two lines" do
     record = %{
       "id" => "S.tight/0",
       "span" => %{"start_line" => 1, "end_line" => 2},
@@ -208,6 +208,7 @@ defmodule Grasp.HighlightTest do
         assert LazyHTML.attribute(gutter, "phx-value-side") == ["new"]
         assert LazyHTML.attribute(gutter, "phx-value-line") == [to_string(line.line)]
         assert LazyHTML.attribute(gutter, "role") == ["button"]
+        assert LazyHTML.attribute(gutter, "tabindex") == ["0"]
       end
     end
 
@@ -236,6 +237,7 @@ defmodule Grasp.HighlightTest do
              ]
 
       assert LazyHTML.query(doc, ".line") |> LazyHTML.attribute("data-line") == []
+      assert LazyHTML.query(doc, ".ln") |> LazyHTML.attribute("tabindex") == ["0"]
       assert LazyHTML.query(doc, ".ln") |> LazyHTML.attribute("phx-value-side") == ["old"]
 
       assert LazyHTML.query(doc, ".ln") |> LazyHTML.attribute("phx-value-line") == [

@@ -179,7 +179,7 @@ defmodule Grasp.Highlight do
   # open a composer against `line` on `side`. A deleted line shows no number — the current
   # file has none for it — but still addresses its base line.
   defp gutter(card_id, side, line, text) do
-    ~s(<span class="ln" role="button" title="Comment on this line" phx-click="comment_start" phx-value-card="#{card_id}" phx-value-side="#{side}" phx-value-line="#{line}">#{text}</span>)
+    ~s(<span class="ln" role="button" tabindex="0" title="Comment on this line" phx-click="comment_start" phx-value-card="#{card_id}" phx-value-side="#{side}" phx-value-line="#{line}">#{text}</span>)
   end
 
   # The body of one line of the current source: the pieces that line holds, cut at the call
