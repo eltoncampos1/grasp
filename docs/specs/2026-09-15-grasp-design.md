@@ -12,7 +12,7 @@ to the right, joined to the call site by a coloured edge, so a long chain reads 
 right and several branches can be open at once. One card stands for one function, so a
 helper several of them call is read once. Cards show the function's diff against a base
 branch. The top level lists the codebase's entry points, and Cmd+K finds any function. An
-MCP server lets coding agents arrange cards, annotate them and author guided tours
+MCP server lets coding agents arrange cards and answer review comments
 (next/back with a highlighted call) so the human reviews what the agent wants to explain.
 
 ## Decisions
@@ -30,7 +30,7 @@ MCP server lets coding agents arrange cards, annotate them and author guided tou
   only; it is never recompiled.
 - MCP over **Streamable HTTP** at `/mcp` on the same endpoint as the UI, via
   `anubis_mcp ~> 2.0`.
-- Sessions and tours persist as **JSON files** under `.grasp/sessions/` in the target
+- Sessions persist as **JSON files** under `.grasp/sessions/` in the target
   repository, so agents can write them and they can travel with a PR.
 - Cards form a **graph**, not a strip: one card per function, with an edge from every
   caller on screen, so several branches are visible side by side and a shared helper is
@@ -296,12 +296,23 @@ poll) and broadcasts the reload.
 - Review comments are not session state: they belong to the code under review and live in
   `Grasp.Comments` (see [Comments](#comments)), so every session on the project reads the
   same threads.
-- `tour`: `nil` or `%{title, steps, position}` where a step is
-  `%{function_id, highlight, note, parent_step}`.
 
-Every mutation broadcasts on `session:<name>` and debounce-writes
-`<project.root>/.grasp/sessions/<name>.json`. A session loads from disk if the file
-exists.
+Every mutation broadcasts on `session:<name>` and schedules a write of
+`<project.root>/.grasp/sessions/<name>.json`, coalesced so a drag's stream of moves lands
+as one file write once the mutations pause for 150 ms; stopping the session writes what is
+pending. The file is `{"version": 1, "cards", "edges", "groups", "focus", "next_id",
+"next_color", "next_group"}` — the whole struct, so ids and colours survive a restart and
+an agent holding a card id keeps a valid one. A session loads from its file when it
+starts: a card whose function is no longer in the index is dropped with its edges, and a
+group left empty by that goes too, so a stale file never draws a card nothing can render.
+A file that does not decode is moved aside as `<name>.json.corrupt` and the session starts
+empty; a `version` the viewer does not know is treated the same way. When the root the
+index names is not a directory on this machine sessions live in memory only, as comments
+do; `:grasp, :sessions_dir` overrides the directory (tests write to a temporary one).
+`Grasp.Session.list/0` names the sessions running and the sessions saved, so a saved
+session is reachable by name after a restart and `list_sessions` sees it.
+`Grasp.Session.delete/1` stops a running session and removes its file; a tab showing it
+is sent to the default session.
 
 ### Card graph
 
@@ -505,10 +516,12 @@ module, prints the module once as a heading and lists each callback under it as
 list scrolls, and a group's count sits in its title. In PR mode a Changes list grouped by
 module with added/modified/removed badges joins them. The canvas fills the rest.
 
-When a tour is active, a bar shows its title, step position, the step's note, and
-Back/Next (keys `[` and `]`). A tour step opens its function as a child of the
-`parent_step` card, defaulting to the previous step when that function calls it and
-otherwise to a new root, then focuses it with the step's highlight.
+The sidebar's header names the session and opens a menu of the sessions the viewer knows,
+running or saved, each a link to `/s/<name>` (`default` to `/`), a field that creates a
+session by name (Enter navigates to it; a name is letters, digits, `-` and `_`, up to 40
+of them, and a taken name simply opens that session), and a delete control on every
+session but the one shown. Deleting removes the file and stops the session; any tab on it
+is sent to the default session.
 
 ### Card
 
@@ -687,15 +700,15 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   Milestone 5.4 adds an edit mode the reader switches on per session; read is still the
   default.
 - **No tours.** The agent can open, close, focus and highlight cards, which is enough to
-  walk a chain, but it cannot author an ordered tour a reviewer steps through. Milestone 7
-  adds the tools for that; comments arrived in 5.4.
+  walk a chain, but it cannot author an ordered tour a reviewer steps through. Tours were
+  dropped from the roadmap: groups and `set_cards` cover what they were for.
 - **An edge leaving a stub card is not drawn.** An edge is anchored to the call site in
   the caller's rendered source, and a stub card — one standing for a function the index
   does not hold — has no source, so there is nothing for an edge to leave from. A card
   opened from a stub therefore arrives with no line joining it. Both cards are in the graph
   and laid out in columns as usual; only the line is missing.
 - **The module is still named `Forest`.** `Grasp.Session.Forest` holds a graph, not a
-  forest of trees. The rename waits for milestone 8, where the session's persisted JSON is
+  forest of trees. The rename waits for milestone 7, where the session's persisted JSON is
   versioned anyway.
 - **Dragging a card moves that card alone.** A card reachable from several callers has no
   subtree of its own to carry along, and moving everything downstream of it would drag
@@ -889,7 +902,6 @@ first reference. Results are JSON text content, so any MCP client can read them.
   `base_ref`, `branch` and `head` (the last three null without git). An agent that has just
   rebuilt the index calls it before `list_changes`, so it never reads the file the rebuild
   replaced. A file that does not load is a tool error carrying the store's reason.
-- Later milestones add `set_tour`/`tour_goto`, resources and the `build_review_tour` prompt.
 
 Registering in Claude Code:
 
@@ -980,7 +992,7 @@ conversation.
   `Phoenix.LiveViewTest` covers: clicking a call opens the callee to its right, clicking it
   again focuses the card already there, the same function reached from two callers being one
   card with two edges, closing a card and closing a chain, opening a caller to the left,
-  palette search and Enter, the diff toggle, tour next/back highlighting the step's call,
+  palette search and Enter, the diff toggle,
   and a comment saved under a line, answered and resolved. `Grasp.Session` has a persistence round-trip test. MCP is
   tested as JSON-RPC over `/mcp` with `Phoenix.ConnTest`: initialize, tools/list, then
   `set_cards` followed by an assertion that the LiveView re-rendered.
@@ -1012,10 +1024,9 @@ conversation.
    signature mode and group drag; 5.7 the changes-only diff; 5.8 `publish_comments` and
    `mix grasp.serve` from the reviewed project (the viewer's own task becomes
    `mix grasp.viewer`).
-6. Sessions on disk: persistence of the forest and its groups.
-7. Tours: `set_tour`, `tour_goto`, the tour bar, resources and the `build_review_tour`
-   prompt.
-8. README for strangers, CI, editor links, `mix grasp.serve` polish.
+6. Sessions on disk: persistence of the forest and its groups, a session menu, saved
+   sessions listed by `list_sessions`. Tours (the former milestone 7) were dropped.
+7. README for strangers, CI, editor links, `mix grasp.serve` polish.
 
 ## Verification
 
@@ -1024,7 +1035,7 @@ conversation.
 - `mix grasp.serve` at http://127.0.0.1:4040: click through a four-deep chain, open a
   second branch from the same card, Cmd+K to a function, toggle diff on a modified
   function.
-- From Claude Code with the MCP registered: `set_cards` and `set_tour`, watch the browser
+- From Claude Code with the MCP registered: `set_cards`, watch the browser
   update live, reload the page and confirm the session file restored it.
 - Both packages pass `mix format --check-formatted`, `mix compile --warnings-as-errors`
   and `mix test`.
