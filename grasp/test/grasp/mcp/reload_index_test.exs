@@ -22,7 +22,9 @@ defmodule Grasp.MCP.Tools.ReloadIndexTest do
     assert body["path"] == IndexStore.path()
     assert body["functions"] == length(Index.functions(index))
     assert body["changed"] == length(Index.changed_functions(index))
+    assert body["functions"] > 0
     assert body["changed"] > 0
     assert body["base_ref"] == "main"
+    assert Map.has_key?(body, "branch") and Map.has_key?(body, "head")
   end
 end

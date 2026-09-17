@@ -127,7 +127,7 @@ defmodule Grasp.Agent.CommandTest do
     assert prompt =~ "gh pr view N --json baseRefName,headRefName,title,url"
     assert prompt =~ "git status --porcelain"
     assert prompt =~ "gh pr checkout"
-    assert prompt =~ "Never stash, reset, switch with `--discard-changes`"
+    assert prompt =~ "Never stash, reset, pass `--discard-changes`, `-f` or `--force` to git"
     assert prompt =~ "mix grasp.index --base origin/<base>"
     assert prompt =~ "reload_index"
     assert prompt =~ ".grasp/comments.json"

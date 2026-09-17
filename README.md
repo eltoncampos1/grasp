@@ -285,8 +285,8 @@ tells you which files have uncommitted changes rather than stashing or discardin
 On a clean tree it runs `gh pr checkout`, fetches the base branch, rebuilds the index
 against it with the same `--out` the viewer is watching, reloads the viewer and lays the
 change out one group per flow. `gh` has to be installed and signed in, and the checkout
-happens in your own working tree — the branch you were on is the branch you switched away
-from, so finish what you were doing first.
+happens in your own working tree: the branch you had is gone from disk until you switch
+back, so finish what you were doing first.
 
 The panel's Model select picks which model the CLI runs: the four aliases `haiku`,
 `sonnet`, `opus` and `fable`, or `default` to leave the CLI on whatever `--agent-model` /
