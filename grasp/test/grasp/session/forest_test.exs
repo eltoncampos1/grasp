@@ -572,6 +572,48 @@ defmodule Grasp.Session.ForestTest do
       assert Forest.add_to_group(forest, edges, []) == forest
     end
 
+    test "a card opened from a member of a group is created in that group" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, flow} = Forest.new_group(forest, "Flow", [a])
+      {forest, b} = Forest.open_caller(forest, a, "B.g/0")
+
+      assert Forest.card(forest, b).group == flow
+
+      assert Forest.sections(forest) == [
+               %{group: %{id: flow, title: "Flow"}, columns: [[b], [a]]}
+             ]
+
+      {forest, c} = Forest.open_child(forest, a, "C.h/2")
+
+      assert Forest.card(forest, c).group == flow
+
+      assert Forest.sections(forest) == [
+               %{group: %{id: flow, title: "Flow"}, columns: [[b], [a], [c]]}
+             ]
+    end
+
+    test "a card already on screen keeps the group it is in when an edge reaches it" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, b} = Forest.open_root(forest, "B.g/0")
+      {forest, flow} = Forest.new_group(forest, "Flow", [a])
+      {forest, edges} = Forest.new_group(forest, "Edges", [b])
+
+      {forest, ^b} = Forest.open_caller(forest, a, "B.g/0")
+
+      assert Forest.card(forest, b).group == edges
+      assert Forest.card(forest, a).group == flow
+    end
+
+    test "a card opened from an ungrouped card is created in no group" do
+      {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+      {forest, b} = Forest.open_caller(forest, a, "B.g/0")
+      {forest, c} = Forest.open_child(forest, a, "C.h/2")
+
+      assert Forest.card(forest, b).group == nil
+      assert Forest.card(forest, c).group == nil
+      assert forest.groups == %{}
+    end
+
     test "sections/1 lays every group out on its own, ungrouped cards last" do
       {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
       {forest, b} = Forest.open_child(forest, a, "B.g/0")

@@ -75,7 +75,9 @@ Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or 
 - ⌘M toggles the sidebar. On macOS the browser may take ⌘M for "minimise window", in
   which case use ⌘\\.
 - A card's callers menu opens a caller to its left; open several and the card keeps one
-  edge from each of them.
+  edge from each of them. A caller opened this way, or a callee opened by clicking a call,
+  joins the group of the card it was opened from when it is new to the canvas, so it lands
+  in the column beside that card inside the same frame.
 - Arrow keys walk the graph, `x` closes the focused card, `Shift+x` closes it together
   with everything that had no other way to be reached, `c` collapses it, ⌘K opens the
   palette.

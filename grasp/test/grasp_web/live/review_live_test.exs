@@ -689,6 +689,21 @@ defmodule GraspWeb.ReviewLiveTest do
     refute has_element?(view, "#flow-none[data-grouped]")
   end
 
+  test "a caller opened from a framed card is drawn inside that frame", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.new_group(name, "Greeting", [1])
+
+    open_caller(view, 1, @greet_all)
+
+    assert has_element?(view, "#flow-1 .columns .column:first-child #card-2[data-depth='0']")
+    assert has_element?(view, "#flow-1 .columns .column:nth-child(2) #card-1[data-depth='1']")
+    assert has_element?(view, "#flow-1 .flow__count", "2 cards")
+    refute has_element?(view, "#flow-none #card-2")
+  end
+
   test "a section of one card counts it in the singular", %{view: view, name: name} do
     Session.open_root(name, @greet)
     Session.group_cards(name, "Greeting", [1])

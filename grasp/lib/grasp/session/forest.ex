@@ -36,6 +36,11 @@ defmodule Grasp.Session.Forest do
   of its own. The sections read in group-id order and the cards in no group make a last,
   groupless one; `layout/1` is those sections flattened, which is why a column in it never
   mixes two sections and `depth/2` counts columns from the start of the card's own section.
+  A card opened from a member of a group joins the group: `open_caller/4` and `open_child/4`
+  give the card they create the group of the card it was opened from, so a caller is laid
+  out one column left of its callee and a callee one column right of its parent, both inside
+  the same frame. Only a card being created takes a group that way — opening a function
+  already on screen adds an edge and leaves that card where it is.
   A group is a frame round cards and nothing else: it changes no edge, hides nothing, and is
   deleted the moment its last member leaves or is closed. A title is a label on that frame
   and may be absent — `new_group/3` makes a group of the cards in hand and asks for no name,
@@ -156,7 +161,7 @@ defmodule Grasp.Session.Forest do
   """
   @spec open_root(t(), String.t()) :: {t(), id()}
   def open_root(%__MODULE__{} = forest, function_id) do
-    {forest, id} = find_or_add(forest, function_id)
+    {forest, id} = find_or_add(forest, function_id, nil)
     {%{forest | focus: id}, id}
   end
 
@@ -167,6 +172,10 @@ defmodule Grasp.Session.Forest do
   `opened_by` is the call target the click named, which differs from `function_id` when the
   call went through a default-argument arity alias. A second call from the same parent to
   the same card adds no second edge: the first one already marks that call site.
+
+  A card created here takes the parent's group, so a callee opened from inside a frame is
+  laid out one column right of its parent in that frame. A card already on screen keeps the
+  group it has.
   """
   @spec open_child(t(), id(), String.t(), String.t() | nil) :: {t(), id() | nil}
   def open_child(%__MODULE__{} = forest, parent_id, function_id, opened_by \\ nil) do
@@ -174,8 +183,8 @@ defmodule Grasp.Session.Forest do
       nil ->
         {forest, nil}
 
-      _parent ->
-        {forest, id} = find_or_add(forest, function_id)
+      parent ->
+        {forest, id} = find_or_add(forest, function_id, parent.group)
         forest = add_edge(forest, parent_id, id, opened_by || function_id)
         {%{forest | focus: id}, id}
     end
@@ -189,6 +198,10 @@ defmodule Grasp.Session.Forest do
   own function id, which is what the caller writes whenever no arity alias is involved. The
   card itself does not move: it gains a caller to its left and keeps every other edge it
   had.
+
+  A card created here takes the callee's group, so a caller opened from inside a frame is
+  laid out one column left of the callee in that frame. A card already on screen keeps the
+  group it has.
   """
   @spec open_caller(t(), id(), String.t(), String.t() | nil) :: {t(), id() | nil}
   def open_caller(%__MODULE__{} = forest, card_id, caller_function_id, target \\ nil) do
@@ -197,7 +210,7 @@ defmodule Grasp.Session.Forest do
         {forest, nil}
 
       card ->
-        {forest, caller} = find_or_add(forest, caller_function_id)
+        {forest, caller} = find_or_add(forest, caller_function_id, card.group)
         forest = add_edge(forest, caller, card_id, target || card.function_id)
         {%{forest | focus: caller}, caller}
     end
@@ -718,14 +731,14 @@ defmodule Grasp.Session.Forest do
     end
   end
 
-  defp find_or_add(forest, function_id) do
+  defp find_or_add(forest, function_id, group) do
     case find(forest, function_id) do
-      nil -> add_card(forest, function_id)
+      nil -> add_card(forest, function_id, group)
       id -> {forest, id}
     end
   end
 
-  defp add_card(forest, function_id) do
+  defp add_card(forest, function_id, group) do
     id = forest.next_id
 
     card = %{
@@ -735,7 +748,7 @@ defmodule Grasp.Session.Forest do
       offset: {0, 0},
       highlight: nil,
       view: :auto,
-      group: nil
+      group: group
     }
 
     {%{forest | cards: Map.put(forest.cards, id, card), next_id: id + 1}, id}
