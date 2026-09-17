@@ -88,7 +88,7 @@ kbd { font-family: var(--mono); background: var(--bg-sunken); border: 1px solid 
 
 .canvas { position: relative; overflow: hidden; padding: 0; background: var(--bg-sunken); cursor: grab; user-select: none; }
 .canvas .empty { position: absolute; inset-block-start: 40%; inset-inline: 0; text-align: center; }
-.toolbar { font-size: 13px; position: absolute; inset-block-end: var(--space-m); inset-inline-start: 50%; translate: -50% 0; z-index: 3; display: flex; align-items: center; gap: var(--space-xs); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space-xs) var(--space-s); }
+.toolbar { font-size: 13px; position: absolute; inset-block-end: var(--space-m); inset-inline-start: 50%; translate: -50% 0; z-index: 5; display: flex; align-items: center; gap: var(--space-xs); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space-xs) var(--space-s); }
 .toolbar button { padding: var(--space-xs) var(--space-s); color: var(--fg-muted); }
 .toolbar button:hover { color: var(--fg); }
 .toolbar button[aria-pressed="true"] { color: var(--fg); background: var(--bg-sunken); border-radius: 4px; }
@@ -101,7 +101,7 @@ kbd { font-family: var(--mono); background: var(--bg-sunken); border: 1px solid 
    the `overflow: hidden` that clips the stage. */
 .toolbar [data-tip] { position: relative; }
 .toolbar [data-tip]:hover::after,
-.toolbar [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; inset-block-end: calc(100% + var(--space-s)); inset-inline-start: 50%; translate: -50% 0; white-space: nowrap; padding: var(--space-xs) var(--space-s); border-radius: 4px; background: var(--fg); color: var(--bg); font-size: 12px; pointer-events: none; z-index: 4; }
+.toolbar [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; inset-block-end: calc(100% + var(--space-s)); inset-inline-start: 50%; translate: -50% 0; white-space: nowrap; padding: var(--space-xs) var(--space-s); border-radius: 4px; background: var(--fg); color: var(--bg); font-size: 12px; pointer-events: none; }
 .toolbar [data-tip][data-key]:hover::after,
 .toolbar [data-tip][data-key]:focus-visible::after { content: attr(data-tip) "\00a0\00a0" attr(data-key); }
 /* Space is held down: the whole canvas pans, so everything on it offers the pan cursor. */

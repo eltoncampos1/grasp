@@ -407,8 +407,9 @@ scroll itself — a code body scrolled sideways, an open callers menu — is lef
 element.
 
 Signature mode is the reader's choice, not the zoom's: the toolbar's `signatures` toggle (or
-`s`) puts `grasp-signatures` on `<body>`, and while it is on every card drops its body, its "Also calls" footer and, on a
-stub, its prose and its hexdocs link, keeping its header and one line — the function's head.
+`s`) puts `grasp-signatures` on `<body>`, and while it is on every card drops its body, its
+"Also calls" footer and, on a stub, its prose and its hexdocs link, keeping its header and
+one line — the function's head.
 `Grasp.Highlight.signature/1` renders that head from the same memoised token pieces the body
 is built from, so it reads as code rather than as a plain-text label; it carries no gutter
 and no call spans, because a call site at that scale is too small to aim at.
@@ -416,18 +417,23 @@ and no call spans, because a call site at that scale is too small to aim at.
 `defmacro`, `defmacrop`, `defguard`, `defguardp` or `defdelegate`, past whatever `@doc` and
 `@spec` sit above it, without the indentation it was written at and without its trailing
 `do` — and `CardComponents.signature/1` takes its text for the title a pointer reads. A stub,
-or a record with no definition in it, falls back to `Mod.fun/arity`. The header, that line
-are sized as `--far-size / --zoom` — 10px divided by the scale the hook writes on the stage
-beside the transform — so they measure 10px on screen at every zoom while everything around
-them shrinks; everything inside the header takes the header's size,
-rather than each element keeping a size the zoom has already shrunk past reading. The card's
+or a record with no definition in it, falls back to `Mod.fun/arity`. The header and that
+line are sized as `--far-size / --zoom` — 10px divided by the scale the hook writes on the
+stage beside the transform — so they measure 10px on screen at every zoom while everything
+around them shrinks; everything inside the header takes the header's size, rather than each
+element keeping a size the zoom has already shrunk past reading. The card's
 width floor and ceiling go with the body, leaving each card as wide as the wider of its
 header and its signature. The header keeps its badges, its stats and its tint, which is what
 marks a removed function, and its buttons stay live, so a far-out card can be closed or
 collapsed without zooming back in to it. The mode is the browser's, like the view: the hook
 holds it, marks the toggle pressed, and nothing on the server knows it, so a patch cannot
-drop it. An automatic switch at a zoom threshold is what this replaces — the flip came at a
-zoom the reader had not chosen and made every card change size under the pointer.
+drop it. The mode never flips on its own: a card changes size only when the reader asks, so
+zooming never rearranges the canvas under the pointer.
+
+"Fit" fits in two passes. A frame header measures `--frame-title-size / --zoom` in stage
+units, so the scale the first pass picks changes the height of what it measured; the second
+pass measures at that scale and lands within a fraction of a percent of the fixed point,
+and a third would change nothing a reader could see.
 
 A group's title is read at every zoom: the frame header — title, count and `ungroup` — is
 sized as `--frame-title-size / --zoom` (18px for the title, 13px for the rest) in every mode,
@@ -534,8 +540,8 @@ redraw the flow" is one prompt in the chat panel.
   which resolved threads a tab has expanded is that tab's own. The composer's draft is the
   browser's (`phx-update="ignore"`), so a patch from an agent run mid-sentence cannot wipe
   it; which line is being composed on, and whether it is a reply, is the LiveView's
-  (`composing`), so one composer is open at a time. Far out (`grasp-far`) threads and
-  composers are not displayed with the body they hang under. The body is a `div` of block
+  (`composing`), so one composer is open at a time. In signature mode threads and composers
+  go with the body they hang under. The body is a `div` of block
   `span.line`s, no longer a `pre`, so a thread can sit between two lines.
 - **Sidebar.** A Comments group heads the sidebar when there are open threads, counting
   them, one row per thread under its module — `name/arity · L12` and the first words of

@@ -46,11 +46,11 @@ const Keys = {
         this.pushEvent("collapse_focused", {})
       } else if (e.key === "d") {
         this.pushEvent("toggle_view_focused", {})
-      } else if (e.key === "s") {
+      } else if (e.key.toLowerCase() === "s") {
         // Signature mode is the Canvas hook's, so this is hook to hook through the DOM rather
         // than a round trip to the server.
         window.dispatchEvent(new CustomEvent("grasp:toggle-signatures"))
-      } else if (e.key === "f") {
+      } else if (e.key.toLowerCase() === "f") {
         // The fit is the Canvas hook's too: it measures the cards the browser has laid out,
         // which the server cannot see.
         window.dispatchEvent(new CustomEvent("grasp:zoom-fit"))
