@@ -35,13 +35,13 @@ defmodule GraspWeb.ReviewLive do
   def mount(params, _session, socket) do
     name = Map.get(params, "name", "default")
 
+    # A name that is not a session name names a file the viewer would have to write, so the
+    # tab is sent to the default session rather than opening a session under it.
     if Disk.valid_name?(name),
       do: {:ok, mount_session(socket, name)},
       else: {:ok, push_navigate(socket, to: "/")}
   end
 
-  # A name that is not a session name names a file the viewer would have to write, so the
-  # tab is sent to the default session rather than opening a session under it.
   defp mount_session(socket, name) do
     :ok = Session.ensure(name)
     :ok = Grasp.Agent.ensure(name)

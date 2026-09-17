@@ -23,7 +23,9 @@ defmodule Grasp.MCP.Tools.SetCards do
   schema do
     field(:session, :string,
       default: "default",
-      description: "The review session to act on; default `default`, which the page at `/` shows"
+      description:
+        "The review session to act on — letters, digits, `-` and `_`, up to 40 of them; " <>
+          "default `default`, which the page at `/` shows"
     )
 
     embeds_many :cards, required: true, description: "The cards to show, callers first" do
@@ -62,7 +64,7 @@ defmodule Grasp.MCP.Tools.SetCards do
   def execute(%{session: session, cards: cards}, frame) do
     with {:ok, index} <- Tools.index(),
          {:ok, specs} <- Cards.prepare(index, cards),
-         :ok <- Session.ensure(session),
+         {:ok, session} <- Tools.ensure_session(session),
          {:ok, forest} <- Session.set_cards(session, specs) do
       Tools.reply(frame, Forest.to_map(forest))
     else

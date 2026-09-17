@@ -37,6 +37,7 @@ defmodule Grasp.Session.DiskTest do
     refute File.exists?(path)
   end
 
+  @tag :unprivileged
   test "a file that could not be moved aside is reported as still there", %{
     name: name,
     tmp_dir: tmp_dir
@@ -62,22 +63,25 @@ defmodule Grasp.Session.DiskTest do
     assert Disk.delete("../outside") == :ok
 
     refute File.exists?(outside)
-    assert File.ls!(tmp_dir) == []
-    assert Disk.saved() == []
+    refute File.exists?(Path.join(tmp_dir, "../outside.json"))
+    refute "../outside" in Disk.saved()
   end
 
   test "saved/0 names the written sessions, sorted", %{name: name} do
     assert Disk.write("zeta-" <> name, Forest.new()) == :ok
     assert Disk.write("alpha-" <> name, Forest.new()) == :ok
 
-    assert Disk.saved() == ["alpha-" <> name, "zeta-" <> name]
+    # Only this test's own names: a session elsewhere in the suite may flush into the
+    # directory while it is the configured one.
+    assert Enum.filter(Disk.saved(), &String.ends_with?(&1, name)) ==
+             ["alpha-" <> name, "zeta-" <> name]
   end
 
   test "delete/1 removes the file", %{name: name} do
     assert Disk.write(name, Forest.new()) == :ok
     assert Disk.delete(name) == :ok
 
-    assert Disk.saved() == []
+    refute name in Disk.saved()
     assert Disk.read(name, nil) == :empty
   end
 

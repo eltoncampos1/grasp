@@ -13,7 +13,9 @@ defmodule Grasp.MCP.Tools.FocusCard do
   schema do
     field(:session, :string,
       default: "default",
-      description: "The review session to act on; default `default`, which the page at `/` shows"
+      description:
+        "The review session to act on — letters, digits, `-` and `_`, up to 40 of them; " <>
+          "default `default`, which the page at `/` shows"
     )
 
     field(:card_id, :integer, required: true, description: "Id of the card to focus")

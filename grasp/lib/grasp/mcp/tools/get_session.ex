@@ -18,13 +18,17 @@ defmodule Grasp.MCP.Tools.GetSession do
   schema do
     field(:session, :string,
       default: "default",
-      description: "The review session to act on; default `default`, which the page at `/` shows"
+      description:
+        "The review session to act on — letters, digits, `-` and `_`, up to 40 of them; " <>
+          "default `default`, which the page at `/` shows"
     )
   end
 
   @impl true
   def execute(%{session: session}, frame) do
-    :ok = Session.ensure(session)
-    Tools.reply(frame, Forest.to_map(Session.get(session)))
+    case Tools.ensure_session(session) do
+      {:ok, session} -> Tools.reply(frame, Forest.to_map(Session.get(session)))
+      {:error, response} -> Tools.error(frame, response)
+    end
   end
 end

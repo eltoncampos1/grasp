@@ -7,8 +7,8 @@ defmodule Grasp.SessionTest do
   alias Grasp.Session.Disk
   alias Grasp.Session.Forest
 
-  # Long enough for the 150 ms debounce to fire more than once while the moves keep coming.
-  @drag_ms 450
+  # Long enough for the debounce to fire several times while the moves keep coming.
+  @drag_ms 600
 
   setup do
     name = "t-#{System.unique_integer([:positive])}"
@@ -290,9 +290,9 @@ defmodule Grasp.SessionTest do
 
       # Writes land while the moves are still coming — a timer restarted by every move would
       # write nothing until the drag stopped — and there are far fewer of them than moves,
-      # since the window cannot hold more than one write every 150 ms.
+      # since the window cannot hold more than one write per debounce interval.
       assert length(written) >= 2
-      assert length(written) <= div(@drag_ms, 150) + 2
+      assert length(written) <= div(@drag_ms, Session.flush_ms()) + 2
       assert moves > length(written)
 
       assert wait_until(fn ->
@@ -300,6 +300,7 @@ defmodule Grasp.SessionTest do
              end)
     end
 
+    @tag :unprivileged
     test "a session whose file could not be kept aside writes nothing", %{tmp_dir: tmp_dir} do
       name = "locked-#{System.unique_integer([:positive])}"
       locked = Path.join(tmp_dir, "locked")

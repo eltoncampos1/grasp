@@ -18,7 +18,9 @@ defmodule Grasp.MCP.Tools.OpenCard do
   schema do
     field(:session, :string,
       default: "default",
-      description: "The review session to act on; default `default`, which the page at `/` shows"
+      description:
+        "The review session to act on — letters, digits, `-` and `_`, up to 40 of them; " <>
+          "default `default`, which the page at `/` shows"
     )
 
     field(:function_id, :string,
@@ -57,8 +59,9 @@ defmodule Grasp.MCP.Tools.OpenCard do
   end
 
   defp open(session, _index, nil, record) do
-    :ok = Session.ensure(session)
-    {:ok, Session.open_root(session, record["id"])}
+    with {:ok, session} <- Tools.ensure_session(session) do
+      {:ok, Session.open_root(session, record["id"])}
+    end
   end
 
   defp open(session, index, parent_card_id, record) do

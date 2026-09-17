@@ -475,10 +475,27 @@ defmodule Grasp.MCP.SessionToolsTest do
     end
   end
 
+  describe "session names" do
+    test "a name no session file could carry is refused rather than started" do
+      response = run(Tools.GetSession, %{session: "PR 123"})
+
+      assert response.isError
+
+      assert [%{"text" => "session names are letters, digits, - and _, up to 40 characters"}] =
+               response.content
+
+      refute "PR 123" in Session.list()
+    end
+  end
+
   describe "input schemas" do
     test "name the session, the cards and the required ids" do
       # Anubis leaves a field's default out of the JSON schema, so the description carries it
       assert Tools.SetCards.input_schema()["properties"]["session"]["description"] =~ "default"
+
+      assert Tools.SetCards.input_schema()["properties"]["session"]["description"] =~
+               "up to 40 of them"
+
       assert Tools.SetCards.input_schema()["required"] == ["cards"]
       assert "function_id" in Tools.OpenCard.input_schema()["required"]
       assert "card_id" in Tools.CloseCard.input_schema()["required"]

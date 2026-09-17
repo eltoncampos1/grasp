@@ -3,7 +3,10 @@ defmodule Grasp.MCP.Tools do
 
   alias Anubis.Server.Response
   alias Grasp.Session
+  alias Grasp.Session.Disk
   alias Grasp.Session.Forest
+
+  @name_error "session names are letters, digits, - and _, up to 40 characters"
 
   @doc "The loaded index, or the tool error every index-reading tool replies with when none is loaded."
   @spec index() :: {:ok, Grasp.Index.t()} | {:error, Response.t()}
@@ -15,19 +18,41 @@ defmodule Grasp.MCP.Tools do
   def index(%Grasp.Index{} = index), do: {:ok, index}
 
   @doc """
+  Starts the session named `session`, or the tool error a name no session can carry is
+  answered with.
+
+  A session is a file under `.grasp/sessions/`, so a name outside what
+  `Grasp.Session.Disk.valid_name?/1` accepts is refused here rather than started: a session
+  under such a name would run for the length of the conversation and then be gone, which is
+  the one thing a review session is not. Every tool that takes a `session` goes through
+  this, so a client learns the rule from the first call that breaks it.
+  """
+  @spec ensure_session(Session.name()) :: {:ok, Session.name()} | {:error, Response.t()}
+  def ensure_session(session) when is_binary(session) do
+    if Disk.valid_name?(session) do
+      :ok = Session.ensure(session)
+      {:ok, session}
+    else
+      {:error, Response.error(Response.tool(), @name_error)}
+    end
+  end
+
+  @doc """
   The card `card_id` of the session named `session`, or the message a tool answers with when
   the session holds no such card.
 
   Starts the session if it is not running, so every card-addressing tool reads the same
-  empty forest whether or not anyone has opened the session yet.
+  empty forest whether or not anyone has opened the session yet, and refuses a name no
+  session can carry as `ensure_session/1` does.
   """
-  @spec fetch_card(Session.name(), Forest.id()) :: {:ok, Forest.card()} | {:error, String.t()}
+  @spec fetch_card(Session.name(), Forest.id()) ::
+          {:ok, Forest.card()} | {:error, String.t() | Response.t()}
   def fetch_card(session, card_id) do
-    :ok = Session.ensure(session)
-
-    case Forest.card(Session.get(session), card_id) do
-      nil -> {:error, "unknown card: #{card_id}"}
-      card -> {:ok, card}
+    with {:ok, session} <- ensure_session(session) do
+      case Forest.card(Session.get(session), card_id) do
+        nil -> {:error, "unknown card: #{card_id}"}
+        card -> {:ok, card}
+      end
     end
   end
 
@@ -38,7 +63,7 @@ defmodule Grasp.MCP.Tools do
   naming one card that has since closed leaves the graph as it was rather than half moved.
   """
   @spec fetch_cards(Session.name(), [Forest.id()]) ::
-          {:ok, [Forest.card()]} | {:error, String.t()}
+          {:ok, [Forest.card()]} | {:error, String.t() | Response.t()}
   def fetch_cards(session, card_ids) when is_list(card_ids) do
     Enum.reduce_while(card_ids, {:ok, []}, fn id, {:ok, cards} ->
       case fetch_card(session, id) do
@@ -59,13 +84,13 @@ defmodule Grasp.MCP.Tools do
   Starts the session if it is not running, as `fetch_card/2` does.
   """
   @spec fetch_group(Session.name(), Forest.group_id()) ::
-          {:ok, Forest.group()} | {:error, String.t()}
+          {:ok, Forest.group()} | {:error, String.t() | Response.t()}
   def fetch_group(session, group_id) do
-    :ok = Session.ensure(session)
-
-    case Forest.group(Session.get(session), group_id) do
-      nil -> {:error, "unknown group: #{group_id}"}
-      group -> {:ok, group}
+    with {:ok, session} <- ensure_session(session) do
+      case Forest.group(Session.get(session), group_id) do
+        nil -> {:error, "unknown group: #{group_id}"}
+        group -> {:ok, group}
+      end
     end
   end
 

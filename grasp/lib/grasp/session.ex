@@ -27,6 +27,11 @@ defmodule Grasp.Session do
   or could not be moved aside after failing to decode, runs in memory for the rest of its
   life: the arrangement on disk is the reviewer's only copy, and overwriting it with an
   empty canvas would be the one loss the restart was meant to prevent.
+
+  The process links to nothing and subscribes to nothing: the only message it handles is its
+  own `:flush` timer, and it traps exits solely so its supervisor's shutdown reaches
+  `terminate/2`. Anything that links to a session from here on has to add a clause for
+  `{:EXIT, _pid, _reason}`, which would otherwise crash it.
   """
 
   use GenServer
@@ -39,6 +44,15 @@ defmodule Grasp.Session do
   @flush_ms 150
 
   @type name :: String.t()
+
+  @doc """
+  How long a burst of mutations is gathered for before it is written, in milliseconds.
+
+  The debounce window, read out rather than kept private, so anything reasoning about how
+  often a session reaches disk reads the one value instead of a copy of it.
+  """
+  @spec flush_ms() :: pos_integer()
+  def flush_ms, do: @flush_ms
 
   @doc "Starts the session named `name` if it is not running."
   @spec ensure(name()) :: :ok
@@ -305,13 +319,14 @@ defmodule Grasp.Session do
   defp flush(state) do
     case Disk.write(state.name, state.forest) do
       :ok ->
-        :ok
+        %{state | dirty: false}
 
+      # The graph stays owed to the file, so the next flush — the next burst's, or the one
+      # `terminate/2` makes on the way out — tries again instead of the failure standing.
       {:error, reason} ->
         Logger.warning("grasp: could not write the session #{state.name}: #{inspect(reason)}")
+        state
     end
-
-    %{state | dirty: false}
   end
 
   defp stop(name) do

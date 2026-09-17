@@ -794,6 +794,7 @@ defmodule Grasp.Session.ForestTest do
         forest
         |> Forest.move(wrap, {40, -12})
         |> Forest.set_highlight(greeter, %{"call" => "SampleApp.Formatter.wrap/1"})
+        |> Forest.set_highlight(wrap, %{"lines" => [3, 7]})
         |> Forest.set_view(greeter, :diff)
         |> Forest.set_context(greeter, :hunks)
 
@@ -801,6 +802,8 @@ defmodule Grasp.Session.ForestTest do
 
       assert {:ok, loaded} = Forest.load(document, nil)
       assert loaded == forest
+      assert Forest.card(loaded, greeter).highlight == %{"call" => "SampleApp.Formatter.wrap/1"}
+      assert Forest.card(loaded, wrap).highlight == %{"lines" => [3, 7]}
 
       assert {loaded.next_id, loaded.next_color, loaded.next_group} ==
                {forest.next_id, forest.next_color, forest.next_group}
