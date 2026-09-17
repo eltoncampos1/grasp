@@ -248,8 +248,8 @@ defmodule Grasp.CommentsTest do
       capture_log(fn ->
         store = start_isolated(path)
 
-        assert [%{id: 7, body: "worth a look"}] = GenServer.call(store, {:list, []})
-        assert {:ok, _thread} = GenServer.call(store, {:add, isolated_attrs()})
+        assert [%{id: 7, body: "worth a look"}] = Comments.list([], store)
+        assert {:ok, _thread} = Comments.add(isolated_attrs(), store)
       end)
 
     assert log =~ "dropped 1 unreadable entry"
@@ -267,8 +267,8 @@ defmodule Grasp.CommentsTest do
       capture_log(fn ->
         store = start_isolated(path)
 
-        assert GenServer.call(store, {:list, []}) == []
-        assert {:ok, _thread} = GenServer.call(store, {:add, isolated_attrs()})
+        assert Comments.list([], store) == []
+        assert {:ok, _thread} = Comments.add(isolated_attrs(), store)
       end)
 
     assert log =~ "could not read comments"
@@ -276,9 +276,12 @@ defmodule Grasp.CommentsTest do
     assert {:ok, {[%{id: 1}], 2, 0}} = path |> File.read!() |> Comments.decode()
   end
 
+  # A store of this test's own: the application's reads the project's file, and these tests
+  # need a file they can damage.
   defp start_isolated(path) do
     name = :"comments_#{System.unique_integer([:positive])}"
     start_supervised!({Comments, [path: path, name: name]})
+    name
   end
 
   defp isolated_attrs do

@@ -386,7 +386,7 @@ defmodule GraspWeb.ReviewLive do
          thread_id when is_integer(thread_id) <- int(id),
          {:ok, thread} <- Grasp.Comments.fetch(thread_id) do
       composing = %{card: card_id, side: thread.side, line: thread.line, reply_to: thread.id}
-      {:noreply, assign(socket, composing: composing)}
+      {:noreply, socket |> close_overlays() |> assign(composing: composing)}
     else
       _unknown_thread -> {:noreply, socket}
     end

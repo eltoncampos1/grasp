@@ -57,6 +57,7 @@ defmodule Grasp.Agent do
   def stop(name), do: GenServer.call(Runner.via(name), :stop)
 
   @models ~w(haiku sonnet opus fable)
+  @modes ~w(read edit)
 
   @doc "The model aliases the chat panel offers, cheapest first."
   @spec models() :: [String.t()]
@@ -74,8 +75,6 @@ defmodule Grasp.Agent do
     do: GenServer.call(Runner.via(name), {:set_model, model})
 
   def set_model(_name, _model), do: {:error, :unknown_model}
-
-  @modes ~w(read edit)
 
   @doc "The modes the chat panel offers: reading only, or reading and editing."
   @spec modes() :: [String.t()]

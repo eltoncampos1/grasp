@@ -22,9 +22,13 @@ defmodule GraspWeb.CommentComponents do
   attr :card_id, :integer, required: true
   attr :expanded, :boolean, default: false
 
-  attr :outdated, :boolean,
-    doc: "drawn in the card's footer, quoting the line it was written on",
-    default: false
+  attr :aside, :atom,
+    doc:
+      "why the thread is drawn in the card's footer rather than under a line: `:outdated` " <>
+        "when the anchor no longer finds its line, `:hidden` when the view draws no line on " <>
+        "its side",
+    values: [nil, :outdated, :hidden],
+    default: nil
 
   attr :composing, :map, doc: "the open composer, which may be this thread's reply", default: nil
 
@@ -57,13 +61,13 @@ defmodule GraspWeb.CommentComponents do
       class={[
         "thread",
         @thread.resolved && "thread--resolved",
-        @outdated && "thread--outdated"
+        @aside && "thread--outdated"
       ]}
       data-comment-id={@thread.id}
       data-resolved={to_string(@thread.resolved)}
     >
-      <p :if={@outdated} class="thread__snippet">
-        <span class="thread__label">{aside_label(@thread)}</span>
+      <p :if={@aside} class="thread__snippet">
+        <span class="thread__label">{aside_label(@aside, @thread)}</span>
         <code>{@thread.snippet}</code>
       </p>
       <button
@@ -141,11 +145,11 @@ defmodule GraspWeb.CommentComponents do
     """
   end
 
-  # Why a thread sits in the card's footer instead of under a line. A comment on the base
-  # side is still current — the view the card is in simply draws no deleted lines — so it is
-  # named for the side it was written on rather than reported as stale.
-  defp aside_label(%{side: "old"} = thread), do: "Old · L#{thread.line}"
-  defp aside_label(thread), do: "Outdated · L#{thread.line}"
+  # Why a thread sits in the card's footer instead of under a line. A thread the view simply
+  # draws no line for — a comment on the base side, in a card reading as source — is still
+  # current, and is named for the side it was written on rather than reported as stale.
+  defp aside_label(:hidden, thread), do: "Old · L#{thread.line}"
+  defp aside_label(:outdated, thread), do: "Outdated · L#{thread.line}"
 
   # The two writers a thread can hold, named as the reviewer would say them rather than as
   # the store records them.

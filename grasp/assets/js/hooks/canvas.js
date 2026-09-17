@@ -318,9 +318,9 @@ const Canvas = {
   fitOnce() {
     // The frames are measured alongside the cards: a fit that showed only the cards would cut
     // the padding and the header off the sections holding them.
-    const cards = Array.from(this.el.querySelectorAll(".card, .frame"))
-    if (cards.length === 0) return null
-    const box = this.stageBox(cards)
+    const boxes = Array.from(this.el.querySelectorAll(".card, .frame"))
+    if (boxes.length === 0) return null
+    const box = this.stageBox(boxes)
     if (!(box.width > 0) || !(box.height > 0)) return null
     const r = this.el.getBoundingClientRect()
     const scale = Math.min(
@@ -513,10 +513,10 @@ const Canvas = {
 
   // The group whose frame a drop landed in, or null when it landed anywhere else — the
   // ungrouped section, the bare canvas, or the card's own frame, none of which is a change of
-  // membership. The frames are rectangles the hook drew itself, so the drop is decided by area:
-  // anywhere inside one, padding included, joins it, and the card being dragged is no obstacle
-  // the way it is to hit testing. A pointer inside two overlapping frames takes the later one,
-  // which is the one drawn on top.
+  // membership. The frames are rectangles the hook drew itself, so the drop is decided by area
+  // alone: a pointer anywhere inside one, padding included, joins that group, whatever element
+  // happens to lie under it. A pointer inside two overlapping frames takes the later one, which
+  // is the one drawn on top.
   groupUnder(e, drag) {
     const s = this.stage.getBoundingClientRect()
     const {scale} = this.view
@@ -552,6 +552,10 @@ const Canvas = {
     const {scale} = this.view
     this.frames = []
     const divs = []
+    // Every box is read before the first header is moved. Writing `translate` invalidates the
+    // layout, so a loop that measured one section and then moved its header would force a
+    // reflow per section on every pointermove of a drag.
+    const sections = []
     for (const flow of this.el.querySelectorAll(".flow[data-grouped]")) {
       const title = flow.querySelector(".flow__title")
       let left = Infinity,
@@ -568,6 +572,20 @@ const Canvas = {
         right = Math.max(right, (b.right - s.left) / scale)
         bottom = Math.max(bottom, (b.bottom - s.top) / scale)
       }
+      sections.push({
+        group: Number(flow.dataset.group),
+        title,
+        titleBox: title && title.getBoundingClientRect(),
+        // The offset the header is already carrying, which its box is measured with.
+        carried: title && this.translateOf(title),
+        left,
+        top,
+        right,
+        bottom,
+      })
+    }
+
+    for (const {group, title, titleBox, carried, left, top, right, bottom} of sections) {
       // A section with nothing measurable in it has no frame, and its header goes back to
       // wherever the layout puts it.
       if (left === Infinity) {
@@ -576,19 +594,17 @@ const Canvas = {
       }
       let head = FRAME_PAD
       if (title) {
-        const t = title.getBoundingClientRect()
-        const was = this.translateOf(title)
-        const height = t.height / scale
+        const height = titleBox.height / scale
         // Where the header would sit untranslated: its own box less the offset it is carrying.
-        const naturalLeft = (t.left - s.left) / scale - was.x
-        const naturalTop = (t.top - s.top) / scale - was.y
+        const naturalLeft = (titleBox.left - s.left) / scale - carried.x
+        const naturalTop = (titleBox.top - s.top) / scale - carried.y
         const x = left - naturalLeft
         const y = top - (height + FRAME_TITLE_GAP) - naturalTop
         title.style.translate = `${x}px ${y}px`
         head = height + FRAME_TITLE_GAP + FRAME_PAD
       }
       const frame = {
-        group: Number(flow.dataset.group),
+        group,
         left: left - FRAME_PAD,
         top: top - head,
         right: right + FRAME_PAD,

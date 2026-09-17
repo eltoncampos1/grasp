@@ -91,12 +91,13 @@ defmodule GraspWeb.CommentsLiveTest do
     name: name
   } do
     Session.open_root(name, @greet)
+    written = threads_at(@greet, 10)
 
     view |> element("#card-1 .line[data-line='10'] .ln") |> render_click()
     view |> form("#card-1 form.composer", %{"body" => "   "}) |> render_submit()
 
     assert has_element?(view, "#card-1 form.composer input[name='line'][value='10']")
-    refute has_element?(view, "#card-1 .line[data-line='10'] + .thread")
+    assert threads_at(@greet, 10) == written
   end
 
   test "a comment whose line no longer reads as it did is kept in the card's footer", %{
@@ -124,7 +125,19 @@ defmodule GraspWeb.CommentsLiveTest do
              "Outdated · L7"
            )
 
-    refute has_element?(view, "#card-1 .line[data-line='7'] + .thread")
+    refute has_element?(view, "#card-1 .card__body #thread-#{thread.id}")
+
+    {:ok, on_a_base} =
+      Comments.add(%{
+        function_id: @greet,
+        side: "old",
+        line: 3,
+        body: unique("written on a base version this function has not got"),
+        author: "human",
+        snippet: "def greet(name) do"
+      })
+
+    assert has_element?(view, "#thread-#{on_a_base.id} .thread__snippet", "Outdated · L3")
   end
 
   test "comments belong to the project, so another session shows them", %{
@@ -186,6 +199,14 @@ defmodule GraspWeb.CommentsLiveTest do
   end
 
   defp unique(text), do: "#{text} ##{System.unique_integer([:positive])}"
+
+  # The store holds the whole project's threads, other tests' included, so what a submission
+  # did is asked of the anchor this test writes at rather than of the store as a whole.
+  defp threads_at(function_id, line) do
+    Comments.list(function_id: function_id, include_resolved: true)
+    |> Enum.filter(&(&1.side == "new" and &1.line == line))
+    |> Enum.map(& &1.id)
+  end
 
   # The composer's anchor is the view's own state and shows in no markup once the thread it
   # replies to is gone, so this is the only place a test can see it was let go of.

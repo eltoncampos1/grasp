@@ -154,15 +154,18 @@ defmodule GraspWeb.CardComponents do
     aside =
       placements
       |> Map.get(:outdated, [])
-      |> Enum.concat(Enum.flat_map(hidden, fn {_anchor, threads} -> threads end))
-      |> Enum.sort_by(& &1.id)
+      |> Enum.map(&{:outdated, &1})
+      |> Enum.concat(
+        Enum.flat_map(hidden, fn {_anchor, threads} -> Enum.map(threads, &{:hidden, &1}) end)
+      )
+      |> Enum.sort_by(fn {_why, thread} -> thread.id end)
 
     assigns =
       assign(assigns,
         focused?: forest.focus == card.id,
         lines: lines,
         placed: placed,
-        outdated: aside,
+        aside: aside,
         expanded_threads: assigns.expanded_threads || MapSet.new(),
         dx: dx,
         dy: dy,
@@ -301,14 +304,14 @@ defmodule GraspWeb.CardComponents do
           />
         <% end %>
       </div>
-      <footer :if={@outdated != []} class="card__outdated">
+      <footer :if={@aside != []} class="card__outdated">
         <.thread
-          :for={thread <- @outdated}
+          :for={{why, thread} <- @aside}
           thread={thread}
           card_id={@card.id}
           expanded={MapSet.member?(@expanded_threads, thread.id)}
           composing={@composing}
-          outdated
+          aside={why}
         />
       </footer>
       <footer :if={@record["hidden_calls"] != []} class="card__also">

@@ -46,6 +46,7 @@ defmodule Grasp.Comments do
 
   @type author :: String.t()
   @type side :: String.t()
+  @type store :: GenServer.server()
   @type reply :: %{id: pos_integer(), author: author(), body: String.t(), created_at: String.t()}
   @type thread :: %{
           id: pos_integer(),
@@ -70,7 +71,7 @@ defmodule Grasp.Comments do
   `:path` overrides the file to read and write, taking precedence over the
   `:grasp, :comments_path` setting and over the path derived from the project root, and
   `:name` registers the store under a name other than the module, for a second store
-  running beside the application's.
+  running beside the application's, which `list/2` and `add/2` address by that name.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -86,11 +87,14 @@ defmodule Grasp.Comments do
   Threads sorted by id.
 
   `:function_id` keeps only the threads on that function, and `:include_resolved` (false
-  by default) keeps the resolved ones as well.
+  by default) keeps the resolved ones as well. `store` reads a store other than the
+  application's.
   """
   @spec list() :: [thread()]
   @spec list(keyword()) :: [thread()]
-  def list(opts \\ []) when is_list(opts), do: GenServer.call(__MODULE__, {:list, opts})
+  @spec list(keyword(), store()) :: [thread()]
+  def list(opts \\ [], store \\ __MODULE__) when is_list(opts),
+    do: GenServer.call(store, {:list, opts})
 
   @doc "Every thread, resolved ones included, grouped by function id and sorted by id."
   @spec by_function() :: %{String.t() => [thread()]}
@@ -105,10 +109,13 @@ defmodule Grasp.Comments do
 
   `side` is `"new"` or `"old"`, `author` is `"human"` or `"agent"`, `body` is stored
   trimmed and may not be blank, and `snippet` (optional) is the text of the line as it
-  reads when the comment is written.
+  reads when the comment is written. `store` writes to a store other than the
+  application's.
   """
   @spec add(map()) :: {:ok, thread()} | {:error, :invalid}
-  def add(attrs) when is_map(attrs), do: GenServer.call(__MODULE__, {:add, attrs})
+  @spec add(map(), store()) :: {:ok, thread()} | {:error, :invalid}
+  def add(attrs, store \\ __MODULE__) when is_map(attrs),
+    do: GenServer.call(store, {:add, attrs})
 
   @doc "Appends a reply `%{body, author}` to the thread `id`, returning the whole thread."
   @spec reply(pos_integer(), map()) :: {:ok, thread()} | {:error, :unknown | :invalid}

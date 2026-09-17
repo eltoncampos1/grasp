@@ -63,8 +63,13 @@ defmodule Grasp.MCP.Comments do
   """
   @spec check_line(map(), Comments.side(), integer()) :: :ok | {:error, String.t()}
   def check_line(record, "new", line) do
-    %{"start_line" => first, "end_line" => last} = record["span"]
-    in_range(record, line, first, last)
+    # A record whose span stops at the start line is read as that one line: a line the agent
+    # cannot comment on comes back as the error naming the range, which is what it can act
+    # on, rather than as a crash in the tool call.
+    case record["span"] do
+      %{"start_line" => first, "end_line" => last} -> in_range(record, line, first, last)
+      %{"start_line" => first} -> in_range(record, line, first, first)
+    end
   end
 
   def check_line(record, "old", line) do
