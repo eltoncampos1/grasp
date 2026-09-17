@@ -257,7 +257,10 @@ directory. A checkout that does not exist yet is cloned from `--repo URL` or
 The index defaults to `.grasp/index.json` under the current directory and must exist
 (`mix grasp.index` writes it); `--index`, `--port`, `--editor`, `--agent-command` and
 `--agent-model` are forwarded. The launcher then runs `mix grasp.viewer --index PATH …` in
-the checkout's `grasp/` project, streaming its output, so Ctrl-C stops both.
+the checkout's `grasp/` project as a child process, streaming its output. The child sits in
+its own process group, so a terminal interrupt does not reach it by itself; the launcher
+traps SIGINT and SIGTERM, terminates the viewer it started, and exits, so one Ctrl-C stops
+both and port 4040 is free for the next run.
 
 `mix grasp.viewer` is the viewer's own task, run in `grasp/`; it takes the same options,
 needs `--index`, binds to 127.0.0.1, reloads the index when the file's mtime changes (2 s
