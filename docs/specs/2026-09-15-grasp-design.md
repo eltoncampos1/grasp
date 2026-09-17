@@ -258,9 +258,13 @@ The index defaults to `.grasp/index.json` under the current directory and must e
 (`mix grasp.index` writes it); `--index`, `--port`, `--editor`, `--agent-command` and
 `--agent-model` are forwarded. The launcher then runs `mix grasp.viewer --index PATH …` in
 the checkout's `grasp/` project as a child process, streaming its output. The child sits in
-its own process group, so a terminal interrupt does not reach it by itself; the launcher
-traps SIGINT and SIGTERM, terminates the viewer it started, and exits, so one Ctrl-C stops
-both and port 4040 is free for the next run.
+its own process group, so a terminal interrupt does not reach it by itself, and SIGINT is
+the runtime's own — it answers with the break menu and cannot be trapped. The child is
+therefore started under a shell that watches the standard input it inherited from the
+launcher: that pipe closes the moment the launcher's VM is gone, however it went, and the
+shell stops the viewer. A SIGTERM to the launcher is trapped as well and signals the
+viewer's process group first. One Ctrl-C — abort at the break menu — stops both, and port
+4040 is free for the next run.
 
 `mix grasp.viewer` is the viewer's own task, run in `grasp/`; it takes the same options,
 needs `--index`, binds to 127.0.0.1, reloads the index when the file's mtime changes (2 s
