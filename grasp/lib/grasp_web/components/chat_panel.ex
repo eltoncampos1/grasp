@@ -11,6 +11,10 @@ defmodule GraspWeb.ChatPanel do
 
   A failed run is the one case where the transcript is not enough: the CLI explains itself
   on stderr, which the runner collects into `log`, so the log is offered beside an error.
+
+  The settings row carries the two choices a run is made under — which model the CLI runs,
+  and whether the agent may only read or may also edit files and run mix. Both are the
+  agent's state rather than the panel's, so a second tab shows the mode the run will use.
   """
 
   use GraspWeb, :html
@@ -32,15 +36,32 @@ defmodule GraspWeb.ChatPanel do
         <p :for={line <- @agent.log}>{line}</p>
       </details>
       <p :if={@error} class="msg" data-type="error">{@error}</p>
-      <form id="chat-model" phx-change="chat_model" class="chat__model">
-        <label for="chat-model-select">Model</label>
-        <select id="chat-model-select" name="model" aria-label="Model">
-          <option value="" selected={is_nil(@agent.model)}>default</option>
-          <option :for={model <- Grasp.Agent.models()} value={model} selected={@agent.model == model}>
-            {model}
-          </option>
-        </select>
-      </form>
+      <div class="chat__settings">
+        <form id="chat-model" phx-change="chat_model">
+          <label for="chat-model-select">Model</label>
+          <select id="chat-model-select" name="model" aria-label="Model">
+            <option value="" selected={is_nil(@agent.model)}>default</option>
+            <option
+              :for={model <- Grasp.Agent.models()}
+              value={model}
+              selected={@agent.model == model}
+            >
+              {model}
+            </option>
+          </select>
+        </form>
+        <form
+          id="chat-mode"
+          phx-change="chat_mode"
+          title="In edit mode the agent may change files under the project and run mix"
+        >
+          <label for="chat-mode-select">Mode</label>
+          <select id="chat-mode-select" name="mode" aria-label="Mode">
+            <option value="read" selected={@agent.mode == "read"}>read-only</option>
+            <option value="edit" selected={@agent.mode == "edit"}>edit files</option>
+          </select>
+        </form>
+      </div>
       <form id="chat-form" phx-submit="chat_send">
         <input
           type="text"

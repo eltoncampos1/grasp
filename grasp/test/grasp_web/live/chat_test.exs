@@ -50,6 +50,28 @@ defmodule GraspWeb.ChatTest do
     assert Grasp.Agent.get(name).last_result =~ "--model sonnet"
   end
 
+  test "the mode picker lets the next run edit files", %{view: view, name: name} do
+    view |> element("#toggle-chat") |> render_click()
+    assert has_element?(view, ~s(#chat-mode-select option[value="read"][selected]))
+
+    view |> form("#chat-mode", %{"mode" => "edit"}) |> render_change()
+    assert has_element?(view, ~s(#chat-mode-select option[value="edit"][selected]))
+    assert Grasp.Agent.get(name).mode == "edit"
+
+    :ok = Grasp.Agent.subscribe(name)
+    view |> form("#chat-form", %{"prompt" => "address the comments"}) |> render_submit()
+    assert_receive {:agent, ^name, %{running?: false}}, 2_000
+    assert Grasp.Agent.get(name).last_result =~ "Bash(mix:*)"
+  end
+
+  test "a mode the agent does not know leaves the chat as it was", %{view: view, name: name} do
+    view |> element("#toggle-chat") |> render_click()
+    render_change(view, :chat_mode, %{"mode" => "sudo"})
+
+    assert Grasp.Agent.get(name).mode == "read"
+    assert has_element?(view, ~s(#chat-mode-select option[value="read"][selected]))
+  end
+
   test "a blank prompt is ignored", %{view: view} do
     view |> element("#toggle-chat") |> render_click()
     view |> form("#chat-form", %{"prompt" => "   "}) |> render_submit()

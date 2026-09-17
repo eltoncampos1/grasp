@@ -315,6 +315,14 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
+  # Modes the facade does not know are ignored the same way, for the same reason.
+  def handle_event("chat_mode", %{"mode" => mode}, socket) when is_binary(mode) do
+    case Grasp.Agent.set_mode(socket.assigns.name, mode) do
+      :ok -> {:noreply, refresh_agent(socket)}
+      {:error, :unknown_mode} -> {:noreply, socket}
+    end
+  end
+
   def handle_event("chat_stop", _params, socket) do
     :ok = Grasp.Agent.stop(socket.assigns.name)
     {:noreply, refresh_agent(socket)}

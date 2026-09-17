@@ -248,11 +248,22 @@ Press ⌘I, or the `ask` button in the toolbar, for a chat panel over the canvas
 you want to understand and the agent opens the cards that answer it.
 
 The panel runs the [Claude Code](https://claude.com/claude-code) CLI headless, with the
-indexed project's root as its working directory and Grasp as its only MCP server. Its
-built-in tools are `Read`, `Grep` and `Glob`, so it reads the project's files and reaches
-the index through Grasp's own tools, and it edits no file and runs no command. The
-transcript shows each tool call as it happens; Stop kills the run, and New conversation
-starts over.
+indexed project's root as its working directory and Grasp as its only MCP server. In
+`read-only` mode, the one it starts in, its built-in tools are `Read`, `Grep` and `Glob`,
+so it reads the project's files and reaches the index through Grasp's own tools, and it
+edits no file and runs no command. The transcript shows each tool call as it happens; Stop
+kills the run, and New conversation starts over.
+
+The panel's Mode select switches that. In `edit files` the agent also gets `Edit`, `Write`
+and a `Bash` narrowed to `mix` and to `git status` and `git diff`, so it can change files
+under the project root — which is what makes "address all the comments and update the
+diagram afterwards" a thing you can ask for. It works a comment at a time: reads what the
+thread points at, makes the change, replies with what it did and resolves the thread; then
+it runs `mix format` on what it touched, rebuilds the index with the same `mix grasp.index`
+flags the viewer is watching, and lays the cards out again over the code as it now reads.
+The switch takes effect on the next prompt, and survives New conversation. Nothing is
+sandboxed: edit mode is the agent editing your working tree, so point it at a branch you
+can throw away and read the diff before you keep it.
 
 The panel's Model select picks which model the CLI runs: the four aliases `haiku`,
 `sonnet`, `opus` and `fable`, or `default` to leave the CLI on whatever `--agent-model` /

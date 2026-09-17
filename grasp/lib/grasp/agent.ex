@@ -21,7 +21,8 @@ defmodule Grasp.Agent do
           claude_session_id: String.t() | nil,
           log: [String.t()],
           last_result: String.t() | nil,
-          model: String.t() | nil
+          model: String.t() | nil,
+          mode: String.t()
         }
 
   @doc "Starts the conversation named `name` if it is not running."
@@ -73,6 +74,23 @@ defmodule Grasp.Agent do
     do: GenServer.call(Runner.via(name), {:set_model, model})
 
   def set_model(_name, _model), do: {:error, :unknown_model}
+
+  @modes ~w(read edit)
+
+  @doc "The modes the chat panel offers: reading only, or reading and editing."
+  @spec modes() :: [String.t()]
+  def modes, do: @modes
+
+  @doc """
+  Picks what the next run is allowed to do: `"read"` gives the agent the read tools alone,
+  `"edit"` also lets it change files under the project root and run mix, so it can act on a
+  review comment and rebuild the index. Applies to the next prompt, and survives `reset/1`.
+  """
+  @spec set_mode(name(), String.t()) :: :ok | {:error, :unknown_mode}
+  def set_mode(name, mode) when mode in @modes,
+    do: GenServer.call(Runner.via(name), {:set_mode, mode})
+
+  def set_mode(_name, _mode), do: {:error, :unknown_mode}
 
   @doc "Ends a live run and clears the transcript, the log and the CLI session id."
   @spec reset(name()) :: :ok

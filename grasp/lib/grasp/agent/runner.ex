@@ -31,6 +31,7 @@ defmodule Grasp.Agent.Runner do
 
   alias Grasp.Agent.Command
   alias Grasp.Agent.Stream
+  alias Grasp.IndexStore
 
   @type name :: Grasp.Agent.name()
 
@@ -52,7 +53,17 @@ defmodule Grasp.Agent.Runner do
   @impl true
   def init(name) do
     Process.flag(:trap_exit, true)
-    {:ok, %{name: name, stream: Stream.new(), port: nil, buffer: "", running?: false, model: nil}}
+
+    {:ok,
+     %{
+       name: name,
+       stream: Stream.new(),
+       port: nil,
+       buffer: "",
+       running?: false,
+       model: nil,
+       mode: "read"
+     }}
   end
 
   @impl true
@@ -71,7 +82,9 @@ defmodule Grasp.Agent.Runner do
         session: state.name,
         mcp_url: Command.mcp_url(),
         resume: state.stream.claude_session_id,
-        model: state.model || Application.get_env(:grasp, :agent_model)
+        model: state.model || Application.get_env(:grasp, :agent_model),
+        mode: state.mode,
+        reindex: Command.reindex_command(IndexStore.get(), IndexStore.path())
       )
 
     case executable(command) do
@@ -100,6 +113,9 @@ defmodule Grasp.Agent.Runner do
 
   def handle_call({:set_model, model}, _from, state),
     do: {:reply, :ok, broadcast(%{state | model: model})}
+
+  def handle_call({:set_mode, mode}, _from, state),
+    do: {:reply, :ok, broadcast(%{state | mode: mode})}
 
   def handle_call(:reset, _from, state) do
     state = halt(state, nil)
@@ -165,7 +181,8 @@ defmodule Grasp.Agent.Runner do
       claude_session_id: state.stream.claude_session_id,
       log: state.stream.log,
       last_result: state.stream.result_text,
-      model: state.model
+      model: state.model,
+      mode: state.mode
     }
   end
 

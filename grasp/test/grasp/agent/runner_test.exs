@@ -59,6 +59,31 @@ defmodule Grasp.Agent.RunnerTest do
     refute argv =~ "--model"
   end
 
+  test "set_mode/2 arms the next run with the editing tools and survives a reset", %{name: name} do
+    assert Grasp.Agent.get(name).mode == "read"
+    assert {:error, :unknown_mode} = Grasp.Agent.set_mode(name, "bogus")
+    :ok = Grasp.Agent.set_mode(name, "edit")
+    assert_receive {:agent, ^name, %{mode: "edit"}}
+
+    :ok = Grasp.Agent.send_prompt(name, "address the comments")
+    assert_receive {:agent, ^name, %{running?: false}}, 2_000
+    argv = Grasp.Agent.get(name).last_result
+    assert argv =~ "Bash(mix:*)"
+    assert argv =~ "You may edit files under the project root"
+
+    :ok = Grasp.Agent.reset(name)
+    assert_receive {:agent, ^name, %{last_result: nil, mode: "edit"}}
+  end
+
+  test "a read-mode run is given no tool that writes", %{name: name} do
+    :ok = Grasp.Agent.send_prompt(name, "show me greet")
+    assert_receive {:agent, ^name, %{running?: false}}, 2_000
+
+    argv = Grasp.Agent.get(name).last_result
+    assert argv =~ "--allowedTools mcp__grasp,Read,Grep,Glob "
+    refute argv =~ "Bash"
+  end
+
   test "a prompt sent while a run is live is refused", %{name: name} do
     :ok = Grasp.Agent.send_prompt(name, "SLOW one")
     assert {:error, :running} = Grasp.Agent.send_prompt(name, "two")
