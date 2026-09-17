@@ -53,3 +53,19 @@ Session.shift_group(name, group_id, {dx, dy}) :: Forest.t()
 - **Docs.** README §Gestures: "Ctrl+drag a frame's title to move the whole group". Spec §Layout: one sentence after the per-card offset paragraph.
 - **Tests.** Forest: `shift_group` adds to each member and leaves other cards; unknown group no-op. LiveView: two grouped cards, `move_group` with `dx: 40, dy: -10` → both cards' `data-dx`/`data-dy` shift by that; a card outside the group is unchanged; garbage params are a no-op.
 - Gates; commit `Ctrl+drag on a frame title moves the whole group`.
+
+---
+
+### Task 3: Toolbar tooltips with shortcuts
+
+**Files:** modify `grasp/lib/grasp_web/live/review_live.ex` (toolbar markup), `grasp/assets/css/app.css`, `grasp/assets/js/hooks/keys.js` (`f` for fit), `grasp/assets/js/hooks/canvas.js` (listen for `grasp:zoom-fit`), README §Gestures; tests `review_live_test.exs`.
+
+**Requirements:**
+
+- **Markup.** Every toolbar button and the zoom readout carries `data-tip="<label>"` and, where a shortcut exists, `data-key="<keys>"`; the `title` attributes go (two tooltips would show). Labels and keys: sidebar → `Sidebar`, `⌘M`; `−` → `Zoom out`, `⌘ wheel`; readout → `Reset zoom`, `⌘0`; `+` → `Zoom in`, `⌘ wheel`; fit → `Fit all cards`, `F`; signatures → `Signatures instead of code`, `S`; reset layout → `Reset layout` (no key); ask → `Ask the agent`, `⌘I`. The signature button keeps `aria-pressed` and `phx-update="ignore"` (put `data-tip`/`data-key` on it in the template; the hook never touches them).
+- **CSS.** A pure-CSS tooltip above the button, no delay: `.toolbar [data-tip] { position: relative; }`, `.toolbar [data-tip]:hover::after, .toolbar [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; inset-block-end: calc(100% + var(--space-s)); inset-inline-start: 50%; translate: -50% 0; white-space: nowrap; padding: var(--space-xs) var(--space-s); border-radius: 4px; background: var(--fg); color: var(--bg); font-size: 12px; pointer-events: none; z-index: 4; }` and for the key: `.toolbar [data-tip][data-key]:hover::after { content: attr(data-tip) "  " attr(data-key); }` — the key rendered inside the same bubble in a lighter colour is not possible with one pseudo-element, so use `::before` for the key: `.toolbar [data-key]:hover::before { content: attr(data-key); ... }` positioned to the right of `::after`? Simpler and robust: one `::after` with `content: attr(data-tip) "\00a0\00a0" attr(data-key)` and no separate styling for the key; accept that. The bubble must not be clipped by `.canvas { overflow: hidden }` — the toolbar sits at the bottom, so the bubble opens upward inside the canvas; fine.
+- **Keys.** `keys.js`: bare `f` dispatches `grasp:zoom-fit`; `canvas.js` listens and calls `fit()` (remove in `destroyed()`). Update the `#zoom-fit` handling to share the same path.
+- **README §Gestures.** `f` fits; tooltips mention.
+- **Tests (LiveView).** Every toolbar control has `data-tip`; `#zoom-fit[data-key="F"]`, `#toggle-signatures[data-key="S"]`, `#toggle-chat[data-key="⌘I"]`; no `title` left on toolbar buttons.
+- Gates; commit `Toolbar tooltips name the tool and its shortcut`.
+- **Also, from the Task 1 review (canvas.js):** set `this.drawnScale = this.view.scale` before the first `applyView()` in `mounted()` so the first draw is not doubled; `draw()` must record `drawnScale` only after `drawFrames` actually drew (not on the missing-layer early return); `fit()` fits in two passes again — a frame header's stage-unit height is `~30 / scale`, so the scale the first pass picks re-lays-out what it measured; the second pass measures at that scale and corrects (a comment states the reason); the `fit()` doc comment no longer promises a return value nobody reads.
