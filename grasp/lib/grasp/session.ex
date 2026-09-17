@@ -6,13 +6,32 @@ defmodule Grasp.Session do
   here rather than in a LiveView. Every mutation broadcasts `{:session, name, forest}` on
   the `"session:<name>"` topic; subscribers re-render from the forest they receive.
   Sessions are started on demand under `Grasp.SessionSupervisor` and found through
-  `Grasp.SessionRegistry`, and they are held in memory only: a session is gone when the
-  viewer stops.
+  `Grasp.SessionRegistry`.
+
+  ## Persistence
+
+  A session outlives the process that draws it: `Grasp.Session.Disk` holds its file, `init/1`
+  reads it back, and every mutation schedules a write. The writes are coalesced — one timer
+  at a time, and a mutation arriving while it runs does not push it further out — so a drag
+  that moves a card sixty times a second lands on disk about every 150 ms rather than sixty
+  times, and the last of them is written when the session stops. A file that cannot be
+  decoded is moved aside by the disk module and the session starts empty rather than
+  failing to start.
+
+  Cards are pruned against the index when the session loads, so a card whose function left
+  the index between one run and the next never reaches the canvas. A reload of the index
+  while the session runs does not prune it: the card stays, showing what the reader was
+  looking at, until the next restart reads the file back.
   """
 
   use GenServer
 
+  require Logger
+
+  alias Grasp.Session.Disk
   alias Grasp.Session.Forest
+
+  @flush_ms 150
 
   @type name :: String.t()
 
@@ -167,16 +186,55 @@ defmodule Grasp.Session do
   def set_highlight(name, card_id, highlight),
     do: mutate(name, &Forest.set_highlight(&1, card_id, highlight))
 
-  @doc "Names of the sessions currently running, sorted."
+  @doc """
+  Deletes the session `name`: its cards are forgotten and its file is removed.
+
+  `{:session_deleted, name}` is broadcast on the session's topic before the process stops,
+  so a tab showing it leaves for another session while this one is still there to answer.
+  The default session may be deleted like any other — deleting it clears the canvas rather
+  than taking it away, since the next visit to `/` starts it again, empty.
+  """
+  @spec delete(name()) :: :ok
+  def delete(name) do
+    Phoenix.PubSub.broadcast(Grasp.PubSub, topic(name), {:session_deleted, name})
+    stop(name)
+    Disk.delete(name)
+  end
+
+  @doc """
+  Names of the sessions the viewer knows, running and saved alike, sorted.
+
+  A saved session is one with a file and no process, which is every session after a
+  restart, so a name here is a name `ensure/1` brings back with its cards.
+  """
   @spec list() :: [String.t()]
   def list do
-    Grasp.SessionRegistry
-    |> Registry.select([{{:"$1", :_, :_}, [], [:"$1"]}])
-    |> Enum.sort()
+    running = Registry.select(Grasp.SessionRegistry, [{{:"$1", :_, :_}, [], [:"$1"]}])
+
+    (running ++ Disk.saved()) |> Enum.uniq() |> Enum.sort()
   end
 
   @impl true
-  def init(name), do: {:ok, %{name: name, forest: Forest.new()}}
+  def init(name) do
+    # Without this a supervisor's shutdown kills the process outright and `terminate/2`
+    # never runs, losing whatever mutation the debounce timer was still holding.
+    Process.flag(:trap_exit, true)
+
+    forest =
+      case Disk.read(name, Grasp.IndexStore.get()) do
+        {:ok, forest} ->
+          forest
+
+        :empty ->
+          Forest.new()
+
+        {:error, reason} ->
+          Logger.warning("grasp: could not read the session #{name}: #{inspect(reason)}")
+          Forest.new()
+      end
+
+    {:ok, %{name: name, forest: forest, dirty: false, timer: nil}}
+  end
 
   @impl true
   def handle_call(:get, _from, state), do: {:reply, state.forest, state}
@@ -189,18 +247,57 @@ defmodule Grasp.Session do
       end
 
     broadcast(state.name, forest)
-    {:reply, forest, %{state | forest: forest}}
+    {:reply, forest, schedule_write(%{state | forest: forest})}
   end
 
   def handle_call({:replace, specs}, _from, state) do
     case Forest.replace(specs) do
       {:ok, forest} ->
         broadcast(state.name, forest)
-        {:reply, {:ok, forest}, %{state | forest: forest}}
+        {:reply, {:ok, forest}, schedule_write(%{state | forest: forest})}
 
       {:error, _reason} = error ->
         {:reply, error, state}
     end
+  end
+
+  @impl true
+  def handle_info(:flush, state), do: {:noreply, %{flush(state) | timer: nil}}
+
+  def handle_info(_message, state), do: {:noreply, state}
+
+  @impl true
+  def terminate(_reason, state) do
+    flush(state)
+    :ok
+  end
+
+  # One timer per burst: a mutation arriving while one is pending rides on it rather than
+  # pushing it further out, so a stream of moves is written at a steady rate instead of
+  # waiting for the reviewer to stop moving.
+  defp schedule_write(%{timer: nil} = state),
+    do: %{state | dirty: true, timer: Process.send_after(self(), :flush, @flush_ms)}
+
+  defp schedule_write(state), do: %{state | dirty: true}
+
+  defp flush(%{dirty: false} = state), do: state
+
+  defp flush(state) do
+    case Disk.write(state.name, state.forest) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("grasp: could not write the session #{state.name}: #{inspect(reason)}")
+    end
+
+    %{state | dirty: false}
+  end
+
+  defp stop(name) do
+    GenServer.stop(via(name))
+  catch
+    :exit, _not_running -> :ok
   end
 
   defp broadcast(name, forest),

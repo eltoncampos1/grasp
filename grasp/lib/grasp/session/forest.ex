@@ -57,6 +57,14 @@ defmodule Grasp.Session.Forest do
   sources; `close_chain/2` is the sweeping version, taking with it everything that had no
   other way to be reached. A card that can reach the closed one is an ancestor rather than
   something it reached, and stays even when a cycle puts it downstream as well.
+
+  ## Two map shapes
+
+  `to_map/1` is what a client is shown: derived fields — callers, callees, columns,
+  sections — and only what is visible. `dump/1` is what a file holds: the struct itself,
+  hidden cards and counters included, and nothing that can be recomputed, so `load/2`
+  rebuilds the same graph from it. They are read by different callers and neither is built
+  from the other.
   """
 
   defstruct cards: %{},
@@ -716,6 +724,249 @@ defmodule Grasp.Session.Forest do
         Enum.map(sections, &%{"group" => &1.group && &1.group.id, "columns" => &1.columns}),
       "columns" => Enum.flat_map(sections, & &1.columns)
     }
+  end
+
+  @doc """
+  The whole graph as plain maps with string keys, the shape a session file holds.
+
+  Every field of the struct is written, hidden cards and the id, colour and group counters
+  included, so `load/2` returns the graph as it stands and a card id an agent is holding
+  still names the same card after a restart. `offset` is written as `[dx, dy]`, and `view`
+  and `context` as their names. Cards and groups read in id order and edges in the order
+  they were opened, which is the order `callers/2` and `callees/2` report them in.
+  """
+  @spec dump(t()) :: map()
+  def dump(%__MODULE__{} = forest) do
+    cards =
+      forest.cards
+      |> Map.values()
+      |> Enum.sort_by(& &1.id)
+      |> Enum.map(fn card ->
+        {dx, dy} = card.offset
+
+        %{
+          "id" => card.id,
+          "function_id" => card.function_id,
+          "collapsed" => card.collapsed,
+          "offset" => [dx, dy],
+          "highlight" => card.highlight,
+          "view" => Atom.to_string(card.view),
+          "context" => Atom.to_string(card.context),
+          "group" => card.group
+        }
+      end)
+
+    edges =
+      Enum.map(
+        forest.edges,
+        &%{"from" => &1.from, "to" => &1.to, "target" => &1.target, "color" => &1.color}
+      )
+
+    groups =
+      forest.groups
+      |> Map.values()
+      |> Enum.sort_by(& &1.id)
+      |> Enum.map(&%{"id" => &1.id, "title" => &1.title})
+
+    %{
+      "version" => 1,
+      "cards" => cards,
+      "edges" => edges,
+      "groups" => groups,
+      "focus" => forest.focus,
+      "next_id" => forest.next_id,
+      "next_color" => forest.next_color,
+      "next_group" => forest.next_group
+    }
+  end
+
+  @doc """
+  Rebuilds a graph from what `dump/1` wrote, pruning it against `index`.
+
+  `:error` for a document of another version and for one whose fields do not decode: an id
+  that is not a positive integer, a `view` or `context` that names nothing, an `offset` that
+  is not two integers, an edge naming a card the document does not hold, or a group a card
+  claims to belong to and the document does not describe. A half-written file is therefore
+  refused whole rather than drawn in part.
+
+  With an `index`, a card whose `function_id` the index no longer holds is dropped together
+  with the edges touching it, and a group left with no members goes as well, so a file
+  written before a branch changed never draws a card nothing can render. Focus falls back to
+  the lowest surviving card id, and to nil when nothing survives. A nil index prunes
+  nothing, which is what a caller reading a file for its contents rather than for display
+  wants.
+
+  The counters are never lowered: they are taken as dumped, or one past the highest id the
+  document holds when that is higher, so a truncated or hand-edited file cannot hand out an
+  id a card or a group already carries.
+  """
+  @spec load(map(), Grasp.Index.t() | nil) :: {:ok, t()} | :error
+  def load(document, index)
+
+  def load(%{"version" => 1} = document, index) do
+    with {:ok, cards} <- decode_cards(Map.get(document, "cards")),
+         {:ok, groups} <- decode_groups(Map.get(document, "groups")),
+         :ok <- check_memberships(cards, groups),
+         {:ok, edges} <- decode_edges(Map.get(document, "edges"), cards),
+         {:ok, focus} <- decode_focus(Map.get(document, "focus")),
+         {:ok, next_id} <- decode_counter(document, "next_id"),
+         {:ok, next_color} <- decode_counter(document, "next_color"),
+         {:ok, next_group} <- decode_counter(document, "next_group") do
+      forest = %__MODULE__{
+        cards: cards,
+        edges: edges,
+        groups: groups,
+        focus: focus,
+        next_id: counter(next_id, Map.keys(cards)),
+        next_color: rem(next_color, @palette_size),
+        next_group: counter(next_group, Map.keys(groups))
+      }
+
+      {:ok, forest |> prune(index) |> refocus()}
+    else
+      _undecodable -> :error
+    end
+  end
+
+  def load(_document, _index), do: :error
+
+  defp decode_cards(cards) when is_list(cards) do
+    Enum.reduce_while(cards, {:ok, %{}}, fn card, {:ok, decoded} ->
+      case decode_card(card) do
+        {:ok, card} -> {:cont, {:ok, Map.put(decoded, card.id, card)}}
+        :error -> {:halt, :error}
+      end
+    end)
+  end
+
+  defp decode_cards(_cards), do: :error
+
+  defp decode_card(
+         %{
+           "id" => id,
+           "function_id" => function_id,
+           "collapsed" => collapsed,
+           "offset" => [dx, dy],
+           "view" => view,
+           "context" => context
+         } = card
+       )
+       when is_integer(id) and id > 0 and is_binary(function_id) and is_boolean(collapsed) and
+              is_integer(dx) and is_integer(dy) do
+    highlight = Map.get(card, "highlight")
+    group = Map.get(card, "group")
+
+    with {:ok, view} <- decode_name(view, [:auto, :source, :diff]),
+         {:ok, context} <- decode_name(context, [:auto, :hunks, :full]),
+         true <- is_nil(highlight) or is_map(highlight),
+         true <- is_nil(group) or (is_integer(group) and group > 0) do
+      {:ok,
+       %{
+         id: id,
+         function_id: function_id,
+         collapsed: collapsed,
+         offset: {dx, dy},
+         highlight: highlight,
+         view: view,
+         context: context,
+         group: group
+       }}
+    else
+      _malformed -> :error
+    end
+  end
+
+  defp decode_card(_card), do: :error
+
+  # The names are matched against the atoms the struct already holds, so a document naming
+  # something else is refused rather than turned into an atom the graph has no meaning for.
+  defp decode_name(name, allowed) when is_binary(name) do
+    case Enum.find(allowed, &(Atom.to_string(&1) == name)) do
+      nil -> :error
+      found -> {:ok, found}
+    end
+  end
+
+  defp decode_name(_name, _allowed), do: :error
+
+  defp decode_groups(groups) when is_list(groups) do
+    Enum.reduce_while(groups, {:ok, %{}}, fn group, {:ok, decoded} ->
+      case group do
+        %{"id" => id, "title" => title}
+        when is_integer(id) and id > 0 and (is_nil(title) or is_binary(title)) ->
+          {:cont, {:ok, Map.put(decoded, id, %{id: id, title: title})}}
+
+        _malformed ->
+          {:halt, :error}
+      end
+    end)
+  end
+
+  defp decode_groups(_groups), do: :error
+
+  defp check_memberships(cards, groups) do
+    if Enum.all?(cards, fn {_id, card} -> is_nil(card.group) or is_map_key(groups, card.group) end),
+       do: :ok,
+       else: :error
+  end
+
+  defp decode_edges(edges, cards) when is_list(edges) do
+    Enum.reduce_while(edges, {:ok, []}, fn edge, {:ok, decoded} ->
+      case edge do
+        %{"from" => from, "to" => to, "target" => target, "color" => color}
+        when is_binary(target) and is_integer(color) and color >= 0 ->
+          if is_map_key(cards, from) and is_map_key(cards, to) do
+            edge = %{from: from, to: to, target: target, color: rem(color, @palette_size)}
+            {:cont, {:ok, [edge | decoded]}}
+          else
+            {:halt, :error}
+          end
+
+        _malformed ->
+          {:halt, :error}
+      end
+    end)
+    |> case do
+      {:ok, decoded} -> {:ok, Enum.reverse(decoded)}
+      :error -> :error
+    end
+  end
+
+  defp decode_edges(_edges, _cards), do: :error
+
+  defp decode_focus(nil), do: {:ok, nil}
+  defp decode_focus(focus) when is_integer(focus) and focus > 0, do: {:ok, focus}
+  defp decode_focus(_focus), do: :error
+
+  defp decode_counter(document, key) do
+    case Map.get(document, key) do
+      value when is_integer(value) and value >= 0 -> {:ok, value}
+      _malformed -> :error
+    end
+  end
+
+  defp counter(dumped, ids), do: Enum.reduce(ids, max(dumped, 1), &max(&2, &1 + 1))
+
+  defp prune(forest, nil), do: forest
+
+  defp prune(forest, %Grasp.Index{} = index) do
+    gone =
+      for {id, card} <- forest.cards,
+          Grasp.Index.fetch_function(index, card.function_id) == :error,
+          do: id
+
+    drop(forest, gone)
+  end
+
+  defp refocus(forest) do
+    if is_map_key(forest.cards, forest.focus) do
+      forest
+    else
+      case Map.keys(forest.cards) do
+        [] -> %{forest | focus: nil}
+        ids -> %{forest | focus: Enum.min(ids)}
+      end
+    end
   end
 
   # The column algorithm over `ids` alone: a card is a source when no caller of it is in

@@ -782,6 +782,59 @@ defmodule Grasp.Session.ForestTest do
     end
   end
 
+  describe "dump/1 and load/2" do
+    @fixture Path.expand("../../fixtures/index.json", __DIR__)
+
+    test "a forest comes back whole from the document it was dumped to" do
+      {forest, greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+      {forest, wrap} = Forest.open_child(forest, greeter, "SampleApp.Formatter.wrap/1")
+      {forest, _group} = Forest.new_group(forest, "Greeting", [greeter, wrap])
+
+      forest =
+        forest
+        |> Forest.move(wrap, {40, -12})
+        |> Forest.set_highlight(greeter, %{"call" => "SampleApp.Formatter.wrap/1"})
+        |> Forest.set_view(greeter, :diff)
+        |> Forest.set_context(greeter, :hunks)
+
+      document = forest |> Forest.dump() |> Jason.encode!() |> Jason.decode!()
+
+      assert {:ok, loaded} = Forest.load(document, nil)
+      assert loaded == forest
+
+      assert {loaded.next_id, loaded.next_color, loaded.next_group} ==
+               {forest.next_id, forest.next_color, forest.next_group}
+    end
+
+    test "a card whose function left the index goes, with its edge and its group" do
+      {forest, greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+      {forest, gone} = Forest.open_child(forest, greeter, "Gone.away/0")
+      {forest, _group} = Forest.new_group(forest, "Gone", [gone])
+      {:ok, index} = Grasp.Index.load(@fixture)
+
+      assert forest.focus == gone
+
+      assert {:ok, loaded} = Forest.load(Forest.dump(forest), index)
+      assert Map.keys(loaded.cards) == [greeter]
+      assert loaded.edges == []
+      assert loaded.groups == %{}
+      assert loaded.focus == greeter
+      assert loaded.next_id == forest.next_id
+    end
+
+    test "a document of another version is refused" do
+      assert Forest.load(%{Forest.dump(Forest.new()) | "version" => 2}, nil) == :error
+    end
+
+    test "a card whose view names nothing is refused" do
+      {forest, _greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+      document = Forest.dump(forest)
+      cards = Enum.map(document["cards"], &Map.put(&1, "view", "sideways"))
+
+      assert Forest.load(%{document | "cards" => cards}, nil) == :error
+    end
+  end
+
   # A `replace/1` entry with nothing to say about call targets or highlights.
   defp spec(key, function_id, parent_key, group) do
     %{

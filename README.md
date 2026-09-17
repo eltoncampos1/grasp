@@ -203,7 +203,7 @@ Reading the code:
   Oban workers, each with the function it dispatches to.
 - `list_modules(query?, limit)` — modules with their file and the behaviours they
   implement.
-- `list_sessions()` — the review sessions the viewer is running.
+- `list_sessions()` — the review sessions the viewer is running or has saved.
 - `list_changes()` — every function the branch added, modified or removed, with the base
   ref it was compared against. The first call of a pull-request review: each id it returns
   can be traced to its entry points with `find_paths`.

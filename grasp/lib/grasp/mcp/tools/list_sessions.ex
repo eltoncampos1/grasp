@@ -1,5 +1,5 @@
 defmodule Grasp.MCP.Tools.ListSessions do
-  @moduledoc "List the review sessions currently running in the viewer, by name."
+  @moduledoc "List the review sessions the viewer is running or has saved, by name."
 
   use Anubis.Server.Component, type: :tool
 

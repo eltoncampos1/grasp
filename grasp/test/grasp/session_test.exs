@@ -1,7 +1,10 @@
 defmodule Grasp.SessionTest do
-  use ExUnit.Case, async: true
+  # The persistence tests replace the application-wide sessions directory, so this module
+  # runs alone.
+  use ExUnit.Case, async: false
 
   alias Grasp.Session
+  alias Grasp.Session.Disk
   alias Grasp.Session.Forest
 
   setup do
@@ -213,5 +216,91 @@ defmodule Grasp.SessionTest do
 
   test "list/0 names the running sessions", %{name: name} do
     assert name in Session.list()
+  end
+
+  describe "persistence" do
+    @describetag :tmp_dir
+
+    setup %{tmp_dir: tmp_dir} do
+      previous = Application.get_env(:grasp, :sessions_dir)
+      Application.put_env(:grasp, :sessions_dir, tmp_dir)
+      on_exit(fn -> Application.put_env(:grasp, :sessions_dir, previous) end)
+
+      :ok
+    end
+
+    test "a session that stopped comes back with the cards it had", %{tmp_dir: tmp_dir} do
+      name = "disk-#{System.unique_integer([:positive])}"
+      :ok = Session.ensure(name)
+      card = Session.open_root(name, "SampleApp.Greeter.greet/2").focus
+
+      assert wait_for_file(Path.join(tmp_dir, name <> ".json"))
+
+      [{pid, _registered}] = Registry.lookup(Grasp.SessionRegistry, name)
+      :ok = GenServer.stop(pid)
+      :ok = Session.ensure(name)
+
+      reloaded = Session.get(name)
+
+      assert Forest.card(reloaded, card).function_id == "SampleApp.Greeter.greet/2"
+      assert reloaded.focus == card
+    end
+
+    test "list/0 names a saved session no process is running" do
+      name = "saved-#{System.unique_integer([:positive])}"
+      {forest, _card} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+      :ok = Disk.write(name, forest)
+
+      assert Registry.lookup(Grasp.SessionRegistry, name) == []
+      assert name in Session.list()
+    end
+
+    test "delete/1 tells the subscribers, stops the session and removes its file", %{
+      tmp_dir: tmp_dir
+    } do
+      name = "gone-#{System.unique_integer([:positive])}"
+      :ok = Session.ensure(name)
+      :ok = Session.subscribe(name)
+      Session.open_root(name, "SampleApp.Greeter.greet/2")
+      path = Path.join(tmp_dir, name <> ".json")
+
+      assert wait_for_file(path)
+      assert Session.delete(name) == :ok
+      assert_receive {:session_deleted, ^name}
+
+      refute File.exists?(path)
+      assert Registry.lookup(Grasp.SessionRegistry, name) == []
+      refute name in Session.list()
+    end
+
+    test "two mutations in one burst are written once", %{tmp_dir: tmp_dir} do
+      name = "burst-#{System.unique_integer([:positive])}"
+      :ok = Session.ensure(name)
+      path = Path.join(tmp_dir, name <> ".json")
+
+      card = Session.open_root(name, "SampleApp.Greeter.greet/2").focus
+      Session.move(name, card, {10, 10})
+
+      refute File.exists?(path)
+      assert wait_for_file(path)
+
+      assert {:ok, written} = Disk.read(name, nil)
+      assert Forest.card(written, card).offset == {10, 10}
+    end
+  end
+
+  # A write is debounced, so the file appears a moment after the mutation that asks for it.
+  defp wait_for_file(path, attempts \\ 100) do
+    cond do
+      File.exists?(path) ->
+        true
+
+      attempts == 0 ->
+        false
+
+      true ->
+        Process.sleep(10)
+        wait_for_file(path, attempts - 1)
+    end
   end
 end
