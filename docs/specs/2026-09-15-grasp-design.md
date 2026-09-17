@@ -306,14 +306,18 @@ writes what is pending. The file is `{"version": 1, "cards", "edges", "groups", 
 an agent holding a card id keeps a valid one. A session loads from its file when it
 starts: a card whose function is no longer in the index is dropped with its edges, and a
 group left empty by that goes too, so a stale file never draws a card nothing can render.
+A session keeps the directory it resolved at startup and writes nowhere else, so one that
+started before the index was loaded — with nowhere to write, and nothing read — stays in
+memory rather than writing over a file it has never seen.
 A file that does not decode is moved aside as `<name>.json.corrupt` and the session starts
 empty; a `version` the viewer does not know is treated the same way. When the root the
 index names is not a directory on this machine sessions live in memory only, as comments
 do; `:grasp, :sessions_dir` overrides the directory (tests write to a temporary one).
 `Grasp.Session.list/0` names the sessions running and the sessions saved, so a saved
 session is reachable by name after a restart and `list_sessions` sees it.
-`Grasp.Session.delete/1` stops a running session and removes its file; a tab showing it
-is sent to the default session.
+`Grasp.Session.delete/1` stops a running session, removes its file and ends the agent
+conversation held under that name, since a session opened under it afterwards is a new one;
+a tab showing it is sent to the default session.
 
 ### Card graph
 
@@ -521,8 +525,8 @@ The sidebar's header names the session and opens a menu of the sessions the view
 running or saved, each a link to `/s/<name>` (`default` to `/`), a field that creates a
 session by name (Enter navigates to it; a name is letters, digits, `-` and `_`, up to 40
 of them, and a taken name simply opens that session), and a delete control on every
-session but the one shown. Deleting removes the file and stops the session; any tab on it
-is sent to the default session.
+session but the one shown. Deleting removes the file, stops the session and ends its agent
+conversation; any tab on it is sent to the default session.
 
 ### Card
 

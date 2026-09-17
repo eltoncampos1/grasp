@@ -476,6 +476,17 @@ defmodule Grasp.MCP.SessionToolsTest do
   end
 
   describe "session names" do
+    test "a call naming no cards is an error, whatever the session" do
+      name = "empty-#{System.unique_integer([:positive])}"
+
+      for tool <- [Tools.GroupCards, Tools.UngroupCards] do
+        response = run(tool, %{session: name, card_ids: []})
+
+        assert response.isError
+        assert [%{"text" => "card_ids must name at least one card"}] = response.content
+      end
+    end
+
     test "a name no session file could carry is refused rather than started" do
       response = run(Tools.GetSession, %{session: "PR 123"})
 
@@ -493,8 +504,10 @@ defmodule Grasp.MCP.SessionToolsTest do
       # Anubis leaves a field's default out of the JSON schema, so the description carries it
       assert Tools.SetCards.input_schema()["properties"]["session"]["description"] =~ "default"
 
+      # One rule, in the schema a client reads and in the error a refused name is answered
+      # with.
       assert Tools.SetCards.input_schema()["properties"]["session"]["description"] =~
-               "up to 40 of them"
+               Grasp.Session.Disk.name_rule()
 
       assert Tools.SetCards.input_schema()["required"] == ["cards"]
       assert "function_id" in Tools.OpenCard.input_schema()["required"]

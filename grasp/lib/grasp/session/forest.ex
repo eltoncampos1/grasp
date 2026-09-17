@@ -837,12 +837,14 @@ defmodule Grasp.Session.Forest do
   def load(_document, _index), do: :error
 
   defp decode_cards(cards) when is_list(cards) do
-    Enum.reduce_while(cards, {:ok, %{}}, fn card, {:ok, decoded} ->
+    cards
+    |> Enum.reduce_while({:ok, %{}}, fn card, {:ok, decoded} ->
       case decode_card(card) do
         {:ok, card} -> {:cont, {:ok, Map.put(decoded, card.id, card)}}
         :error -> {:halt, :error}
       end
     end)
+    |> unrepeated(length(cards))
   end
 
   defp decode_cards(_cards), do: :error
@@ -911,7 +913,8 @@ defmodule Grasp.Session.Forest do
   defp decode_highlight(_highlight), do: :error
 
   defp decode_groups(groups) when is_list(groups) do
-    Enum.reduce_while(groups, {:ok, %{}}, fn group, {:ok, decoded} ->
+    groups
+    |> Enum.reduce_while({:ok, %{}}, fn group, {:ok, decoded} ->
       case group do
         %{"id" => id, "title" => title}
         when is_integer(id) and id > 0 and (is_nil(title) or is_binary(title)) ->
@@ -921,9 +924,15 @@ defmodule Grasp.Session.Forest do
           {:halt, :error}
       end
     end)
+    |> unrepeated(length(groups))
   end
 
   defp decode_groups(_groups), do: :error
+
+  # Two entries under one id describe two different graphs, and nothing says which was
+  # meant, so the document is refused rather than one of them quietly winning.
+  defp unrepeated({:ok, decoded}, entries) when map_size(decoded) == entries, do: {:ok, decoded}
+  defp unrepeated(_decoded_or_error, _entries), do: :error
 
   defp check_memberships(cards, groups) do
     if Enum.all?(cards, fn {_id, card} -> is_nil(card.group) or is_map_key(groups, card.group) end),
@@ -939,12 +948,18 @@ defmodule Grasp.Session.Forest do
       end
     end)
     |> case do
-      {:ok, decoded} -> {:ok, Enum.reverse(decoded)}
+      {:ok, decoded} -> unpaired(Enum.reverse(decoded))
       :error -> :error
     end
   end
 
   defp decode_edges(_edges, _cards), do: :error
+
+  # At most one edge runs from one card to another, so a document holding two of them is one
+  # `dump/1` never wrote.
+  defp unpaired(edges) do
+    if Enum.uniq_by(edges, &{&1.from, &1.to}) == edges, do: {:ok, edges}, else: :error
+  end
 
   defp decode_edge(%{"from" => from, "to" => to, "target" => target, "color" => color}, cards)
        when is_binary(target) do

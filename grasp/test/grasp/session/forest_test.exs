@@ -863,6 +863,19 @@ defmodule Grasp.Session.ForestTest do
       assert Forest.load(%{document | "edges" => edges}, nil) == :error
     end
 
+    test "a document naming one id twice is refused" do
+      {forest, greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+      {forest, _wrap} = Forest.open_child(forest, greeter, "SampleApp.Formatter.wrap/1")
+      {forest, _group} = Forest.new_group(forest, "Greeting", [greeter])
+      document = Forest.dump(forest)
+
+      twice = fn key -> %{document | key => document[key] ++ [List.first(document[key])]} end
+
+      assert Forest.load(twice.("cards"), nil) == :error
+      assert Forest.load(twice.("groups"), nil) == :error
+      assert Forest.load(twice.("edges"), nil) == :error
+    end
+
     test "a document of another version is refused" do
       assert Forest.load(%{Forest.dump(Forest.new()) | "version" => 2}, nil) == :error
     end

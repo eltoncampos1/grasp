@@ -147,8 +147,8 @@ restarting the viewer on the same project — finds the cards where they were.
 
 The sidebar's header names the session being read and opens the menu of every session the
 viewer is running or has saved. A row there goes to that canvas, the × beside it forgets the
-session and deletes its file, and the field under the list opens a session by name, existing
-or new. Session names are letters, digits, `-` and `_`, up to 40 characters. Deleting the
+session — its file and the agent conversation held under its name go with it — and the field
+under the list opens a session by name, existing or new. Session names are letters, digits, `-` and `_`, up to 40 characters. Deleting the
 session a tab is reading sends that tab to the default canvas; deleting `default` itself
 clears it rather than taking it away, since the next visit starts it again, empty.
 

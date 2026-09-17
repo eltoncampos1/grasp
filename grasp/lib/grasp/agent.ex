@@ -94,4 +94,20 @@ defmodule Grasp.Agent do
   @doc "Ends a live run and clears the transcript, the log and the CLI session id."
   @spec reset(name()) :: :ok
   def reset(name), do: GenServer.call(Runner.via(name), :reset)
+
+  @doc """
+  Stops the conversation named `name` and forgets it; a name nothing is running under is
+  already forgotten.
+
+  A conversation belongs to the session it was held in, so deleting that session ends this
+  too: a session opened under the same name later is a new one, and rejoining the transcript
+  of the session it replaced would have the agent answer questions nobody in this session
+  asked. A live run is killed with it, as `stop/1` kills one.
+  """
+  @spec forget(name()) :: :ok
+  def forget(name) do
+    GenServer.stop(Runner.via(name))
+  catch
+    :exit, _not_running -> :ok
+  end
 end

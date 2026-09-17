@@ -26,7 +26,12 @@ defmodule Grasp.Session do
   A session writes only when it knows what its file holds. One whose file could not be read,
   or could not be moved aside after failing to decode, runs in memory for the rest of its
   life: the arrangement on disk is the reviewer's only copy, and overwriting it with an
-  empty canvas would be the one loss the restart was meant to prevent.
+  empty canvas would be the one loss the restart was meant to prevent. A session that
+  started when there was no directory at all — no index loaded yet, or a project root that
+  is not on this machine — is in the same position: it read nothing, and a directory
+  appearing afterwards would hold a file it has never seen. It keeps the directory it
+  resolved at startup, so a later one is never written to either; opening the session again
+  once the index is there reads the file and writes from then on.
 
   The process links to nothing and subscribes to nothing: the only message it handles is its
   own `:flush` timer, and it traps exits solely so its supervisor's shutdown reaches
@@ -56,12 +61,19 @@ defmodule Grasp.Session do
   @spec flush_ms() :: pos_integer()
   def flush_ms, do: @flush_ms
 
-  @doc "Starts the session named `name` if it is not running."
+  @doc """
+  Starts the session named `name` if it is not running.
+
+  A session that has just stopped holds its name until the registry handles the monitor
+  message behind it, so a start in that window is refused in favour of a process that is
+  already gone. The name is waited out and the session started again, which is why an
+  `ensure/1` right after a `stop` answers with a session the caller can call.
+  """
   @spec ensure(name()) :: :ok
   def ensure(name) do
     case DynamicSupervisor.start_child(Grasp.SessionSupervisor, {__MODULE__, name}) do
       {:ok, _pid} -> :ok
-      {:error, {:already_started, _pid}} -> :ok
+      {:error, {:already_started, pid}} -> ensure_alive(name, pid)
     end
   end
 
@@ -214,6 +226,9 @@ defmodule Grasp.Session do
   out on the session's topic while the process is still there to answer a tab that has not
   finished leaving. The broadcast is asynchronous, so a subscriber may well read it after
   the session has gone; it says what happened, not when.
+  The conversation the agent held under that name goes with the cards: a session opened
+  under the name afterwards is a new one, and rejoining the transcript of the session it
+  replaced would put words in its mouth.
   The default session may be deleted like any other — deleting it clears the canvas rather
   than taking it away, since the next visit to `/` starts it again, empty.
 
@@ -225,6 +240,7 @@ defmodule Grasp.Session do
   def delete(name) do
     Phoenix.PubSub.broadcast(Grasp.PubSub, topic(name), {:session_deleted, name})
     stop(name)
+    Grasp.Agent.forget(name)
     Disk.delete(name)
   end
 
@@ -247,8 +263,13 @@ defmodule Grasp.Session do
     # never runs, losing whatever mutation the debounce timer was still holding.
     Process.flag(:trap_exit, true)
 
-    {forest, writable} =
-      case Disk.read(name, Grasp.IndexStore.get()) do
+    # Resolved once and held: `Disk.dir/0` answers nil until the index is loaded and names a
+    # directory afterwards, and a session that read nothing must not write to a directory
+    # that turned up later.
+    dir = Disk.dir()
+
+    {forest, understood} =
+      case Disk.read(name, Grasp.IndexStore.get(), dir) do
         {:ok, forest} ->
           {forest, true}
 
@@ -267,7 +288,16 @@ defmodule Grasp.Session do
           {Forest.new(), false}
       end
 
-    {:ok, %{name: name, forest: forest, dirty: false, timer: nil, writable: writable}}
+    state = %{
+      name: name,
+      forest: forest,
+      dirty: false,
+      timer: nil,
+      dir: dir,
+      writable: understood and not is_nil(dir)
+    }
+
+    {:ok, state}
   end
 
   @impl true
@@ -323,7 +353,7 @@ defmodule Grasp.Session do
   defp flush(%{dirty: false} = state), do: state
 
   defp flush(state) do
-    case Disk.write(state.name, state.forest) do
+    case Disk.write(state.name, state.forest, state.dir) do
       :ok ->
         %{state | dirty: false}
 
@@ -332,6 +362,22 @@ defmodule Grasp.Session do
       {:error, reason} ->
         Logger.warning("grasp: could not write the session #{state.name}: #{inspect(reason)}")
         state
+    end
+  end
+
+  defp ensure_alive(name, pid) do
+    if Process.alive?(pid) do
+      :ok
+    else
+      await_unregistered(name, 0)
+      start(name)
+    end
+  end
+
+  defp start(name) do
+    case DynamicSupervisor.start_child(Grasp.SessionSupervisor, {__MODULE__, name}) do
+      {:ok, _pid} -> :ok
+      {:error, {:already_started, _pid}} -> :ok
     end
   end
 

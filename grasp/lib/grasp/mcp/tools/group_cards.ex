@@ -18,12 +18,12 @@ defmodule Grasp.MCP.Tools.GroupCards do
   alias Grasp.Session
   alias Grasp.Session.Forest
 
+  @session_field Tools.session_field_description()
+
   schema do
     field(:session, :string,
       default: "default",
-      description:
-        "The review session to act on — letters, digits, `-` and `_`, up to 40 of them; " <>
-          "default `default`, which the page at `/` shows"
+      description: @session_field
     )
 
     field(:title, :string,
@@ -39,6 +39,9 @@ defmodule Grasp.MCP.Tools.GroupCards do
   end
 
   @impl true
+  def execute(%{card_ids: []}, frame),
+    do: Tools.error(frame, "card_ids must name at least one card")
+
   def execute(%{session: session, card_ids: card_ids} = params, frame) do
     case Tools.fetch_cards(session, card_ids) do
       {:ok, _cards} ->

@@ -15,12 +15,12 @@ defmodule Grasp.MCP.Tools.GetSession do
   alias Grasp.Session
   alias Grasp.Session.Forest
 
+  @session_field Tools.session_field_description()
+
   schema do
     field(:session, :string,
       default: "default",
-      description:
-        "The review session to act on — letters, digits, `-` and `_`, up to 40 of them; " <>
-          "default `default`, which the page at `/` shows"
+      description: @session_field
     )
   end
 

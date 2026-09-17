@@ -18,12 +18,12 @@ defmodule Grasp.MCP.Tools.SetView do
   alias Grasp.Session
   alias Grasp.Session.Forest
 
+  @session_field Tools.session_field_description()
+
   schema do
     field(:session, :string,
       default: "default",
-      description:
-        "The review session to act on — letters, digits, `-` and `_`, up to 40 of them; " <>
-          "default `default`, which the page at `/` shows"
+      description: @session_field
     )
 
     field(:card_id, :integer, required: true, description: "Id of the card to swap")

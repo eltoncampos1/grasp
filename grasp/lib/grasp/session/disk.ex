@@ -51,16 +51,18 @@ defmodule Grasp.Session.Disk do
   end
 
   @doc """
-  The file the session `name` is written to.
+  The file the session `name` is written to, under `dir` or under the directory `dir/0`
+  resolves now.
 
   Nil when there is no directory, and nil for a name `valid_name?/1` refuses: the name is
   joined to a directory and read back as a name, so one that could name another file names
-  no file at all.
+  no file at all. A caller that holds a directory passes it rather than letting it be
+  resolved again, since the answer changes as the index loads.
   """
-  @spec path(String.t()) :: Path.t() | nil
-  def path(name) when is_binary(name) do
+  @spec path(String.t(), Path.t() | nil) :: Path.t() | nil
+  def path(name, dir \\ dir()) when is_binary(name) do
     with true <- valid_name?(name),
-         dir when is_binary(dir) <- dir() do
+         dir when is_binary(dir) <- dir do
       Path.join(dir, name <> ".json")
     else
       _no_file -> nil
@@ -77,9 +79,10 @@ defmodule Grasp.Session.Disk do
   `{:error, {:corrupt, path, :not_moved}}` names the file still sitting there, which the
   caller must not write over.
   """
-  @spec read(String.t(), Grasp.Index.t() | nil) :: {:ok, Forest.t()} | :empty | {:error, term()}
-  def read(name, index) when is_binary(name) do
-    case path(name) do
+  @spec read(String.t(), Grasp.Index.t() | nil, Path.t() | nil) ::
+          {:ok, Forest.t()} | :empty | {:error, term()}
+  def read(name, index, dir \\ dir()) when is_binary(name) do
+    case path(name, dir) do
       nil -> :empty
       path -> read_file(path, index)
     end
@@ -88,12 +91,16 @@ defmodule Grasp.Session.Disk do
   @doc """
   Writes `forest` as the session `name`, replacing whatever was there.
 
+  `dir` is the directory the caller means, defaulting to the one `dir/0` resolves now; a
+  session passes the directory it read from, so a directory that appears under a running
+  viewer cannot make it write over a file it never read.
+
   `:ok` when there is no file to write: a viewer with nowhere to write is not a viewer that
   fails to draw.
   """
-  @spec write(String.t(), Forest.t()) :: :ok | {:error, term()}
-  def write(name, %Forest{} = forest) when is_binary(name) do
-    with path when is_binary(path) <- path(name),
+  @spec write(String.t(), Forest.t(), Path.t() | nil) :: :ok | {:error, term()}
+  def write(name, %Forest{} = forest, dir \\ dir()) when is_binary(name) do
+    with path when is_binary(path) <- path(name, dir),
          {:ok, document} <- Jason.encode(Forest.dump(forest), pretty: true) do
       write_file(path, document)
     else
@@ -142,7 +149,7 @@ defmodule Grasp.Session.Disk do
   The name is the file name, so what it may hold is what may safely be joined to the
   sessions directory and read back as a name.
   """
-  @spec valid_name?(String.t()) :: boolean()
+  @spec valid_name?(term()) :: boolean()
   def valid_name?(name) when is_binary(name), do: Regex.match?(@name, name)
   def valid_name?(_name), do: false
 
@@ -214,8 +221,10 @@ defmodule Grasp.Session.Disk do
     end
   end
 
+  # The temporary file carries a number of its own: two viewers over one checkout would
+  # otherwise take turns renaming each other's half-written file over the target.
   defp write_file(path, document) do
-    temp = path <> ".tmp"
+    temp = "#{path}.#{System.unique_integer([:positive])}.tmp"
 
     with :ok <- File.mkdir_p(Path.dirname(path)),
          :ok <- File.write(temp, document),

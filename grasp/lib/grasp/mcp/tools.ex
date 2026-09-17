@@ -16,6 +16,19 @@ defmodule Grasp.MCP.Tools do
   def index(%Grasp.Index{} = index), do: {:ok, index}
 
   @doc """
+  The description every tool's `session` field carries: what the field addresses, and the
+  rule a name has to keep.
+
+  Built from `Grasp.Session.Disk.name_rule/0`, so the schema a client reads and the error a
+  refused name is answered with cannot come to say different things.
+  """
+  @spec session_field_description() :: String.t()
+  def session_field_description do
+    "The review session to act on; #{Disk.name_rule()}. " <>
+      "Default `default`, which the page at `/` shows"
+  end
+
+  @doc """
   Starts the session named `session`, or the tool error a name no session can carry is
   answered with.
 
@@ -63,15 +76,20 @@ defmodule Grasp.MCP.Tools do
   @spec fetch_cards(Session.name(), [Forest.id()]) ::
           {:ok, [Forest.card()]} | {:error, String.t() | Response.t()}
   def fetch_cards(session, card_ids) when is_list(card_ids) do
-    Enum.reduce_while(card_ids, {:ok, []}, fn id, {:ok, cards} ->
-      case fetch_card(session, id) do
-        {:ok, card} -> {:cont, {:ok, [card | cards]}}
-        {:error, _message} = error -> {:halt, error}
+    # The session is started here rather than only inside `fetch_card/2`, which an empty list
+    # never reaches: the tool goes on to call the session either way.
+    with {:ok, session} <- ensure_session(session) do
+      card_ids
+      |> Enum.reduce_while({:ok, []}, fn id, {:ok, cards} ->
+        case fetch_card(session, id) do
+          {:ok, card} -> {:cont, {:ok, [card | cards]}}
+          {:error, _message} = error -> {:halt, error}
+        end
+      end)
+      |> case do
+        {:ok, cards} -> {:ok, Enum.reverse(cards)}
+        {:error, _message} = error -> error
       end
-    end)
-    |> case do
-      {:ok, cards} -> {:ok, Enum.reverse(cards)}
-      {:error, _message} = error -> error
     end
   end
 

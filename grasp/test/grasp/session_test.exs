@@ -11,9 +11,7 @@ defmodule Grasp.SessionTest do
   @drag_ms 600
 
   setup do
-    name = "t-#{System.unique_integer([:positive])}"
-    :ok = Session.ensure(name)
-    %{name: name}
+    %{name: start_session("t-#{System.unique_integer([:positive])}")}
   end
 
   test "ensure/1 is idempotent and get/1 starts empty", %{name: name} do
@@ -233,8 +231,7 @@ defmodule Grasp.SessionTest do
     end
 
     test "a session that stopped comes back with the cards it had", %{tmp_dir: tmp_dir} do
-      name = "disk-#{System.unique_integer([:positive])}"
-      :ok = Session.ensure(name)
+      name = start_session("disk-#{System.unique_integer([:positive])}")
       card = Session.open_root(name, "SampleApp.Greeter.greet/2").focus
 
       assert wait_until(fn -> File.exists?(Path.join(tmp_dir, name <> ".json")) end)
@@ -261,8 +258,7 @@ defmodule Grasp.SessionTest do
     test "delete/1 tells the subscribers, stops the session and removes its file", %{
       tmp_dir: tmp_dir
     } do
-      name = "gone-#{System.unique_integer([:positive])}"
-      :ok = Session.ensure(name)
+      name = start_session("gone-#{System.unique_integer([:positive])}")
       :ok = Session.subscribe(name)
       Session.open_root(name, "SampleApp.Greeter.greet/2")
       path = Path.join(tmp_dir, name <> ".json")
@@ -280,8 +276,7 @@ defmodule Grasp.SessionTest do
     end
 
     test "a drag is coalesced into a write every so often, not one per move", %{tmp_dir: tmp_dir} do
-      name = "burst-#{System.unique_integer([:positive])}"
-      :ok = Session.ensure(name)
+      name = start_session("burst-#{System.unique_integer([:positive])}")
       path = Path.join(tmp_dir, name <> ".json")
       card = Session.open_root(name, "SampleApp.Greeter.greet/2").focus
 
@@ -314,15 +309,58 @@ defmodule Grasp.SessionTest do
       on_exit(fn -> File.chmod!(locked, 0o700) end)
       Application.put_env(:grasp, :sessions_dir, locked)
 
-      :ok = Session.ensure(name)
+      name = start_session(name)
       assert Session.get(name) == Forest.new()
 
+      # The directory takes writes again, so a session that had decided it may write would
+      # replace the file it could not read. This one has decided otherwise, for good.
+      File.chmod!(locked, 0o700)
+
       Session.open_root(name, "SampleApp.Greeter.greet/2")
-      Process.sleep(300)
+      Process.sleep(Session.flush_ms() * 2)
 
       assert File.read!(path) == "not json"
       assert File.ls!(locked) == [name <> ".json"]
     end
+
+    test "a session that started with nowhere to write never writes", %{tmp_dir: tmp_dir} do
+      name = "late-#{System.unique_integer([:positive])}"
+      path = Path.join(tmp_dir, name <> ".json")
+      {forest, _card} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+      :ok = Disk.write(name, forest)
+      saved = File.read!(path)
+
+      # The fixture index names a project root that is not on this machine, so with the
+      # override gone there is nowhere to write at all.
+      Application.put_env(:grasp, :sessions_dir, nil)
+      assert Disk.dir() == nil
+
+      name = start_session(name)
+      Application.put_env(:grasp, :sessions_dir, tmp_dir)
+
+      Session.open_root(name, "SampleApp.Formatter.wrap/1")
+      Process.sleep(Session.flush_ms() * 2)
+
+      # A directory that turned up after the session started holds a file it never read.
+      assert File.read!(path) == saved
+    end
+
+    test "delete/1 forgets the conversation held under the name" do
+      name = start_session("chat-#{System.unique_integer([:positive])}")
+      :ok = Grasp.Agent.ensure(name)
+
+      assert [{_pid, _registered}] = Registry.lookup(Grasp.AgentRegistry, name)
+      assert Session.delete(name) == :ok
+      assert wait_until(fn -> Registry.lookup(Grasp.AgentRegistry, name) == [] end)
+    end
+  end
+
+  # Every session a test starts is stopped and its file removed when the test ends, so the
+  # next one reads `Session.list/0` and the sessions directory without the last one in them.
+  defp start_session(name) do
+    :ok = Session.ensure(name)
+    on_exit(fn -> Session.delete(name) end)
+    name
   end
 
   # Moves every 20 ms until `deadline`, as a drag does, answering how many were made.
