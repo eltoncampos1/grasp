@@ -22,8 +22,6 @@ that agent for you from a panel beside the canvas.
 Indexed against a base branch, the same canvas reviews a pull request: the sidebar leads
 with what the branch changed, and a modified card swaps between its source and its diff.
 
-Planned: guided tours the agent can author.
-
 Grasp exists because agents now write more code than humans can comfortably review with
 a text editor and a unified diff.
 
@@ -127,7 +125,7 @@ cd grasp && mix setup && mix grasp.viewer --index /path/to/project/.grasp/index.
   in, leaving them selected, so they can go straight into another one.
 - Click a frame's title to name or rename it in place — Enter saves, a blank name leaves the
   frame with none and its heading reading "Untitled group", Escape or clicking away leaves it
-  as it was. The group keeps its id and its cards, so a tour or an agent holding that id
+  as it was. The group keeps its id and its cards, so an agent holding that id
   still finds it. `ungroup` in the frame's header dissolves the whole frame.
 - Drop a card anywhere inside another group's frame — on a card there, in the space between
   them, on the padding at its edge — to move it to that group; drag a selected card and the

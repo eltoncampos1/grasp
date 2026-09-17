@@ -298,9 +298,10 @@ poll) and broadcasts the reload.
   same threads.
 
 Every mutation broadcasts on `session:<name>` and schedules a write of
-`<project.root>/.grasp/sessions/<name>.json`, coalesced so a drag's stream of moves lands
-as one file write once the mutations pause for 150 ms; stopping the session writes what is
-pending. The file is `{"version": 1, "cards", "edges", "groups", "focus", "next_id",
+`<project.root>/.grasp/sessions/<name>.json`, coalesced: the first mutation after a write starts a
+150 ms timer that later mutations do not push out, so a drag's stream of moves lands on
+disk about every 150 ms and the last of them within 150 ms of its end; stopping the session
+writes what is pending. The file is `{"version": 1, "cards", "edges", "groups", "focus", "next_id",
 "next_color", "next_group"}` — the whole struct, so ids and colours survive a restart and
 an agent holding a card id keeps a valid one. A session loads from its file when it
 starts: a card whose function is no longer in the index is dropped with its edges, and a
@@ -708,8 +709,8 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   opened from a stub therefore arrives with no line joining it. Both cards are in the graph
   and laid out in columns as usual; only the line is missing.
 - **The module is still named `Forest`.** `Grasp.Session.Forest` holds a graph, not a
-  forest of trees. The rename waits for milestone 7, where the session's persisted JSON is
-  versioned anyway.
+  forest of trees. The rename waits for milestone 7 (polish); the persisted JSON is versioned,
+  so the file can carry the new name when it comes.
 - **Dragging a card moves that card alone.** A card reachable from several callers has no
   subtree of its own to carry along, and moving everything downstream of it would drag
   cards that other, untouched callers also point at. So a hand-placed card leaves what it
