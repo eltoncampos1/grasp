@@ -3,7 +3,8 @@ defmodule GraspWeb.ReviewLive do
   The review page: a sidebar that starts from the project's entry points — routes, jobs,
   live views, processes — with the module list as its last group, the card canvas, and the
   Cmd+K palette. Which sidebar groups arrive open is the sidebar's decision, taken from the
-  index at mount and again whenever it reloads, and owned by whoever clicks in between.
+  index and the open review threads at mount and again whenever the index reloads, and owned
+  by whoever clicks in between.
   State is the session's forest plus the loaded index; both arrive by PubSub so any change
   — from this browser, another tab, or an MCP client later — renders everywhere. Which cards
   are selected is this tab's alone (`selected`): a selection is a gesture half-finished, and
@@ -51,7 +52,7 @@ defmodule GraspWeb.ReviewLive do
        index_path: IndexStore.path(),
        forest: Session.get(name),
        expanded_module: nil,
-       expanded_groups: default_expanded(index),
+       expanded_groups: default_expanded(index, length(Grasp.Comments.list())),
        callers_open: nil,
        renaming_group: nil,
        comments: Grasp.Comments.by_function(),
@@ -91,7 +92,7 @@ defmodule GraspWeb.ReviewLive do
     {:noreply,
      assign(socket,
        index: index,
-       expanded_groups: default_expanded(index),
+       expanded_groups: default_expanded(index, length(Grasp.Comments.list())),
        selected: MapSet.new(),
        index_error: IndexStore.last_error(),
        index_path: IndexStore.path()
@@ -380,6 +381,34 @@ defmodule GraspWeb.ReviewLive do
       {:noreply, assign(socket, composing: composing)}
     else
       _unknown_thread -> {:noreply, socket}
+    end
+  end
+
+  # The sidebar's row names a thread rather than a card, so the card it belongs on is opened
+  # first and the line the thread anchors to is lit up on it. An old-side or outdated anchor
+  # has no line in the card's own numbering to light, and a thread whose function has left
+  # the index has no card at all, so both stop at what they can do.
+  def handle_event("open_comment", %{"id" => id}, socket) do
+    with thread_id when is_integer(thread_id) <- int(id),
+         {:ok, thread} <- Grasp.Comments.fetch(thread_id),
+         %Index{} = index <- socket.assigns.index,
+         {:ok, record} <- Index.fetch_function(index, thread.function_id) do
+      socket = clear_selection(socket)
+      name = socket.assigns.name
+      forest = Session.open_root(name, record["id"])
+
+      forest =
+        case {Grasp.Comments.Anchor.place(thread, record), Forest.find(forest, record["id"])} do
+          {{:new, line}, card_id} when is_integer(card_id) ->
+            Session.set_highlight(name, card_id, %{"lines" => [line, line]})
+
+          _no_line_of_its_own ->
+            forest
+        end
+
+      {:noreply, socket |> assign(forest: forest) |> prune_selection(forest)}
+    else
+      _nothing_to_open -> {:noreply, socket}
     end
   end
 
@@ -709,6 +738,7 @@ defmodule GraspWeb.ReviewLive do
         </p>
         <.entry_groups
           index={@index}
+          comments={@comments}
           expanded={@expanded_groups}
           expanded_module={@expanded_module}
         />

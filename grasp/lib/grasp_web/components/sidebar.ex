@@ -21,10 +21,16 @@ defmodule GraspWeb.Sidebar do
   on arrival whenever there is one, and is absent from a review with nothing to show — no
   base ref, or a branch that changed nothing.
 
-  Which group opens on arrival is decided by `default_expanded/1`, at mount and again
-  whenever the index reloads: the changes whenever there are any, the routes when there are
-  few enough to read as a list, the module list when there are no entry points at all.
-  Every group's body is rendered
+  Above even that is the Comments group, the unresolved review threads of the whole project
+  under the modules they were written on. A thread is a question waiting on someone, so it
+  leads; the row carries the function, the line and the opening words of the body, and
+  clicking it draws the card and lights the line up. A thread on a function the index no
+  longer holds has nothing to draw, so it is listed muted and clicking it does nothing.
+
+  Which group opens on arrival is decided by `default_expanded/2`, at mount and again
+  whenever the index reloads: the comments whenever any thread is open, the changes whenever
+  there are any, the routes when there are few enough to read as a list, the module list
+  when there are no entry points at all. Every group's body is rendered
   either way and hidden when collapsed, so the `aria-controls` on its title always names an
   element.
   """
@@ -35,7 +41,7 @@ defmodule GraspWeb.Sidebar do
 
   alias Grasp.Index
 
-  @function_id ~r/^([A-Z][\w.]*)\.[^.\/]+\/\d+$/
+  @function_id ~r/^([A-Z][\w.]*)\.([^.\/]+\/\d+)$/
 
   # Ordered from the outside in: what calls into the system, then what the runtime calls,
   # then the plumbing. Each entry is {data-kind, title, kinds it collects}.
@@ -49,7 +55,7 @@ defmodule GraspWeb.Sidebar do
   ]
 
   @known_kinds Enum.flat_map(@groups, fn {_kind, _title, kinds} -> kinds end)
-  @group_kinds ["changes"] ++
+  @group_kinds ["comments", "changes"] ++
                  Enum.map(@groups, fn {kind, _title, _kinds} -> kind end) ++ ~w(other modules)
 
   # Past this many routes the list is a wall rather than a table of contents, and the
@@ -60,18 +66,24 @@ defmodule GraspWeb.Sidebar do
   @spec group_kinds() :: [String.t()]
   def group_kinds, do: @group_kinds
 
-  @doc """
-  The groups a review of `index` opens with.
+  @doc "The groups a review of `index` with no open comment threads opens with."
+  @spec default_expanded(Index.t() | nil) :: MapSet.t(String.t())
+  def default_expanded(index), do: default_expanded(index, 0)
 
+  @doc """
+  The groups a review of `index` opens with, `open_threads` being how many review threads
+  are unresolved.
+
+  An open thread is someone waiting on an answer, so the comments open while any is left.
   What the branch changed is why a reviewer is here at all, so it opens whenever there is
   any. The routes are the table of contents of a web app, so they open while they still
   read as one; a project with no entry points at all is a library, where the module list is
   the only way in.
   """
-  @spec default_expanded(Index.t() | nil) :: MapSet.t(String.t())
-  def default_expanded(nil), do: MapSet.new()
+  @spec default_expanded(Index.t() | nil, non_neg_integer()) :: MapSet.t(String.t())
+  def default_expanded(nil, _open_threads), do: MapSet.new()
 
-  def default_expanded(%Index{} = index) do
+  def default_expanded(%Index{} = index, open_threads) do
     groups = groups(index)
     routes = Enum.find(groups, &(&1.kind == "routes"))
 
@@ -82,29 +94,63 @@ defmodule GraspWeb.Sidebar do
         true -> MapSet.new()
       end
 
-    case Index.changed_functions(index) do
-      [] -> entries
-      _changes -> MapSet.put(entries, "changes")
-    end
+    entries =
+      case Index.changed_functions(index) do
+        [] -> entries
+        _changes -> MapSet.put(entries, "changes")
+      end
+
+    if open_threads > 0, do: MapSet.put(entries, "comments"), else: entries
   end
 
   attr :index, Index, required: true
+  attr :comments, :map, required: true
   attr :expanded, MapSet, required: true
   attr :expanded_module, :string, default: nil
 
   def entry_groups(assigns) do
     changes = Index.changed_functions(assigns.index)
+    threads = open_threads(assigns.comments)
 
     assigns =
       assign(assigns,
         groups: groups(assigns.index),
         modules: Index.modules(assigns.index),
         changes: changes_by_module(changes),
-        change_count: length(changes)
+        change_count: length(changes),
+        threads: rows_by_module(threads, assigns.index),
+        thread_count: length(threads)
       )
 
     ~H"""
     <nav id="entries" class="entries">
+      <section :if={@thread_count > 0} class="group" data-kind="comments">
+        <.group_title
+          kind="comments"
+          title="Comments"
+          count={@thread_count}
+          open?={open?(@expanded, "comments")}
+        />
+        <div
+          id="group-comments"
+          class="group__body"
+          hidden={not open?(@expanded, "comments")}
+        >
+          <div :for={{module, rows} <- @threads} class="group__module">
+            <h2 :if={module} class="group__heading">{module}</h2>
+            <button
+              :for={row <- rows}
+              class={["entry", "entry--comment", row.orphan? && "entry--orphan"]}
+              phx-click="open_comment"
+              phx-value-id={row.id}
+              title={row.function_id}
+            >
+              <span class="entry__where">{row.name} · L{row.line}</span>
+              <span class="entry__excerpt">{row.excerpt}</span>
+            </button>
+          </div>
+        </div>
+      </section>
       <section :if={@changes != []} class="group" data-kind="changes">
         <.group_title
           kind="changes"
@@ -231,6 +277,44 @@ defmodule GraspWeb.Sidebar do
     end
   end
 
+  # Every thread the project holds, of every function, least recent first: the sidebar lists
+  # what is still open across the review rather than what one card happens to show.
+  defp open_threads(comments) do
+    comments
+    |> Enum.flat_map(fn {_function_id, threads} -> threads end)
+    |> Enum.reject(& &1.resolved)
+    |> Enum.sort_by(& &1.id)
+  end
+
+  # Grouping preserves the order the threads arrive in, so only the headings need sorting.
+  defp rows_by_module(threads, index) do
+    threads
+    |> Enum.map(fn thread ->
+      %{
+        id: thread.id,
+        function_id: thread.function_id,
+        name: name_of(thread.function_id),
+        line: thread.line,
+        excerpt: excerpt(thread.body),
+        orphan?: not indexed?(index, thread.function_id)
+      }
+    end)
+    |> Enum.group_by(&module_of(&1.function_id))
+    |> Enum.sort_by(fn {module, _rows} -> module end)
+  end
+
+  defp indexed?(%Index{} = index, function_id),
+    do: match?({:ok, _record}, Index.fetch_function(index, function_id))
+
+  # A row is one line of a sidebar narrow enough to cut a sentence short anyway, and the
+  # opening words are what tells one thread from another; the body is read on the card.
+  defp excerpt(body) do
+    case String.split_at(body, 60) do
+      {head, ""} -> head
+      {head, _rest} -> head <> "…"
+    end
+  end
+
   # Changed functions arrive sorted by id, which orders each module's rows the way the
   # module list orders them; grouping preserves that, so only the headings need sorting.
   defp changes_by_module(records) do
@@ -272,10 +356,19 @@ defmodule GraspWeb.Sidebar do
 
   defp module_of(target) when is_binary(target) do
     case Regex.run(@function_id, target) do
-      [_match, module] -> module
+      [_match, module, _name] -> module
       nil -> nil
     end
   end
 
   defp module_of(_target), do: nil
+
+  # A row under a module heading says only what differs from its neighbours, and an id the
+  # regex cannot read is printed whole rather than dropped.
+  defp name_of(function_id) do
+    case Regex.run(@function_id, function_id) do
+      [_match, _module, name] -> name
+      nil -> function_id
+    end
+  end
 end

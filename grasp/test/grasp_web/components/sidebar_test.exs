@@ -4,6 +4,8 @@ defmodule GraspWeb.SidebarTest do
   alias Grasp.Index
   alias GraspWeb.Sidebar
 
+  @greet "SampleApp.Greeter.greet/2"
+
   @entry_kinds ~w(route live_route oban_worker live_view live_component genserver supervisor
                   application plug)
 
@@ -112,6 +114,57 @@ defmodule GraspWeb.SidebarTest do
     assert "changes" in Sidebar.group_kinds()
   end
 
+  test "open threads lead the sidebar, under the module and line they were written on" do
+    comments =
+      by_function([thread(%{id: 7, line: 9, body: "the wrap call is the interesting one"})])
+
+    html = [] |> index() |> render_sidebar(MapSet.new(["comments"]), comments)
+
+    assert html =~ ~s|data-kind="comments"|
+    assert before?(html, ~s|data-kind="comments"|, ~s|data-kind="changes"|)
+    assert html =~ ~s|Comments<span class="group__count">1</span>|
+
+    assert html =~ ~s|class="group__heading">SampleApp.Greeter</h2>|
+    assert html =~ ~s|phx-click="open_comment"|
+    assert html =~ ~s|phx-value-id="7"|
+    assert html =~ ~s|<span class="entry__where">greet/2 · L9</span>|
+    assert html =~ "the wrap call is the interesting one"
+  end
+
+  test "a body longer than a row is cut short with an ellipsis" do
+    body = String.duplicate("a", 61)
+    comments = by_function([thread(%{body: body})])
+    html = [] |> index() |> render_sidebar(MapSet.new(["comments"]), comments)
+
+    assert html =~ String.duplicate("a", 60) <> "…"
+    refute html =~ body
+  end
+
+  test "a thread on a function the index has lost is listed muted" do
+    comments = by_function([thread(%{function_id: "SampleApp.Gone.vanished/1"})])
+    html = [] |> index() |> render_sidebar(MapSet.new(["comments"]), comments)
+
+    assert html =~ ~s|entry entry--comment entry--orphan|
+    assert html =~ ~s|<span class="entry__where">vanished/1 · L9</span>|
+  end
+
+  test "a project whose every thread is resolved has no Comments group" do
+    comments = by_function([thread(%{resolved: true})])
+    html = [] |> index() |> render_sidebar(MapSet.new(["comments"]), comments)
+
+    refute html =~ ~s|data-kind="comments"|
+    assert html =~ ~s|data-kind="changes"|
+  end
+
+  test "the Comments group is one the sidebar can toggle, and opens while a thread is open" do
+    assert "comments" in Sidebar.group_kinds()
+
+    index = index([])
+    assert index |> Sidebar.default_expanded(1) |> MapSet.member?("comments")
+    refute index |> Sidebar.default_expanded(0) |> MapSet.member?("comments")
+    refute index |> Sidebar.default_expanded() |> MapSet.member?("comments")
+  end
+
   test "a review with changes opens them alongside whatever else opens" do
     expanded = Sidebar.default_expanded(index([]))
 
@@ -149,13 +202,35 @@ defmodule GraspWeb.SidebarTest do
     end)
   end
 
-  defp render_sidebar(index, expanded \\ MapSet.new(["routes"])) do
+  defp render_sidebar(index, expanded \\ MapSet.new(["routes"]), comments \\ %{}) do
     render_component(&Sidebar.entry_groups/1,
       index: index,
+      comments: comments,
       expanded: expanded,
       expanded_module: nil
     )
   end
+
+  defp thread(attrs) do
+    Map.merge(
+      %{
+        id: 1,
+        function_id: @greet,
+        side: "new",
+        line: 9,
+        snippet: nil,
+        body: "the default argument hides an arity",
+        author: "human",
+        created_at: "2026-09-17T00:00:00Z",
+        resolved: false,
+        replies: []
+      },
+      attrs
+    )
+  end
+
+  defp by_function(threads),
+    do: Enum.group_by(threads, & &1.function_id)
 
   defp before?(html, first, second) do
     {start, _length} = :binary.match(html, first)

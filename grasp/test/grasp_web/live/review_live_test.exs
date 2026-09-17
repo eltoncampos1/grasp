@@ -1,6 +1,7 @@
 defmodule GraspWeb.ReviewLiveTest do
   use GraspWeb.ConnCase, async: true
 
+  alias Grasp.Comments
   alias Grasp.Session
 
   @greet "SampleApp.Greeter.greet/2"
@@ -155,6 +156,46 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, ~s(#card-#{id} .line[data-highlight="true"][data-line="9"]))
     assert has_element?(view, ~s(#card-#{id}[data-highlight-key="lines:9-10"]))
     refute has_element?(view, ~s(#card-#{id} .call[data-highlight="true"]))
+  end
+
+  test "a comment in the sidebar opens its card and lights up the line it was written on", %{
+    view: view
+  } do
+    {:ok, thread} =
+      Comments.add(%{
+        function_id: @greet,
+        side: "new",
+        line: 9,
+        body: "the wrap call is the one to look at ##{System.unique_integer([:positive])}",
+        author: "human"
+      })
+
+    view
+    |> element("#entries .group[data-kind='comments'] button.entry[phx-value-id='#{thread.id}']")
+    |> render_click()
+
+    assert has_element?(view, "#card-1[data-function-id='#{@greet}'][data-focused='true']")
+    assert has_element?(view, ~s(#card-1[data-highlight-key="lines:9-9"]))
+    assert has_element?(view, ~s(#card-1 .line[data-highlight="true"][data-line="9"]))
+  end
+
+  test "a comment on a function the index has lost opens nothing", %{view: view} do
+    {:ok, thread} =
+      Comments.add(%{
+        function_id: "SampleApp.Gone.vanished/1",
+        side: "new",
+        line: 1,
+        body: "this one went with the branch ##{System.unique_integer([:positive])}",
+        author: "human"
+      })
+
+    view
+    |> element(
+      "#entries .group[data-kind='comments'] button.entry--orphan[phx-value-id='#{thread.id}']"
+    )
+    |> render_click()
+
+    refute has_element?(view, "#card-1")
   end
 
   test "clicking a call opens the callee one column right and colours the call site", %{

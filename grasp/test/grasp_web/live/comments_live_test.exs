@@ -31,7 +31,7 @@ defmodule GraspWeb.CommentsLiveTest do
     assert has_element?(view, "#card-1 .thread .comment[data-author='human']")
     assert has_element?(view, "#card-1 .thread .comment__author", "you")
 
-    html = render(view)
+    html = card(view)
     assert before?(html, ~s(data-line="6"), body)
     assert before?(html, body, ~s(data-line="7"))
   end
@@ -159,7 +159,7 @@ defmodule GraspWeb.CommentsLiveTest do
 
     assert has_element?(view, "#card-1 .thread .comment__body", body)
 
-    html = render(view)
+    html = card(view)
     assert before?(html, ~s(data-base-line="3"), body)
     assert before?(html, body, ~s(data-line="10"))
   end
@@ -197,7 +197,11 @@ defmodule GraspWeb.CommentsLiveTest do
     thread.id
   end
 
-  # Where two strings fall in the rendered page, which is how a thread is shown to hang off
+  # The sidebar lists every open thread of the project, so where a thread falls relative to
+  # a line is a question about the card alone.
+  defp card(view), do: view |> element("#card-1") |> render()
+
+  # Where two strings fall in the card's markup, which is how a thread is shown to hang off
   # the line above it without depending on what other threads the store happens to hold.
   defp before?(html, first, second) do
     case {:binary.match(html, first), :binary.match(html, second)} do
