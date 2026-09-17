@@ -32,4 +32,8 @@ defmodule Grasp.MCP.Server do
   component(Tools.GroupCards)
   component(Tools.UngroupCards)
   component(Tools.RenameGroup)
+  component(Tools.ListComments)
+  component(Tools.AddComment)
+  component(Tools.ReplyComment)
+  component(Tools.ResolveComment)
 end

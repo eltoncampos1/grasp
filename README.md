@@ -163,8 +163,8 @@ Reading the code:
 - `search_functions(query, limit)` — find functions by name. An exact `Module.fun/arity`
   ranks first, then ids containing the query, then a fuzzy match, so `walcre` still finds
   `SampleApp.Wallets.credit/3`.
-- `get_function(id)` — one function's source, span, calls, callers, callees and the entry
-  points that reach it.
+- `get_function(id)` — one function's source, span, calls, callers, callees, the entry
+  points that reach it, and the review comments still open on its lines.
 - `get_callers(id)` / `get_callees(id)` — one hop up or down the call graph.
 - `find_paths(to, from?, max_depth, limit)` — shortest call paths down to a function, from
   another function or, with `from` omitted, from whatever entry points reach it. Each path
@@ -213,6 +213,26 @@ Arranging the cards:
 
 A session name defaults to `default`, which is the canvas at `/`; any other name is the
 canvas at `/s/<name>` and is created on first mention.
+
+Comments:
+
+- `list_comments(function_id?, include_resolved?)` — the review comments written on the
+  project's lines, the reviewer's and the agent's own, with their replies. Open threads
+  only unless `include_resolved` is set. Each one says where it now sits: `anchored` on
+  `anchored_line`, `outdated` when the line it was written on has been edited away, or
+  `orphan` when the function has left the index.
+- `add_comment(function_id, line, body, side?)` — write a comment on one line, as the
+  agent, so a finding lands on the code it is about rather than in prose. `side` is `new`
+  for the branch's code and `old` for the base version of a modified function, which is how
+  a comment lands on a line the branch deleted.
+- `reply_comment(comment_id, body)` — answer a thread, as the agent.
+- `resolve_comment(comment_id, resolved?)` — close a thread once it is dealt with, or
+  reopen one with `resolved: false`.
+
+`get_function` carries a function's open threads under `comments`, so reading the code and
+reading what the reviewer said about it is one call. Comments belong to the project, not to
+a session: they are kept in `.grasp/comments.json` beside the index and show on whatever
+canvas draws the function.
 
 Arranging a flow, end to end. Asked "show me what happens when SampleApp accepts an
 order", an agent calls `list_entry_points(query: "order")` to find the route,

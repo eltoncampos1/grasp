@@ -1,0 +1,97 @@
+defmodule Grasp.MCP.Comments do
+  @moduledoc """
+  Shapes comment threads for the MCP tools, and checks the line a comment is being written
+  on.
+
+  A thread names the line it was written on, and the code under it moves, so the number it
+  carries is not on its own where the thread now belongs. Every thread an agent reads is
+  therefore placed against the record the index currently holds — `"status"` says whether
+  the line was found and `"anchored_line"` where, next to the `"line"` the thread was
+  written on, so an agent can tell a remark still sitting on its code from one whose line
+  has been edited away.
+
+  A line is checked before a comment is written rather than after, because a thread on a
+  line outside the function would be stored and then never placed anywhere: the reply names
+  the function's own range instead, which is the range the agent should have read from
+  `get_function`.
+  """
+
+  alias Grasp.Comments
+  alias Grasp.Comments.Anchor
+
+  @doc """
+  `thread` as a JSON map, placed against the function record `index` holds for it.
+
+  Beyond the thread's own fields it carries `"file"` (the record's, `nil` when the function
+  has left the index), `"status"` — `"anchored"`, `"outdated"` for a line that is no longer
+  there, `"orphan"` for a function that is gone — and `"anchored_line"`, the line the thread
+  now sits on, `nil` unless it is anchored.
+  """
+  @spec thread_map(Comments.thread(), Grasp.Index.t()) :: map()
+  def thread_map(thread, %Grasp.Index{} = index) do
+    record = record(index, thread.function_id)
+
+    {status, anchored_line} =
+      case Anchor.place(thread, record) do
+        {_side, line} -> {"anchored", line}
+        placement -> {Atom.to_string(placement), nil}
+      end
+
+    %{
+      "id" => thread.id,
+      "function_id" => thread.function_id,
+      "file" => record && record["file"],
+      "side" => thread.side,
+      "line" => thread.line,
+      "anchored_line" => anchored_line,
+      "status" => status,
+      "snippet" => thread.snippet,
+      "body" => thread.body,
+      "author" => thread.author,
+      "created_at" => thread.created_at,
+      "resolved" => thread.resolved,
+      "replies" => Enum.map(thread.replies, &reply_map/1)
+    }
+  end
+
+  @doc """
+  Whether line `line` of `record` on `side` is a line a comment can be written on.
+
+  The `"new"` side is numbered by the record's span, as the cards and `get_function` number
+  it; the `"old"` side is numbered from 1 over the base version, which only a function the
+  branch modified has. The error message names the function and the range it does have.
+  """
+  @spec check_line(map(), Comments.side(), integer()) :: :ok | {:error, String.t()}
+  def check_line(record, "new", line) do
+    %{"start_line" => first, "end_line" => last} = record["span"]
+    in_range(record, line, first, last)
+  end
+
+  def check_line(record, "old", line) do
+    case Anchor.lines(record, "old") do
+      nil -> {:error, ~s(#{record["id"]} has no base version to comment on; use side "new")}
+      lines -> in_range(record, line, 1, length(lines))
+    end
+  end
+
+  defp in_range(_record, line, first, last) when line >= first and line <= last, do: :ok
+
+  defp in_range(record, line, first, last),
+    do: {:error, "line #{line} is outside #{record["id"]} (lines #{first}..#{last})"}
+
+  defp record(index, function_id) do
+    case Grasp.Index.fetch_function(index, function_id) do
+      {:ok, record} -> record
+      :error -> nil
+    end
+  end
+
+  defp reply_map(reply) do
+    %{
+      "id" => reply.id,
+      "author" => reply.author,
+      "body" => reply.body,
+      "created_at" => reply.created_at
+    }
+  end
+end

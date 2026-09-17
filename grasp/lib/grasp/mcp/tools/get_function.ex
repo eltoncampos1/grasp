@@ -1,13 +1,14 @@
 defmodule Grasp.MCP.Tools.GetFunction do
   @moduledoc """
   Read one function of the indexed project: its source, span, calls, the ids that call it,
-  the ids it calls, and the entry points that reach it. Accepts any arity a definition with
-  default arguments answers to.
+  the ids it calls, the entry points that reach it, and the review comments still open on
+  its lines. Accepts any arity a definition with default arguments answers to.
   """
 
   use Anubis.Server.Component, type: :tool
 
   alias Grasp.Index
+  alias Grasp.MCP.Comments, as: Shape
   alias Grasp.MCP.Tools
 
   schema do
@@ -29,12 +30,19 @@ defmodule Grasp.MCP.Tools.GetFunction do
         |> Map.merge(%{
           "callers" => Index.callers(index, record["id"]),
           "callees" => Index.callees(index, record["id"]),
-          "entry_points" => entry_points
+          "entry_points" => entry_points,
+          "comments" => comments(record, index)
         })
 
       Tools.reply(frame, body)
     else
       {:error, reason} -> Tools.error(frame, reason)
     end
+  end
+
+  defp comments(record, index) do
+    [function_id: record["id"]]
+    |> Grasp.Comments.list()
+    |> Enum.map(&Shape.thread_map(&1, index))
   end
 end

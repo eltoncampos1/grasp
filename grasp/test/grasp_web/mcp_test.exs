@@ -12,9 +12,10 @@ defmodule GraspWeb.MCPTest do
     names = result["tools"] |> Enum.map(& &1["name"]) |> Enum.sort()
 
     assert names ==
-             ~w(close_card find_paths focus_card get_callees get_callers get_function get_session
-                group_cards highlight_card list_changes list_entry_points list_modules
-                list_sessions open_card rename_group search_functions set_cards set_view
+             ~w(add_comment close_card find_paths focus_card get_callees get_callers
+                get_function get_session group_cards highlight_card list_changes list_comments
+                list_entry_points list_modules list_sessions open_card rename_group
+                reply_comment resolve_comment search_functions set_cards set_view
                 ungroup_cards)
 
     assert Enum.all?(result["tools"], &(&1["description"] not in [nil, ""]))
