@@ -127,8 +127,8 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
    the transform, so the name of a group reads at one size however far out the canvas is
    zoomed: it is what tells one frame from another when the cards inside them are too small
    to read. */
-.flow__title { cursor: default; display: flex; align-items: baseline; gap: calc(var(--space-s) / var(--zoom, 1)); margin: 0 0 calc(var(--space-s) / var(--zoom, 1)); font-family: var(--sans); font-size: calc(13px / var(--zoom, 1)); color: var(--fg-muted); }
-.flow__title h3 { margin: 0; font-size: calc(var(--frame-title-size) / var(--zoom, 1)); font-weight: 600; color: var(--fg); cursor: text; }
+.flow__title { cursor: grab; display: flex; align-items: baseline; gap: calc(var(--space-s) / var(--zoom, 1)); margin: 0 0 calc(var(--space-s) / var(--zoom, 1)); font-family: var(--sans); font-size: calc(13px / var(--zoom, 1)); color: var(--fg-muted); }
+.flow__title h3 { margin: 0; font-size: calc(var(--frame-title-size) / var(--zoom, 1)); font-weight: 600; color: var(--fg); cursor: grab; }
 .flow__title h3:hover { text-decoration: underline; text-decoration-style: dotted; }
 /* The whole header holds its size, not only the heading: a legible title beside a 3px card
    count and a 3px ungroup button would be the same unreadability one step along. */

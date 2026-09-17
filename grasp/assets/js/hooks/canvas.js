@@ -409,12 +409,13 @@ const Canvas = {
     // preventDefault the browser begins a text range that smears over every card the pointer
     // crosses on the way to the next one.
     if (e.shiftKey && e.target.closest(".card")) return e.preventDefault()
-    // Ctrl is what separates the two gestures a frame's header carries: with it the header is
-    // the handle the whole group is dragged by, without it a press on the title is the rename
-    // click. The header's own controls are pressed rather than dragged from.
-    const ctrlTitle = e.ctrlKey && e.target.closest(".flow__title")
-    if (ctrlTitle && !e.target.closest("button, a, input")) {
-      return this.beginGroupDrag(e, ctrlTitle)
+    // A frame's header is the handle the whole group is dragged by, with or without Ctrl, the
+    // way a card's header is the card's: a press that moves drags every card in the group, and
+    // one that does not move is the click that renames the title. The header's own controls
+    // are pressed rather than dragged from.
+    const title = e.target.closest(".flow__title")
+    if (title && !e.target.closest("button, a, input")) {
+      return this.beginGroupDrag(e, title, e.ctrlKey)
     }
     const ctrlCard = e.ctrlKey && e.target.closest(".card")
     if (ctrlCard) return this.beginCardDrag(e, ctrlCard, true)
@@ -450,14 +451,14 @@ const Canvas = {
 
   // Every card of the group travels by the same displacement, so the cards keep their places
   // relative to one another and the frame the hook draws round them follows from their boxes.
-  beginGroupDrag(e, title) {
+  beginGroupDrag(e, title, ctrl) {
     const flow = title.closest(".flow")
     if (!flow) return
     e.preventDefault()
     document.body.classList.add("grasp-dragging")
     this.drag = {
       kind: "group",
-      ctrl: true,
+      ctrl,
       pointerId: e.pointerId,
       group: Number(flow.dataset.group),
       nodes: [...flow.querySelectorAll(".node")].map((node) => {
