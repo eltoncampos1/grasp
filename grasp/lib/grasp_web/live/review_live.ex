@@ -30,6 +30,8 @@ defmodule GraspWeb.ReviewLive do
 
   @groups GraspWeb.Sidebar.group_kinds()
   @no_command "claude command not found; set GRASP_AGENT_COMMAND"
+  # The same sentence the MCP tools refuse a session name with: one rule, said one way.
+  @bad_session_name "session names are letters, digits, - and _, up to 40 characters"
 
   @impl true
   def mount(params, _session, socket) do
@@ -61,6 +63,9 @@ defmodule GraspWeb.ReviewLive do
       index_error: IndexStore.last_error(),
       index_path: IndexStore.path(),
       forest: Session.get(name),
+      sessions: Session.list(),
+      session_menu_open?: false,
+      new_session_name: "",
       expanded_module: nil,
       expanded_groups: default_expanded(index, length(Grasp.Comments.list())),
       callers_open: nil,
@@ -114,6 +119,13 @@ defmodule GraspWeb.ReviewLive do
   # Comments belong to the project rather than to this session, so a thread written in
   # another tab — or by the agent — lands on every card drawing that function.
   def handle_info(:comments_changed, socket), do: {:noreply, refresh_comments(socket)}
+
+  # The session this tab is reading has been forgotten, here or in another tab. Its cards are
+  # gone with it, so the tab lands on the default canvas rather than on a name with no
+  # session behind it; from the default session itself the navigate re-mounts it empty.
+  # A deletion of any other session is a broadcast this tab hears only as a bystander.
+  def handle_info({:session_deleted, name}, %{assigns: %{name: name}} = socket),
+    do: {:noreply, push_navigate(socket, to: "/")}
 
   def handle_info(_other, socket), do: {:noreply, socket}
 
@@ -315,6 +327,42 @@ defmodule GraspWeb.ReviewLive do
 
   def handle_event("toggle_sidebar", _params, socket),
     do: {:noreply, update(socket, :sidebar_open?, &(not &1))}
+
+  # The list is read when the menu opens rather than on every render: a session started in
+  # another tab or by an agent shows up the next time the menu is asked for, and a render
+  # that has nothing to do with sessions does not go looking at the disk. A menu opened
+  # again opens fresh, so a name the last one refused is not still sitting in the field.
+  def handle_event("toggle_session_menu", _params, socket) do
+    if socket.assigns.session_menu_open? do
+      {:noreply, close_overlays(socket)}
+    else
+      {:noreply,
+       socket
+       |> close_overlays()
+       |> clear_flash(:error)
+       |> assign(session_menu_open?: true, sessions: Session.list(), new_session_name: "")}
+    end
+  end
+
+  def handle_event("close_session_menu", _params, socket), do: {:noreply, close_overlays(socket)}
+
+  # A name that is not a session name is refused here so the reader is told why; the same
+  # name would land on the default session anyway, since `mount/3` refuses it too. The
+  # rejected name is assigned back, so the field still holds what was typed.
+  def handle_event("new_session", %{"name" => name}, socket) when is_binary(name) do
+    name = String.trim(name)
+
+    if Disk.valid_name?(name) do
+      {:noreply, socket |> clear_flash(:error) |> push_navigate(to: session_path(name))}
+    else
+      {:noreply, socket |> assign(new_session_name: name) |> put_flash(:error, @bad_session_name)}
+    end
+  end
+
+  def handle_event("delete_session", %{"name" => name}, socket) when is_binary(name) do
+    :ok = Session.delete(name)
+    {:noreply, assign(socket, sessions: Session.list())}
+  end
 
   def handle_event("move_focus", %{"dir" => dir}, socket) when dir in ~w(parent child next prev),
     do: mutate(socket, &Session.move_focus(&1, String.to_existing_atom(dir)))
@@ -590,10 +638,17 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
-  # Whatever the last click opened stands alone: the callers menu and the rename form are
-  # closed together so that opening one is what closes the other.
+  # Whatever the last click opened stands alone: the callers menu, the rename form, the
+  # comment composer and the session menu are closed together so that opening one is what
+  # closes the other. Escape closes the session menu through here as well.
   defp close_overlays(socket),
-    do: assign(socket, callers_open: nil, renaming_group: nil, composing: nil)
+    do:
+      assign(socket,
+        callers_open: nil,
+        renaming_group: nil,
+        composing: nil,
+        session_menu_open?: false
+      )
 
   defp clear_selection(socket), do: assign(socket, selected: MapSet.new())
 
@@ -808,11 +863,28 @@ defmodule GraspWeb.ReviewLive do
       phx-hook="Keys"
       data-sidebar={to_string(@sidebar_open?)}
     >
+      <%!-- The page reports one kind of thing this way — a gesture the viewer refused — so the
+      message stands until it is read and clicked away. --%>
+      <p
+        :if={Phoenix.Flash.get(@flash, :error)}
+        class="flash"
+        role="alert"
+        phx-click="lv:clear-flash"
+        phx-value-key="error"
+      >
+        {Phoenix.Flash.get(@flash, :error)}
+      </p>
       <aside :if={@sidebar_open?} class="sidebar">
         <h1 class="brand">Grasp</h1>
         <p class="sidebar__project">
           {@index.project["app"]}<span :if={@base} class="sidebar__base">{@base}</span>
         </p>
+        <.session_menu
+          name={@name}
+          sessions={@sessions}
+          open?={@session_menu_open?}
+          new_name={@new_session_name}
+        />
         <.entry_groups
           index={@index}
           comments={@comments}

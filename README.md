@@ -22,7 +22,7 @@ that agent for you from a panel beside the canvas.
 Indexed against a base branch, the same canvas reviews a pull request: the sidebar leads
 with what the branch changed, and a modified card swaps between its source and its diff.
 
-Planned: sessions saved to disk, and guided tours the agent can author.
+Planned: guided tours the agent can author.
 
 Grasp exists because agents now write more code than humans can comfortably review with
 a text editor and a unified diff.
@@ -51,7 +51,9 @@ mix grasp.serve --editor vscode
 ```
 
 Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or press
-⌘K, and click any call inside a card to open the callee next to it.
+⌘K, and click any call inside a card to open the callee next to it. The canvas is written
+to `.grasp/sessions/` beside the index, so the cards are where you left them when you come
+back.
 
 `mix grasp.serve` runs the viewer from a checkout of this repository, since the viewer is
 never a dependency of the project it reviews. Point it at a checkout you already have with
@@ -133,6 +135,29 @@ cd grasp && mix setup && mix grasp.viewer --index /path/to/project/.grasp/index.
   bare canvas, its own frame — moves the card and nothing more. A card that changes group keeps
   the offset the drag gave it and so lands beside its place in the new frame rather than on
   it; "reset layout" puts every card back on the grid.
+
+## Sessions
+
+A session is one canvas: the cards on it, how they are grouped, where they were dragged and
+which one has the focus. The session named `default` is the canvas at `/`; any other name is
+the canvas at `/s/<name>`, so a review of one pull request and a walk through a subsystem sit
+side by side instead of on top of each other.
+
+Each session is a file under `.grasp/sessions/` beside the index, written a moment after the
+canvas changes and read back when the viewer starts, so quitting and coming back — or
+restarting the viewer on the same project — finds the cards where they were.
+
+The sidebar's header names the session being read and opens the menu of every session the
+viewer is running or has saved. A row there goes to that canvas, the × beside it forgets the
+session and deletes its file, and the field under the list opens a session by name, existing
+or new. Session names are letters, digits, `-` and `_`, up to 40 characters. Deleting the
+session a tab is reading sends that tab to the default canvas; deleting `default` itself
+clears it rather than taking it away, since the next visit starts it again, empty.
+
+`.grasp/index.json` is rebuilt by `mix grasp.index` from whatever the checkout holds, so it
+is worth adding to `.gitignore`. The sessions and `.grasp/comments.json` are not derived from
+the code: a session is an arrangement someone made, so commit `.grasp/sessions/` alongside a
+branch if you want the canvas to travel with the pull request.
 
 ## PR mode
 

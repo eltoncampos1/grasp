@@ -27,6 +27,12 @@ defmodule GraspWeb.Sidebar do
   clicking it draws the card and lights the line up. A thread on a function the index no
   longer holds has nothing to draw, so it is listed muted and clicking it does nothing.
 
+  Above the groups is the session menu: the name of the session being read, and under it
+  every session the viewer is running or has saved. A row navigates to that canvas, the ×
+  beside it forgets the session and its file, and the field under the list opens a session
+  by name, whether or not one of that name exists. The session being read carries no × ,
+  since deleting it would take away the canvas the click was made on.
+
   Which group opens on arrival is decided by `default_expanded/2`, at mount and again
   whenever the index reloads: the comments whenever any thread is open, the changes whenever
   there are any, the routes when there are few enough to read as a list, the module list
@@ -101,6 +107,76 @@ defmodule GraspWeb.Sidebar do
       end
 
     if open_threads > 0, do: MapSet.put(entries, "comments"), else: entries
+  end
+
+  @doc "The review page's path for `name`: the default session is the canvas at `/`."
+  @spec session_path(String.t()) :: String.t()
+  def session_path("default"), do: "/"
+  def session_path(name), do: "/s/#{name}"
+
+  attr :name, :string, required: true
+  attr :sessions, :list, required: true
+  attr :open?, :boolean, required: true
+  attr :new_name, :string, default: ""
+
+  def session_menu(assigns) do
+    ~H"""
+    <div class="session-bar">
+      <button
+        type="button"
+        id="session-menu"
+        class="session"
+        phx-click="toggle_session_menu"
+        aria-expanded={to_string(@open?)}
+      >
+        <span class="session__name">{@name}</span>
+        <span class="session__chevron" aria-hidden="true">▾</span>
+      </button>
+      <%!-- The menu is rendered only while it is open, so the window listener it carries is
+      bound only then and Escape reaches nothing else. --%>
+      <div
+        :if={@open?}
+        class="session__menu"
+        phx-window-keydown="close_session_menu"
+        phx-key="Escape"
+      >
+        <ul class="session__list">
+          <li :for={session <- @sessions} class="session__row">
+            <.link
+              navigate={session_path(session)}
+              class="session__link"
+              aria-current={session == @name && "true"}
+            >
+              {session}
+            </.link>
+            <%!-- The session being read has no × : leaving it would delete the canvas out from
+            under the reader who clicked it. --%>
+            <button
+              :if={session != @name}
+              type="button"
+              class="session__delete"
+              phx-click="delete_session"
+              phx-value-name={session}
+              data-confirm={"Delete session #{session}? Its cards are forgotten."}
+              aria-label={"Delete session #{session}"}
+            >
+              ×
+            </button>
+          </li>
+        </ul>
+        <form class="session__new" phx-submit="new_session">
+          <input
+            type="text"
+            name="name"
+            value={@new_name}
+            placeholder="new session"
+            autocomplete="off"
+            aria-label="New session"
+          />
+        </form>
+      </div>
+    </div>
+    """
   end
 
   attr :index, Index, required: true
