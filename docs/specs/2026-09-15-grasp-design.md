@@ -696,8 +696,8 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   go, so two frames can cover the same ground; nothing pushes them apart, and a drop inside
   both joins the later section. Reset layout untangles them.
 - **Opening a pull request switches the working tree.** `gh pr checkout` runs in the
-  reader's checkout, so the branch they had is gone from disk until they switch back, and
-  the recipe refuses on a dirty tree rather than stashing for them. `gh` has to be installed
+  reader's checkout, so the branch they had is gone from disk until they switch back; uncommitted work
+  rides along, and a checkout git refuses stops the recipe rather than being forced. `gh` has to be installed
   and signed in. A worktree per pull request would leave the tree alone, but the viewer is
   started on one index path and cannot yet follow a root that moves.
 - **Edit mode trusts the CLI's allowlist.** `Bash(mix:*)` admits every mix task, including
@@ -842,10 +842,10 @@ conversation.
   that asks for a code change is answered with the change the agent would make and a note
   that the chat must be switched to edit mode.
 - "Open PR 1212" is one prompt in `edit` mode. The system prompt carries the recipe: read
-  the pull request with `gh pr view N --json baseRefName,headRefName,title,url`; check that
-  `git status --porcelain` prints nothing and stop, saying so, when it does — the checkout
-  happens in the reader's own working tree, and a dirty tree is theirs to deal with, never
-  the agent's; `gh pr checkout N`; `git fetch origin <base>`; rebuild the index against
+  the pull request with `gh pr view N --json baseRefName,headRefName,title,url`; `gh pr checkout N` in the reader's own working tree — uncommitted changes and untracked
+  files travel along, since git carries them across a switch, and a checkout git refuses
+  because it would overwrite a modified file is final: the agent reports the files and does
+  nothing else, never stashing, resetting or forcing; `git fetch origin <base>`; rebuild the index against
   `origin/<base>` (the `--out` the viewer watches when that is not the default); call
   `reload_index` so the viewer reads the new file at once rather than on its next poll;
   then `list_changes` and `set_cards` with one group per flow, roots at the entry points,

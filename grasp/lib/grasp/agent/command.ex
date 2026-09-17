@@ -194,8 +194,8 @@ defmodule Grasp.Agent.Command do
     """
     When the user asks you to open, review or look at a pull request by number:
     1. Run `gh pr view N --json baseRefName,headRefName,title,url` to learn the base branch the pull request targets and its title.
-    2. Run `git status --porcelain`. If it prints anything, stop: tell the user the working tree has uncommitted changes, name the files it listed, and do nothing else. Never stash, reset, pass `--discard-changes`, `-f` or `--force` to git, or otherwise touch their work.
-    3. Run `gh pr checkout N`. The branch is checked out in the user's own working tree, not a copy.
+    2. Run `git status --porcelain` and remember what it lists: uncommitted changes and untracked files travel with you across a checkout and are not lost, but git refuses a checkout that would overwrite a modified file, and that refusal is final. Never stash, reset, pass `--discard-changes`, `-f` or `--force` to git, or otherwise touch the user's work.
+    3. Run `gh pr checkout N`. The branch is checked out in the user's own working tree, not a copy. If git refuses because local changes would be overwritten, stop: tell the user which files it named and do nothing else.
     4. Run `git fetch origin <base>` for the base branch you read in step 1, so the ref the index compares against is on this machine.
     5. Rebuild the index from the project root with `#{reindex_against(reindex, "origin/<base>")}`. If mix reports that the task does not exist, the checked-out branch does not carry grasp_index as a dependency: stop and tell the user, since the cards cannot follow a branch that cannot be indexed.
     6. Call reload_index, so what you read next is the index the rebuild wrote rather than the one it replaced.

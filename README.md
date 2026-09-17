@@ -280,11 +280,11 @@ editing your working tree, so point it at a branch you can throw away and read t
 before you keep it.
 
 Edit mode also takes "Open PR 1212". The agent reads the pull request with `gh pr view` for
-its base branch and title, checks the tree is clean, and — if it is not — stops there and
-tells you which files have uncommitted changes rather than stashing or discarding anything.
-On a clean tree it runs `gh pr checkout`, fetches the base branch, rebuilds the index
-against it with the same `--out` the viewer is watching, reloads the viewer and lays the
-change out one group per flow. `gh` has to be installed and signed in, and the checkout
+its base branch and title, runs `gh pr checkout`, fetches the base branch, rebuilds the
+index against it with the same `--out` the viewer is watching, reloads the viewer and lays
+the change out one group per flow. Uncommitted changes and untracked files ride along, as
+they do on any `git switch`; a checkout git refuses because it would overwrite a modified
+file stops the agent, which names the files rather than stashing or discarding anything. `gh` has to be installed and signed in, and the checkout
 happens in your own working tree: the branch you had is gone from disk until you switch
 back, so finish what you were doing first.
 
