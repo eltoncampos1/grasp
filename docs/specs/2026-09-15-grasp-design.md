@@ -747,7 +747,9 @@ first reference. Results are JSON text content, so any MCP client can read them.
 - `set_cards` replaces the graph. `cards` is a flat list of `{key, function_id,
   parent_key?, group?, highlight?}`; `group` is a title rather than an id, so entries
   sharing one land in the same group and the groups are created in the order their titles
-  first appear — one `set_cards` call lays out several flows, each in its own frame; `key` is any string the caller picks, `parent_key` names
+  first appear — one `set_cards` call lays out several flows, each in its own frame, and an entry that names no
+  group under a parent that has one is drawn in the parent's frame, as a card opened from a
+  frame is; `key` is any string the caller picks, `parent_key` names
   another entry, and entries are applied in order so a caller precedes what it calls. Two
   entries naming the same function describe one card with an edge from each caller, so a
   helper listed under each of its callers is drawn once. Unknown function ids or dangling
