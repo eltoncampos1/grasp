@@ -1,27 +1,34 @@
 defmodule Grasp.MCP.PublishCommentsTest do
-  # Sets FAKE_GH_LOG, which the whole VM shares, and makes the fixture's project root a
-  # directory, which an async test asserts is absent.
+  # Swaps the application's index for one rooted in this test's own directory, which every
+  # mounted view reads, so it must not run beside them.
   use ExUnit.Case, async: false
 
   alias Anubis.Server.Frame
   alias Anubis.Server.Response
+  alias Grasp.IndexStore
   alias Grasp.MCP.Tools
 
   @moduletag :tmp_dir
 
   @greet "SampleApp.Greeter.greet/2"
-  @root "/tmp/sample_app"
 
+  # The tool publishes through the application's index, and `gh` runs from the project root
+  # that index names: the fixture's root is a path the whole suite would share, so the store
+  # is pointed at a copy rooted in this test's directory and put back afterwards.
   setup %{tmp_dir: tmp_dir} do
-    System.put_env("FAKE_GH_LOG", Path.join(tmp_dir, "gh.log"))
+    watched = IndexStore.path()
 
-    kept = File.dir?(@root)
-    File.mkdir_p!(@root)
+    document =
+      "test/fixtures/index.json"
+      |> File.read!()
+      |> Jason.decode!()
+      |> put_in(["project", "root"], tmp_dir)
 
-    on_exit(fn ->
-      System.delete_env("FAKE_GH_LOG")
-      unless kept, do: File.rm_rf!(@root)
-    end)
+    path = Path.join(tmp_dir, "index.json")
+    File.write!(path, Jason.encode!(document))
+    :ok = IndexStore.load(path)
+
+    on_exit(fn -> :ok = IndexStore.load(watched) end)
 
     :ok
   end
@@ -66,6 +73,15 @@ defmodule Grasp.MCP.PublishCommentsTest do
              run(Tools.PublishComments, %{pull_request: 404})
 
     assert text =~ "no pull requests"
+  end
+
+  test "answers a number no pull request can have rather than raising" do
+    for number <- [0, -1] do
+      assert %Response{isError: true, content: [%{"text" => text}]} =
+               run(Tools.PublishComments, %{pull_request: number})
+
+      assert text == "pull_request must be a positive number"
+    end
   end
 
   test "the schema takes a pull request number and a resolved switch, neither required" do

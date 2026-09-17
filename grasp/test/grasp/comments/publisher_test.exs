@@ -1,6 +1,5 @@
 defmodule Grasp.Comments.PublisherTest do
-  # Sets FAKE_GH_LOG, which the whole VM shares, and makes the fixture's project root a
-  # directory, which an async test asserts is absent.
+  # Sets FAKE_GH_LOG, which the whole VM shares.
   use ExUnit.Case, async: false
 
   alias Grasp.Comments
@@ -11,20 +10,16 @@ defmodule Grasp.Comments.PublisherTest do
 
   @greet "SampleApp.Greeter.greet/2"
   @shout "SampleApp.Formatter.shout/1"
-  @root "/tmp/sample_app"
 
+  # `gh` runs from the project root the index names, so the index under test names the
+  # test's own directory rather than the fixture's `/tmp/sample_app`, which is a path the
+  # whole suite would share.
   setup %{tmp_dir: tmp_dir} do
     System.put_env("FAKE_GH_LOG", Path.join(tmp_dir, "gh.log"))
-
-    kept = File.dir?(@root)
-    File.mkdir_p!(@root)
-
-    on_exit(fn ->
-      System.delete_env("FAKE_GH_LOG")
-      unless kept, do: File.rm_rf!(@root)
-    end)
+    on_exit(fn -> System.delete_env("FAKE_GH_LOG") end)
 
     {:ok, index} = Index.load("test/fixtures/index.json")
+    index = %Index{index | project: Map.put(index.project, "root", tmp_dir)}
 
     %{index: index, log: Path.join(tmp_dir, "gh.log")}
   end
@@ -149,6 +144,8 @@ defmodule Grasp.Comments.PublisherTest do
       comment = Enum.find_index(posted, &String.contains?(&1, body))
       reply = Enum.find_index(posted, &String.contains?(&1, "claude: #{reply_body}"))
 
+      assert is_integer(comment), "the comment was not posted"
+      assert is_integer(reply), "the reply was not posted"
       assert reply > comment
       assert Enum.at(posted, reply) =~ "/replies"
     end
@@ -182,12 +179,48 @@ defmodule Grasp.Comments.PublisherTest do
     end
 
     test "answers the failure when the project root is not on this machine", %{
-      index: %Index{} = index
+      index: %Index{} = index,
+      tmp_dir: tmp_dir
     } do
-      elsewhere = %Index{index | project: Map.put(index.project, "root", "/tmp/not-here")}
+      gone = Path.join(tmp_dir, "moved-away")
+      elsewhere = %Index{index | project: Map.put(index.project, "root", gone)}
 
       assert Publisher.publish(elsewhere) ==
-               {:error, "project root /tmp/not-here is not a directory on this machine"}
+               {:error, "project root #{gone} is not a directory on this machine"}
+    end
+
+    test "answers the failure when the index names no project root", %{index: %Index{} = index} do
+      rootless = %Index{index | project: Map.delete(index.project, "root")}
+
+      assert Publisher.publish(rootless) == {:error, "the index names no project root"}
+    end
+
+    test "refuses a number no pull request can have", %{index: index} do
+      assert Publisher.publish(index, pull_request: 0) ==
+               {:error, "pull_request must be a positive number"}
+
+      assert Publisher.publish(index, pull_request: -1) ==
+               {:error, "pull_request must be a positive number"}
+    end
+
+    test "publishes a resolved thread only when asked to", %{index: index} do
+      thread = open(%{function_id: @greet, line: 7})
+      {:ok, _thread} = Comments.set_resolved(thread.id, true)
+
+      assert {:ok, report} = Publisher.publish(index)
+      refute entry(report.published, thread.id)
+
+      assert {:ok, report} = Publisher.publish(index, include_resolved: true)
+      assert %{kind: :line} = entry(report.published, thread.id)
+    end
+
+    test "warns when the index records no head, which no sha can be matched against", %{
+      index: %Index{} = index
+    } do
+      headless = %Index{index | git: Map.put(index.git, "head", "")}
+
+      assert {:ok, report} = Publisher.publish(headless)
+      assert Enum.any?(report.warnings, &(&1 =~ "the pull request head is 0000000"))
     end
 
     test "warns when the index was built at another commit", %{index: index} do

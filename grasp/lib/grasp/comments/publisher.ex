@@ -48,16 +48,18 @@ defmodule Grasp.Comments.Publisher do
   threads as well. The project root the index names has to be a directory on this machine,
   since `gh` runs from it and reads the repository it belongs to.
 
-  An error is only ever the review not being publishable at all — no checkout, no pull
-  request, no diff. Once those are in hand every thread is attempted, and what happened to
+  An error is only ever the review not being publishable at all — a number that is not a
+  pull request number, no checkout, no pull request, no diff. Once those are in hand every thread is attempted, and what happened to
   each is in the report.
   """
   @spec publish(Index.t(), keyword()) :: {:ok, report()} | {:error, String.t()}
   def publish(%Index{} = index, opts \\ []) when is_list(opts) do
     root = index.project["root"]
+    number = opts[:pull_request]
 
     with :ok <- check_root(root),
-         {:ok, pull_request} <- GitHub.pull_request(root, opts[:pull_request]),
+         :ok <- check_number(number),
+         {:ok, pull_request} <- GitHub.pull_request(root, number),
          {:ok, diff} <- GitHub.diff(root, pull_request.number) do
       ranges = Diff.commentable_lines(diff)
       threads = Comments.list(include_resolved: Keyword.get(opts, :include_resolved, false))
@@ -73,17 +75,25 @@ defmodule Grasp.Comments.Publisher do
     end
   end
 
+  defp check_root(nil), do: {:error, "the index names no project root"}
+
   defp check_root(root) do
     if is_binary(root) and File.dir?(root),
       do: :ok,
       else: {:error, "project root #{root} is not a directory on this machine"}
   end
 
+  # A number `gh` would refuse is refused here instead, so a caller that passed one reads a
+  # sentence rather than the way `gh pr view 0` puts it.
+  defp check_number(nil), do: :ok
+  defp check_number(number) when is_integer(number) and number > 0, do: :ok
+  defp check_number(_number), do: {:error, "pull_request must be a positive number"}
+
   # A short head in the index is the same commit as the full sha `gh` answers with, so the
-  # two are compared by prefix rather than by equality.
+  # two are compared by prefix rather than by equality. An empty sha is a prefix of
+  # everything and would silence the warning, so it counts as a mismatch.
   defp head_warnings(%Index{git: %{"head" => head}}, pull_request) when is_binary(head) do
-    if String.starts_with?(head, pull_request.head_sha) or
-         String.starts_with?(pull_request.head_sha, head) do
+    if same_commit?(head, pull_request.head_sha) do
       []
     else
       [
@@ -95,13 +105,20 @@ defmodule Grasp.Comments.Publisher do
 
   defp head_warnings(_index, _pull_request), do: []
 
+  defp same_commit?("", _head_sha), do: false
+  defp same_commit?(_head, ""), do: false
+
+  defp same_commit?(head, head_sha),
+    do: String.starts_with?(head, head_sha) or String.starts_with?(head_sha, head)
+
+  # Every list is built by prepending and turned round once, in `finish/1`.
   defp empty(pull_request, warnings) do
     %{
       pull_request: %{number: pull_request.number, url: pull_request.url},
       published: [],
       skipped: [],
       failed: [],
-      warnings: Enum.reverse(warnings)
+      warnings: warnings
     }
   end
 
