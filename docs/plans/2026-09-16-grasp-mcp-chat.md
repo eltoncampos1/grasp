@@ -17,7 +17,7 @@
 - Every public function has `@doc` and `@spec`; every module has `@moduledoc`; HEEx function components document inputs with `attr`/`slot` and carry no `@spec`.
 - UI state is server-owned (LiveView patches strip client-set attributes); client-only state lives in a hook's own fields, `phx-update="ignore"` elements or body classes.
 - Tools return JSON text content via `Anubis.Server.Response.json/2`; domain failures are `Response.error/2` (the model can react); a missing index is a `Response.error` "no index loaded".
-- Anubis reference source for the implementer is checked out at `/private/tmp/claude-502/-Users-gigio-repos-heat/04ca495f-1b56-4f45-9321-428bcd76b992/scratchpad/anubis/src` (`pages/building-a-server.md`, `pages/transports.md`, `pages/testing.md`, `lib/anubis/server/component.ex`, `lib/anubis/server/response.ex`). Read them before guessing an API.
+- Anubis reference source for the implementer: a checkout of the anubis_mcp repository (`pages/building-a-server.md`, `pages/transports.md`, `pages/testing.md`, `lib/anubis/server/component.ex`, `lib/anubis/server/response.ex`). Read them before guessing an API.
 - Tests are `async: true`; session and agent names are `"t-#{System.unique_integer([:positive])}"`.
 - `mix format` before each commit; `mix test` green; commit messages end with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 - Existing test count is 91; nothing may be deleted or weakened to pass.
