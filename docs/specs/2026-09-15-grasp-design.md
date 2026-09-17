@@ -269,8 +269,9 @@ broadcasts the reload.
   a card is in one at a time. A group whose last card leaves, or is closed, is deleted;
   group ids are never reused.
 - `focus`: the focused card id.
-- `annotations`: keyed by function id, each `%{id, author, body, line}` with author
-  `"agent"` or `"human"` and a markdown body.
+- Review comments are not session state: they belong to the code under review and live in
+  `Grasp.Comments` (see [Comments](#comments)), so every session on the project reads the
+  same threads.
 - `tour`: `nil` or `%{title, steps, position}` where a step is
   `%{function_id, highlight, note, parent_step}`.
 
@@ -316,9 +317,8 @@ Cards are laid out one section at a time, a section being a group's cards or, la
 cards in no group: `Forest.sections/1` runs the column algorithm over one section's cards
 at a time, seeing only the edges between them, so a member reached only from another
 section heads a column of its own and column indices count from the section's own left
-edge. Sections read in group-id order and stack down the stage, each a frame as wide as
-its own columns, with an `ungroup` button in its header that dissolves the group
-and leaves the cards. A group keeps its section while a collapse hides every member, so
+edge. Sections read in group-id order and stack down the stage, each with an `ungroup` button in
+its header that dissolves the group and leaves the cards. A group keeps its section while a collapse hides every member, so
 the frame does not blink out of the page; the section for the cards in no group appears
 only when a visible card is in none.
 
@@ -361,15 +361,30 @@ keeps the group's id and its cards, so an id held elsewhere still names it, and 
 title as a frame left with no name — and Escape or a blur leaves it as it was. Which frame is
 being renamed is the LiveView's (`renaming_group`), not the browser's, so one rename is open
 at a time and a patch cannot lose it. A card is also put into a group by being dragged into
-another group's frame: the drag hook finds the frame under the release with
-`elementFromPoint`, having taken the dragged node out of hit testing for the lookup, and
-sends its group id along with the move. Dragging a selected card carries the rest of the
-selection into that frame, the others keeping the offsets they had, since only the card under
-the pointer moved. A drop anywhere else — the groupless section, the bare canvas, the frame
-the card is already in — is a move and nothing more, so a card never changes group by being
-put down near one. A card that does change group keeps the offset the drag gave it, which was
-measured against where it sat in its old section, so it is drawn displaced by that much from
-its place in the new one until the layout is reset.
+another group's frame: on release the drag hook tests the pointer, in stage coordinates,
+against the frame rectangles it drew last (below), skipping the frame of the group the card
+is already in, and sends the innermost hit — the last in section order — along with the
+move. Dragging a selected card carries the rest of the selection into that frame, the others
+keeping the offsets they had, since only the card under the pointer moved. A drop anywhere
+else — the groupless section, the bare canvas, the frame the card is already in — is a move
+and nothing more, so a card never changes group by being put down near one; a grouped card
+dragged out onto bare canvas stays in its group, and the frame follows it. A card that does
+change group keeps the offset the drag gave it, which was measured against where it sat in
+its old section, so it is drawn displaced by that much from its place in the new one until
+the layout is reset.
+
+A frame is drawn round where its cards are, not round where the layout put them. The
+section element still lays a group's columns out and holds its header, but it has no border
+of its own: the canvas hook owns a `phx-update="ignore"` layer under the cards and, on every
+patch, resize and drag move, draws one rectangle per grouped section — the union of its
+visible cards' boxes as they are on screen, offsets and the drag in progress included, padded
+by 16 stage pixels on the sides and below and by the header's height above — and translates
+the section's header to the rectangle's top-left corner, so a card dragged out of the frame
+takes the frame with it instead of leaking past its edge. The rectangles are what the drop
+test above reads, so "the area of a group" and the frame the reader sees are the same thing.
+Two frames may overlap once cards are dragged across; the later section wins a drop inside
+both. A group every card of which is hidden by a collapse draws no frame. The frame's border
+is `1px / --zoom`, so it stays one screen pixel far out.
 
 A card is as wide as its widest line up to a ceiling (`--card-max-width`, 60rem), rather
 than a fixed width, so a column of one-line helpers does not reserve the width of the
@@ -386,7 +401,7 @@ style, so a LiveView patch cannot wipe it mid-gesture. A wheel over something th
 scroll itself — a code body scrolled sideways, an open callers menu — is left to that
 element.
 
-Zoom out past 0.6 and the canvas reads semantically rather than optically: the hook puts
+Zoom out past 0.5 and the canvas reads semantically rather than optically: the hook puts
 `grasp-far` on `<body>`, and every card drops its body, its "Also calls" footer and, on a
 stub, its prose and its hexdocs link, keeping its header and one line — the function's head.
 `Grasp.Highlight.signature/1` renders that head from the same memoised token pieces the body
@@ -397,8 +412,8 @@ and no call spans, because a call site at that scale is too small to aim at.
 `@spec` sit above it, without the indentation it was written at and without its trailing
 `do` — and `CardComponents.signature/1` takes its text for the title a pointer reads. A stub,
 or a record with no definition in it, falls back to `Mod.fun/arity`. The header, that line
-and a section's header are sized as `--far-size / --zoom` — 14px divided by the scale the
-hook writes on the stage beside the transform — so they measure 14px on screen at every zoom
+and a section's header are sized as `--far-size / --zoom` — 10px divided by the scale the
+hook writes on the stage beside the transform — so they measure 10px on screen at every zoom
 while everything around them shrinks; everything inside the header takes the header's size,
 rather than each element keeping a size the zoom has already shrunk past reading. The card's
 width floor and ceiling go with the body, leaving each card as wide as the wider of its
@@ -471,8 +486,57 @@ otherwise to a new root, then focuses it with the step's highlight.
   The highlighted call gets a ring and is scrolled into view. Calls with an open child
   are marked. Calls to functions outside the index (deps, stdlib) render muted and open
   a stub card linking to hexdocs.
-- Footer: "Also calls" for hidden calls, then annotations with author badges and an
-  add-annotation form.
+- Footer: "Also calls" for hidden calls, then the outdated comment threads (see
+  [Comments](#comments)); the anchored ones sit under their lines in the body.
+
+### Comments
+
+A reviewer comments on a line of a card the way a pull request is commented on, and the
+agent reads, answers and resolves those comments over MCP — so "address every comment and
+redraw the flow" is one prompt in the chat panel.
+
+- **Store.** `Grasp.Comments` is one GenServer for the project, started after the index
+  store. A thread is `%{id, function_id, side, line, snippet, body, author, created_at,
+  resolved, replies}`: `side` is `"new"` for a line of the current source, numbered as the
+  file is, or `"old"` for a line the diff deleted, numbered from 1 within `base_source` as
+  the diff view numbers them; `snippet` is the trimmed text of the line when the comment
+  was made; `author` is `"human"` or `"agent"`; `created_at` is ISO 8601 UTC; a reply is
+  `%{id, author, body, created_at}`. Ids are never reused. A body is stored trimmed and may
+  not be blank. Every change broadcasts `:comments_changed` on the `"comments"` topic and
+  rewrites `<project.root>/.grasp/comments.json` (`version`, `next_id`, `comments`), which is
+  read back when the viewer starts, so comments outlive the viewer and travel with the
+  checkout. When the root the index names is not a directory on this machine the store
+  keeps its threads in memory only. `:grasp, :comments_path` overrides the file (tests write
+  to a temporary one).
+- **Anchoring.** A comment names a line by number, and the code moves under it: the agent
+  edits the function and re-indexes. `Grasp.Comments.Anchor.place/2` decides, at render
+  time and without changing what is stored, where a thread is shown against the current
+  record: on its own line when that line still reads as the snippet; on the one line of the
+  function that does when the text moved; otherwise the thread is *outdated* and renders in
+  the card's footer quoting its snippet, like an outdated review comment. A thread whose
+  function is no longer in the index is *orphaned* and is listed in the sidebar alone.
+- **Card.** Every line number in a card body is a control: hovering shows `+`, clicking it
+  opens a composer under that line (a textarea, Save, Cancel; ⌘/Ctrl+Enter saves, Escape
+  cancels). A deleted line in the diff view takes a comment on its `"old"` side. Threads
+  render under their line: each comment with its author (`you` or `claude`), its time and
+  its body as plain text with line breaks kept, then reply, resolve or reopen, and delete.
+  A resolved thread collapses to one line, `Resolved · n comments`, that expands on click;
+  which resolved threads a tab has expanded is that tab's own. The composer's draft is the
+  browser's (`phx-update="ignore"`), so a patch from an agent run mid-sentence cannot wipe
+  it; which line is being composed on, and whether it is a reply, is the LiveView's
+  (`composing`), so one composer is open at a time. Far out (`grasp-far`) threads and
+  composers are not displayed with the body they hang under. The body is a `div` of block
+  `span.line`s, no longer a `pre`, so a thread can sit between two lines.
+- **Sidebar.** A Comments group heads the sidebar when there are open threads, counting
+  them, one row per thread under its module — `name/arity · L12` and the first words of
+  the body — that opens the function's card and highlights the line. It opens on arrival
+  whenever it has rows, as Changes does, and is recomputed with the other defaults at mount
+  and on an index reload only; a comment made later does not reopen a group the reader
+  closed.
+- **Agent.** `list_comments`, `add_comment`, `reply_comment` and `resolve_comment` (Part 3)
+  give the agent the threads, with each one's placement, and `get_function` carries a
+  function's open threads. The system prompt tells the agent what a comment is and how to
+  answer one; in *edit mode* (see the chat panel) it can also act on one.
 
 ### Highlighting and diffs
 
@@ -554,14 +618,13 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 - **Transcripts are in memory.** A conversation lives in its runner process, so it
   survives a browser reload and is gone when the viewer stops. Sessions on disk
   (milestone 6) are where a transcript would be persisted, if it is worth persisting.
-- **The agent can only read.** Its built-in tools are `Read`, `Grep` and `Glob`, and
-  Grasp is its only MCP server, so it cannot edit a file or run a command. That is the
-  intended boundary rather than a gap to close: the review loop is arranging cards, not
-  changing code.
-- **No annotations and no tours.** The agent can open, close, focus and highlight cards,
-  which is enough to walk a chain, but it cannot leave a note on a card or author an
-  ordered tour a reviewer steps through. Both are later milestones (6 and 7) and both add
-  MCP tools rather than changing the ones here.
+- **The agent only reads unless told otherwise.** Its built-in tools are `Read`, `Grep`
+  and `Glob`, and Grasp is its only MCP server, so it cannot edit a file or run a command.
+  Milestone 5.4 adds an edit mode the reader switches on per session; read is still the
+  default.
+- **No tours.** The agent can open, close, focus and highlight cards, which is enough to
+  walk a chain, but it cannot author an ordered tour a reviewer steps through. Milestone 7
+  adds the tools for that; comments arrived in 5.4.
 - **An edge leaving a stub card is not drawn.** An edge is anchored to the call site in
   the caller's rendered source, and a stub card — one standing for a function the index
   does not hold — has no source, so there is nothing for an edge to leave from. A card
@@ -611,6 +674,27 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   per line: a line that changed shows as a deletion above an insertion, with no marking of
   which words inside it differ. Both sides are highlighted as code, so a reader compares
   them by eye.
+
+### Known gaps (milestone 5.4)
+
+- **Comments are plain text.** A body keeps its line breaks and nothing else: no markdown,
+  no code fences, no mentions. Rendering markdown would need a sanitiser the viewer does
+  not carry, and the agent reads the raw text anyway.
+- **A comment cannot be edited.** Delete it and write it again. The store keeps no history.
+- **Re-anchoring is by exact text.** A thread follows its line only while the trimmed line
+  reads exactly as it did; a line the agent edited is exactly the one that stops matching,
+  so a thread addressed in place goes to the footer as outdated once the index is rebuilt.
+  That is what GitHub does with an outdated comment, and the reply the agent leaves says
+  what changed.
+- **One store per project root.** Comments are keyed by function id, not by branch, so a
+  checkout that switches branches under a running viewer shows one branch's threads over
+  the other's code until they are resolved or deleted.
+- **Frames overlap when cards are dragged across.** A frame follows its cards wherever they
+  go, so two frames can cover the same ground; nothing pushes them apart, and a drop inside
+  both joins the later section. Reset layout untangles them.
+- **Edit mode trusts the CLI's allowlist.** `Bash(mix:*)` admits every mix task, including
+  ones that write outside the project; there is no sandbox beyond what Claude Code applies.
+  The mode is off unless the reader turns it on, and per viewer session.
 
 ## Part 3 — MCP
 
@@ -679,8 +763,19 @@ first reference. Results are JSON text content, so any MCP client can read them.
   card_id, view)` shows a card as its `"source"` or its `"diff"` and answers the graph like
   every other session tool; only a modified function has two sides, so a diff of anything
   else is a tool error naming the function.
-- Later milestones add `annotate`, `set_tour`/`tour_goto`, resources and the
-  `build_review_tour` prompt.
+- Comments add four tools, none of which takes a session: `list_comments(function_id?,
+  include_resolved?)` answers `total` and the threads sorted by id — each with its fields,
+  the function's `file`, its `status` (`anchored`, `outdated` or `orphan`) and the
+  `anchored_line` it is shown at (null when not anchored); `add_comment(function_id, line,
+  body, side?)` leaves a thread as the agent (`author: "agent"`) on a line of the function's
+  current source (`side` `"new"`, the default) or of its base source (`"old"`), taking the
+  snippet from the index, and is a tool error naming the function and its span when the
+  line is outside it; `reply_comment(comment_id, body)` appends a reply as the agent;
+  `resolve_comment(comment_id, resolved?)` resolves (default) or reopens a thread. Unknown
+  ids and blank bodies are tool errors. `get_function` carries `comments`, the function's
+  open threads with the same fields. There is no tool that deletes a comment: what a
+  reviewer wrote is theirs to remove, from the card.
+- Later milestones add `set_tour`/`tour_goto`, resources and the `build_review_tour` prompt.
 
 Registering in Claude Code:
 
@@ -714,6 +809,20 @@ conversation.
   the next command, so a live run is not disturbed and New conversation keeps the pick while
   dropping the transcript. A name the facade does not know is refused rather than passed to
   the CLI; the select cannot offer one.
+- The panel also offers the agent's *mode*, `read` or `edit` (`Grasp.Agent.modes/0`,
+  `set_mode/2`, recorded on the runner like the model and read when the next command is
+  built; `read` unless picked). In `read` mode the tools are as above. In `edit` mode the
+  built-in tools are `Read Grep Glob Edit Write Bash` and the pre-approved set is
+  `mcp__grasp Read Grep Glob Edit Write Bash(mix:*) Bash(git status:*) Bash(git diff:*)`, so
+  the agent can change files under the project root and run mix — nothing else runs
+  without the CLI asking, and headless it cannot ask. The appended system prompt tells the
+  agent in either mode what review comments are and how to answer them; in `edit` mode it
+  adds the working order: act on the comment, `mix format` the touched files, rebuild the
+  index with the command the prompt spells out (`mix grasp.index`, with the `--base` the
+  index was built with and the `--out` the viewer watches when that is not the default), so
+  the cards reload from it, and only then arrange the cards again. In `read` mode a comment
+  that asks for a code change is answered with the change the agent would make and a note
+  that the chat must be switched to edit mode.
 - The runner parses the JSON stream line by line: `assistant` text blocks stream into the
   transcript, `tool_use` blocks become tool rows showing the tool name and its main
   argument, `tool_result` blocks mark the row done or failed, `system/init` records the
@@ -740,7 +849,7 @@ conversation.
   again focuses the card already there, the same function reached from two callers being one
   card with two edges, closing a card and closing a chain, opening a caller to the left,
   palette search and Enter, the diff toggle, tour next/back highlighting the step's call,
-  and annotation rendering. `Grasp.Session` has a persistence round-trip test. MCP is
+  and a comment saved under a line, answered and resolved. `Grasp.Session` has a persistence round-trip test. MCP is
   tested as JSON-RPC over `/mcp` with `Phoenix.ConnTest`: initialize, tools/list, then
   `set_cards` followed by an assertion that the LiveView re-rendered.
 - CI: GitHub Actions on Elixir 1.20 / OTP 29 for both packages: format check, compile
@@ -764,7 +873,10 @@ conversation.
    Streamable HTTP at `/mcp`, and the in-viewer agent runner. The agent proves the
    arrangement loop before PR mode and tours build on it.
 5. PR mode: base ref extraction, change badges, Changes sidebar, diff view, `list_changes`.
-6. Sessions on disk: persistence, annotations UI and `annotate`.
+   Done, then groups and semantic zoom (5.1, 5.2), selection (5.3) and, in 5.4, review
+   comments with the agent's edit mode, frames that follow their cards, and the far-zoom
+   retune.
+6. Sessions on disk: persistence of the forest and its groups.
 7. Tours: `set_tour`, `tour_goto`, the tour bar, resources and the `build_review_tour`
    prompt.
 8. README for strangers, CI, editor links, `mix grasp.serve` polish.
