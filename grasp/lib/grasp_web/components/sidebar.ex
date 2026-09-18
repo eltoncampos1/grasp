@@ -109,11 +109,18 @@ defmodule GraspWeb.Sidebar do
     if open_threads > 0, do: MapSet.put(entries, "comments"), else: entries
   end
 
-  @doc "The review page's path for `name`: the default session is the canvas at `/`."
-  @spec session_path(String.t()) :: String.t()
-  def session_path("default"), do: "/"
-  def session_path(name), do: "/s/#{name}"
+  @doc """
+  The review page's path for `name` under the mount prefix `prefix`.
 
+  The default session is the canvas at the mount path itself; a prefix of `""` is Grasp
+  mounted at the root, whose canvas is `/`.
+  """
+  @spec session_path(String.t(), String.t()) :: String.t()
+  def session_path("", "default"), do: "/"
+  def session_path(prefix, "default"), do: prefix
+  def session_path(prefix, name), do: "#{prefix}/s/#{name}"
+
+  attr :prefix, :string, required: true
   attr :name, :string, required: true
   attr :sessions, :list, required: true
   attr :open?, :boolean, required: true
@@ -146,7 +153,7 @@ defmodule GraspWeb.Sidebar do
         <ul class="session__list">
           <li :for={session <- @sessions} class="session__row">
             <.link
-              navigate={session_path(session)}
+              navigate={session_path(@prefix, session)}
               class="session__link"
               aria-current={session == @name && "true"}
             >

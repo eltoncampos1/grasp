@@ -18,7 +18,9 @@ config :grasp, GraspWeb.Endpoint,
 config :esbuild,
   version: "0.25.4",
   grasp: [
-    args: ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets),
+    args:
+      ~w(js/app.js --bundle --target=es2022 --entry-names=grasp --outdir=../priv/static/assets) ++
+        ~w(--external:phoenix --external:phoenix_html --external:phoenix_live_view),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]

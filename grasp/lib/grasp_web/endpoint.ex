@@ -1,5 +1,5 @@
 defmodule GraspWeb.Endpoint do
-  @moduledoc "HTTP endpoint of the Grasp viewer. Serves the bundled assets and the LiveView socket."
+  @moduledoc "HTTP endpoint of the standalone Grasp viewer: the LiveView socket and the router."
 
   use Phoenix.Endpoint, otp_app: :grasp
 
@@ -13,8 +13,6 @@ defmodule GraspWeb.Endpoint do
   socket "/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
-
-  plug Plug.Static, at: "/", from: :grasp, gzip: false, only: GraspWeb.static_paths()
 
   if code_reloading? do
     plug Phoenix.CodeReloader

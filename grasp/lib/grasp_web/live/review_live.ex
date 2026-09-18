@@ -32,15 +32,27 @@ defmodule GraspWeb.ReviewLive do
   @no_command "claude command not found; set GRASP_AGENT_COMMAND"
 
   @impl true
-  def mount(params, _session, socket) do
+  def mount(params, session, socket) do
     name = Map.get(params, "name", "default")
+    # Grasp answers under whatever prefix the host's router mounted it at, so every link the
+    # page writes is built from it. The live session carries it, which is the one channel
+    # open to both the disconnected render and the connected mount.
+    prefix = Map.fetch!(session, "grasp_path")
+    socket = assign(socket, grasp_path: prefix, mcp_url: mcp_url(socket, prefix))
 
     # A name that is not a session name names a file the viewer would have to write, so the
     # tab is sent to the default session rather than opening a session under it.
     if Disk.valid_name?(name),
       do: {:ok, mount_session(socket, name)},
-      else: {:ok, push_navigate(socket, to: "/")}
+      else: {:ok, push_navigate(socket, to: default_path(socket))}
   end
+
+  defp default_path(socket), do: session_path(socket.assigns.grasp_path, "default")
+
+  # The agent reaches Grasp over HTTP like any other MCP client, so it needs the address the
+  # host answers on rather than the viewer's own: the endpoint is the host's, and the prefix
+  # is where the host mounted Grasp under it.
+  defp mcp_url(socket, prefix), do: socket.endpoint.url() <> prefix <> "/mcp"
 
   defp mount_session(socket, name) do
     :ok = Session.ensure(name)
@@ -123,7 +135,7 @@ defmodule GraspWeb.ReviewLive do
   # session behind it; from the default session itself the navigate re-mounts it empty.
   # A deletion of any other session is a broadcast this tab hears only as a bystander.
   def handle_info({:session_deleted, name}, %{assigns: %{name: name}} = socket),
-    do: {:noreply, push_navigate(socket, to: "/")}
+    do: {:noreply, push_navigate(socket, to: default_path(socket))}
 
   def handle_info(_other, socket), do: {:noreply, socket}
 
@@ -373,7 +385,8 @@ defmodule GraspWeb.ReviewLive do
     name = String.trim(name)
 
     if Disk.valid_name?(name) do
-      {:noreply, socket |> clear_flash(:error) |> push_navigate(to: session_path(name))}
+      path = session_path(socket.assigns.grasp_path, name)
+      {:noreply, socket |> clear_flash(:error) |> push_navigate(to: path)}
     else
       {:noreply, socket |> assign(new_session_name: name) |> put_flash(:error, Disk.name_rule())}
     end
@@ -614,7 +627,7 @@ defmodule GraspWeb.ReviewLive do
   # DOM, where it was still enabled; the panel already says what is happening, so the refusal
   # needs nothing said about it.
   defp ask(socket, prompt) do
-    case Grasp.Agent.send_prompt(socket.assigns.name, prompt) do
+    case Grasp.Agent.send_prompt(socket.assigns.name, prompt, mcp_url: socket.assigns.mcp_url) do
       :ok -> socket |> assign(chat_error: nil) |> refresh_agent()
       {:error, :running} -> socket
       {:error, :no_command} -> assign(socket, chat_error: @no_command)
@@ -932,6 +945,7 @@ defmodule GraspWeb.ReviewLive do
           {@index.project["app"]}<span :if={@base} class="sidebar__base">{@base}</span>
         </p>
         <.session_menu
+          prefix={@grasp_path}
           name={@name}
           sessions={@sessions}
           open?={@session_menu_open?}

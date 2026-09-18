@@ -9,6 +9,18 @@ config :grasp, GraspWeb.Endpoint,
   secret_key_base:
     "test-only-secret-key-base-test-only-secret-key-base-test-only-secret-key-base-00"
 
+# A host application's endpoint, mounting Grasp under a prefix on a socket path of its own.
+config :grasp, GraspWeb.MountedEndpoint,
+  http: [ip: {127, 0, 0, 1}, port: 4042],
+  server: false,
+  url: [host: "app.localhost", port: 4042],
+  secret_key_base:
+    "host-only-secret-key-base-host-only-secret-key-base-host-only-secret-key-base-00",
+  live_view: [signing_salt: "host-live-view-salt"],
+  pubsub_server: Grasp.PubSub,
+  adapter: Bandit.PhoenixAdapter,
+  render_errors: [formats: [html: GraspWeb.ErrorHTML], layout: false]
+
 config :grasp, index_path: "test/fixtures/index.json"
 
 # The fixture index names a project root that need not exist, and the suite must never write

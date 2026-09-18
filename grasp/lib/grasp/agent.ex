@@ -48,9 +48,14 @@ defmodule Grasp.Agent do
   The CLI takes one prompt per run, so this returns `{:error, :running}` while a run is
   live, and `{:error, :no_command}` when the configured agent command is not an executable
   on this machine.
+
+  `:mcp_url` is the URL the CLI connects its `grasp` MCP server to. It is the caller's to
+  give because Grasp answers under whatever prefix its host mounted it at, on the host's own
+  port; without it the run is pointed at the standalone viewer.
   """
-  @spec send_prompt(name(), String.t()) :: :ok | {:error, :running | :no_command}
-  def send_prompt(name, prompt), do: GenServer.call(Runner.via(name), {:prompt, prompt})
+  @spec send_prompt(name(), String.t(), keyword()) :: :ok | {:error, :running | :no_command}
+  def send_prompt(name, prompt, opts \\ []),
+    do: GenServer.call(Runner.via(name), {:prompt, prompt, opts})
 
   @doc "Ends a live run; a finished conversation is left alone."
   @spec stop(name()) :: :ok

@@ -3,10 +3,6 @@ defmodule GraspWeb do
   Entry points for the web layer: `use GraspWeb, :live_view`, `:html` or `:verified_routes`.
   """
 
-  @doc "Static paths served by `Plug.Static`."
-  @spec static_paths() :: [String.t()]
-  def static_paths, do: ~w(assets favicon.ico robots.txt)
-
   def router do
     quote do
       use Phoenix.Router, helpers: false
@@ -34,8 +30,7 @@ defmodule GraspWeb do
     quote do
       use Phoenix.VerifiedRoutes,
         endpoint: GraspWeb.Endpoint,
-        router: GraspWeb.Router,
-        statics: GraspWeb.static_paths()
+        router: GraspWeb.Router
     end
   end
 

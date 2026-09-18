@@ -3,8 +3,9 @@ defmodule Grasp.Agent.Command do
   Builds the argv that runs the Claude Code CLI headless against this viewer.
 
   The CLI is asked for `stream-json` on stdout so the runner can render a transcript as it
-  arrives, and is pointed at the viewer's own `/mcp` endpoint with an inline
-  `--mcp-config`. `--strict-mcp-config` keeps the developer's own `.mcp.json` out of the
+  arrives, and is pointed with an inline `--mcp-config` at the `/mcp` endpoint Grasp serves
+  under its mount prefix — the caller supplies that URL, since only it knows where the host
+  mounted Grasp. `--strict-mcp-config` keeps the developer's own `.mcp.json` out of the
   run, and the tool allowlist follows the chat's mode. In `read` mode it is the grasp tools
   plus `Read`, `Grep` and `Glob`, with nothing that writes files or runs commands. In `edit`
   mode it also carries `Edit`, `Write` and a `Bash` narrowed to `mix`, to the read-only git
@@ -162,7 +163,12 @@ defmodule Grasp.Agent.Command do
     "mix grasp.index --base #{base}" <> out
   end
 
-  @doc "The URL of this viewer's MCP endpoint, on the loopback address the endpoint serves."
+  @doc """
+  The URL of the standalone viewer's MCP endpoint, on the loopback address it serves.
+
+  It is the address to use when nothing else names one — a run started outside a request,
+  where the host's own scheme, port and mount prefix are not known.
+  """
   @spec mcp_url() :: String.t()
   def mcp_url do
     # `http: false` is a legal endpoint setting for a node that only runs the MCP client side.

@@ -9,7 +9,6 @@
 *.ez
 *.beam
 erl_crash.dump
-/grasp/priv/static/assets/
 /grasp/assets/node_modules/
 .grasp/
 .DS_Store

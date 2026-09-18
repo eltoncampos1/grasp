@@ -1,34 +1,29 @@
 defmodule GraspWeb.Router do
   @moduledoc """
-  Routes: the review page for the default session and for a named session, plus the MCP
-  endpoint agents connect to.
+  The standalone viewer's router: one pipeline and Grasp mounted at the root.
+
+  It mounts Grasp through the same macro a host application uses, so working on Grasp
+  exercises the mounted form rather than a second arrangement of the same routes — and the
+  pipeline is the one a host is asked for, so what the suite proves is what the README tells
+  a host to write.
   """
 
   use GraspWeb, :router
 
-  pipeline :browser do
+  import Grasp.Router
+
+  # No `:accepts` plug: the MCP endpoint under the same prefix speaks JSON and server-sent
+  # events, and a pipeline that admits HTML alone refuses it before the route is reached.
+  pipeline :grasp_browser do
     plug GraspWeb.Plugs.LocalOnly
-    plug :accepts, ["html"]
     plug :fetch_session
     plug :protect_from_forgery
     plug :put_secure_browser_headers
-    plug :put_root_layout, html: {GraspWeb.Layouts, :root}
-  end
-
-  pipeline :mcp do
-    plug GraspWeb.Plugs.LocalOnly
-  end
-
-  scope "/", GraspWeb do
-    pipe_through :browser
-
-    live "/", ReviewLive
-    live "/s/:name", ReviewLive
   end
 
   scope "/" do
-    pipe_through :mcp
+    pipe_through :grasp_browser
 
-    forward "/mcp", Anubis.Server.Transport.StreamableHTTP.Plug, server: Grasp.MCP.Server
+    grasp("/")
   end
 end

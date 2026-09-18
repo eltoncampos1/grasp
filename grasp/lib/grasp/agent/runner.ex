@@ -72,15 +72,15 @@ defmodule Grasp.Agent.Runner do
   @impl true
   def handle_call(:get, _from, state), do: {:reply, view(state), state}
 
-  def handle_call({:prompt, _prompt}, _from, %{running?: true} = state),
+  def handle_call({:prompt, _prompt, _opts}, _from, %{running?: true} = state),
     do: {:reply, {:error, :running}, state}
 
-  def handle_call({:prompt, prompt}, _from, state) do
+  def handle_call({:prompt, prompt, opts}, _from, state) do
     {command, argv} =
       Command.build(prompt,
         command: Application.fetch_env!(:grasp, :agent_command),
         session: state.name,
-        mcp_url: Command.mcp_url(),
+        mcp_url: Keyword.get(opts, :mcp_url) || Command.mcp_url(),
         resume: state.stream.claude_session_id,
         model: state.model || Application.get_env(:grasp, :agent_model),
         mode: state.mode,

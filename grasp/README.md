@@ -64,6 +64,22 @@ A project that has never run `mix grasp.index` opens on a page saying so and nam
 task; the store watches the path all the same and the canvas fills in as soon as the file
 is written.
 
+## Assets
+
+`priv/static/assets/grasp.js` and `grasp.css` are committed, because a host installs Grasp
+from Hex and never builds them: `GraspWeb.Assets` embeds both at compile time and serves
+them under the mount path. The bundle carries Grasp's hooks and stylesheet alone — Phoenix,
+`phoenix_html` and LiveView are read from the host's own `priv/static`, so the client always
+matches the LiveView the host runs.
+
+```
+mix assets.build    # rebuild both files; commit them with the change that moved them
+mix assets.deploy   # the same, minified
+```
+
+The dev server runs esbuild in watch mode, and `@external_resource` on each file makes a
+rebuild recompile the plug, so a saved hook reaches the browser on the next reload.
+
 ## Tests
 
 ```
