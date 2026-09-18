@@ -73,9 +73,12 @@ defmodule Grasp.Application do
     if standalone?, do: core ++ [GraspWeb.Endpoint], else: core
   end
 
+  # The flag is read once, at start; a configuration reload that flipped it afterwards would
+  # otherwise send a config change to an endpoint that was never started. What is running
+  # answers that without depending on the flag holding still.
   @impl true
   def config_change(changed, _new, removed) do
-    if standalone?(), do: GraspWeb.Endpoint.config_change(changed, removed)
+    if Process.whereis(GraspWeb.Endpoint), do: GraspWeb.Endpoint.config_change(changed, removed)
     :ok
   end
 

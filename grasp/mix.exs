@@ -47,7 +47,8 @@ defmodule Grasp.MixProject do
       {:lazy_html, ">= 0.1.0"},
       {:anubis_mcp, "~> 2.0"},
       {:sourceror, "~> 1.10"},
-      {:esbuild, "~> 0.10", only: :dev, runtime: false}
+      {:esbuild, "~> 0.10", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end
 

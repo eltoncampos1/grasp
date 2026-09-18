@@ -21,6 +21,8 @@ MCP server lets coding agents arrange cards and answer review comments
 - Two independent Mix projects, not an umbrella. `grasp_index` is the indexer a target
   project adds as a dev dependency; `grasp` is the Phoenix LiveView viewer plus MCP
   server and is never a dependency of the target.
+  Superseded by Part 4: one package, `{:grasp, only: :dev}`, mounted in the target's own
+  endpoint.
 - Call resolution comes from an **Elixir compiler tracer** (exact, the mechanism behind
   `mix xref` and Boundary), with **Sourceror** supplying definition spans and call ranges.
   Reach was evaluated and rejected as the engine: its source-level resolution misses
@@ -45,6 +47,9 @@ MCP server lets coding agents arrange cards and answer review comments
 
 ## Repository layout
 
+Superseded by Part 4: one package, `{:grasp, only: :dev}`, so the two directories below are
+one, `grasp/`.
+
 ```
 grasp/
   README.md  LICENSE  .mise.toml  .github/workflows/ci.yml  docs/specs/
@@ -56,6 +61,9 @@ grasp/
 ```
 
 ## Part 1 — `grasp_index`
+
+Superseded by Part 4: one package, `{:grasp, only: :dev}`. Everything below describes the
+indexer, whose modules and Mix task are unchanged by that.
 
 In the target project:
 

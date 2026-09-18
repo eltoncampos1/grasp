@@ -3,10 +3,6 @@ defmodule Grasp.Index.BuilderTest do
 
   @moduletag :integration
 
-  # The fixture depends on Grasp, so a cold run compiles Grasp's whole dependency set
-  # before it indexes anything.
-  @moduletag timeout: 900_000
-
   @fixture Path.expand("../../fixtures/sample_app", __DIR__)
 
   setup_all do
@@ -14,7 +10,10 @@ defmodule Grasp.Index.BuilderTest do
     env = [{"MIX_ENV", "dev"}]
 
     unless Enum.all?(locked_deps(), &File.dir?(Path.join([@fixture, "deps", &1]))) do
-      {_, 0} = System.cmd("mix", ["deps.get"], cd: @fixture, env: env, stderr_to_stdout: true)
+      {fetched, status} =
+        System.cmd("mix", ["deps.get"], cd: @fixture, env: env, stderr_to_stdout: true)
+
+      assert status == 0, fetched
     end
 
     {output, status} =

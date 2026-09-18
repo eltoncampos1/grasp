@@ -83,6 +83,9 @@ defmodule Grasp.IndexStore do
           {:error, _reason, state} -> state
         end
       else
+        # A store watching a file that is not there holds no index: one a previous start put
+        # there would be read as this path's contents.
+        :persistent_term.erase(@key)
         state
       end
 

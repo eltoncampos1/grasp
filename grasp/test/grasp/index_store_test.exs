@@ -103,15 +103,24 @@ defmodule Grasp.IndexStoreTest do
     assert state.path == path
     assert state.mtime == nil
     assert state.last_error == nil
+    assert IndexStore.get() == nil
   end
 
-  test "the watched path defaults to the index the build task writes under the project root" do
+  @tag :tmp_dir
+  test "the watched path defaults to the index the build task writes under the project root",
+       %{tmp_dir: tmp_dir} do
     previous = Application.get_env(:grasp, :index_path)
     Application.put_env(:grasp, :index_path, nil)
     on_exit(fn -> Application.put_env(:grasp, :index_path, previous) end)
 
-    assert {:ok, state} = IndexStore.init([])
-    assert state.path == Path.join(File.cwd!(), ".grasp/index.json")
+    # A directory of its own, so the assertion does not turn on whether the repository
+    # happens to hold an index of itself.
+    {:ok, state} = File.cd!(tmp_dir, fn -> IndexStore.init([]) end)
+
+    assert state.path == Path.join(tmp_dir, ".grasp/index.json")
+    assert state.mtime == nil
+    assert state.last_error == nil
+    assert IndexStore.get() == nil
   end
 
   defp tmp_copy(transform) do
