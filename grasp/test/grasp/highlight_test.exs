@@ -270,6 +270,30 @@ defmodule Grasp.HighlightTest do
              |> LazyHTML.text() == ".badge"
     end
 
+    test "a modified template's diff numbers its own lines and nothing past them" do
+      record = %{
+        "id" => "SampleAppWeb.PageHTML.edited/1",
+        "kind" => "template",
+        "file" => "lib/sample_app_web/page_html/show.html.heex",
+        "span" => %{"start_line" => 1, "end_line" => 3},
+        "source" => ~s(<h1>Title</h1>\n<p>new</p>\n<footer />\n),
+        "base_source" => ~s(<h1>Title</h1>\n<p>old</p>\n<footer />\n),
+        "calls" => []
+      }
+
+      lines =
+        Highlight.diff_lines(record, card_id: 3, open_calls: %{}, external?: fn _ -> false end)
+
+      assert Enum.filter(lines, &(&1.side == :new)) |> Enum.map(& &1.line) == [1, 2, 3]
+      assert Enum.filter(lines, &(&1.side == :old)) |> Enum.map(& &1.line) == [2]
+      assert Enum.map(lines, & &1.op) == [:eq, :del, :ins, :eq]
+
+      doc = lines |> Enum.map_join(& &1.html) |> LazyHTML.from_fragment()
+
+      assert doc |> LazyHTML.query("span.line[data-line]") |> LazyHTML.attribute("data-line") ==
+               ~w(1 2 3)
+    end
+
     test "a component tag inside a ~H heredoc is a clickable call span" do
       doc = fixture_lines("SampleAppWeb.HelloLive.render/1")
 

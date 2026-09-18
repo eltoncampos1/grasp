@@ -399,8 +399,9 @@ defmodule GraspWeb.CardComponents do
 
   # How long the function is on the branch, which is what the default context is decided
   # against. A record carrying no source of its own — one the branch removed — is nothing to
-  # fold.
-  defp loc(record), do: record["source"] |> to_string() |> String.split("\n") |> length()
+  # fold. Counted as the body numbers its lines, so a template is not folded against a line
+  # its card never draws.
+  defp loc(record), do: record["source"] |> Grasp.Highlight.source_lines() |> length()
 
   # The footer button for a hidden call is marked exactly as the call spans in the body are,
   # so a call the graph has opened reads the same wherever the card shows it.

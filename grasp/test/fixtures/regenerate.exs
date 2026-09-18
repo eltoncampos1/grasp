@@ -13,8 +13,10 @@
 #     pull request is against;
 #   * `generated_at`, a fixed instant so a regeneration shows only the records that moved;
 #   * every record's `change`, `base_source` and `removed`, matched by id;
-#   * every record the old fixture holds and the fresh document does not — a function the
-#     branch removed exists only as a hand-made record, and reindexing cannot find it.
+#   * every `"removed": true` record the old fixture holds and the fresh document does not —
+#     a function the branch removed exists only as a hand-made record, and reindexing cannot
+#     find it. A record that is not marked removed and no longer indexed is a function the
+#     sample app itself dropped, and goes with it.
 #
 # A record the fresh document adds keeps the indexer's own `change: "unchanged"`.
 
@@ -35,7 +37,11 @@ merged =
     end
   end)
 
-kept = Enum.reject(old["functions"], &MapSet.member?(fresh_ids, &1["id"]))
+kept =
+  Enum.filter(
+    old["functions"],
+    &(&1["removed"] == true and not MapSet.member?(fresh_ids, &1["id"]))
+  )
 
 document =
   fresh

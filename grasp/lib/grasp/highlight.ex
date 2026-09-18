@@ -88,6 +88,17 @@ defmodule Grasp.Highlight do
           html: String.t()
         }
 
+  @doc """
+  The lines a record's source is numbered by.
+
+  A template's `source` is a whole file and ends in a newline; a function's body does not.
+  That final newline ends the last line rather than opening an empty one after it, so
+  splitting on `\\n` alone would number a line past the record's own `end_line` — and draw
+  it, in the diff as well as the source, wider than the gutter was sized for.
+  """
+  @spec source_lines(String.t() | nil) :: [String.t()]
+  def source_lines(source), do: source |> without_final_newline() |> String.split("\n")
+
   @doc "Highlighted HTML for `record` with clickable call spans; see the moduledoc."
   @spec render(map(), opts()) :: Phoenix.HTML.safe()
   def render(record, opts), do: {:safe, record |> lines(opts) |> join()}
@@ -108,10 +119,7 @@ defmodule Grasp.Highlight do
 
     # Lines are driven by the source, not by the tokens: a blank line carries no piece, and
     # numbering it from the token groups alone would drop it and skip a number in the gutter.
-    # A template record's source is a whole file, whose final newline ends its last line
-    # rather than opening an empty one after it.
-    last_line =
-      first_line + length(String.split(String.replace_suffix(source, "\n", ""), "\n")) - 1
+    last_line = first_line + length(source_lines(source)) - 1
 
     for line <- first_line..last_line do
       html =
@@ -167,7 +175,8 @@ defmodule Grasp.Highlight do
 
     {lines, _current, _base} =
       base_source
-      |> Grasp.Diff.lines(record["source"])
+      |> without_final_newline()
+      |> Grasp.Diff.lines(without_final_newline(record["source"]))
       |> Enum.reduce({[], record["span"]["start_line"], 1}, fn
         {:del, _text}, {acc, current, base} ->
           text = base_by_line |> Map.get(base, []) |> Enum.map_join(&token_html/1)
@@ -187,6 +196,10 @@ defmodule Grasp.Highlight do
 
     Enum.reverse(lines)
   end
+
+  # A file's final newline ends its last line; it does not open an empty one after it.
+  defp without_final_newline(source),
+    do: source |> to_string() |> String.replace_suffix("\n", "")
 
   defp join(lines), do: Enum.map_join(lines, "", & &1.html)
 

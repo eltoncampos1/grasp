@@ -90,11 +90,12 @@ mix grasp.index [--base main] [--out .grasp/index.json]
    file and line containment) and its call node by line and column, producing a call
    with a target id, kind and range. An event that has a column but no matching node is
    macro-generated (`use`-injected code) and is kept as a `hidden_call`, so the
-   callers/callees graph stays exact even where nothing is clickable. Events reported with **no column at all** come from the same machinery but
-   are mostly the expansion's own plumbing — a template engine, a query builder,
-   `Logger`, `and` and `>` compiling to `:erlang` — which describes how the code was
-   built rather than what the function set out to do, and on a real project outnumbers
-   the interesting calls by more than ten to one. A column-less event therefore becomes a
+   callers/callees graph stays exact even where nothing is clickable. Events reported
+   with **no column at all** come from the same machinery but are mostly the expansion's
+   own plumbing — a template engine, a query builder, `Logger`, `and` and `>` compiling
+   to `:erlang` — which describes how the code was built rather than what the function
+   set out to do, and on a real project outnumbers the interesting calls by more than ten
+   to one. A column-less event therefore becomes a
    hidden call only when its line falls inside the definition's span and its target is a
    definition the index itself holds. That keeps the calls a `~H` body makes into the
    project's own contexts — the controller to template to context chain — while leaving
@@ -170,20 +171,27 @@ mix grasp.index [--base main] [--out .grasp/index.json]
 HEEx is code the graph knows, in three parts:
 
 - **Component tags are call sites.** The compiler reports `<.badge>` and
-  `<MyAppWeb.Components.badge>` as calls to the component function, at the tag's line and
-  the column of the function name, inside inline `~H` bodies and inside `.heex` files alike.
-  `Grasp.Index.Heex.tag_sites/2` scans template text for those tags — skipping slots
-  (`<:name>`), comments and `{…}` interpolations — and yields call sites in file
-  coordinates (a heredoc's stripped indentation is added back; a single-line `~H"…"`
-  starts at the sigil's own column), ranged from the character after `<` to the end of the
-  name, so the tag name is the clickable span. The extractor adds them to the definition
-  holding each `~H` sigil; the join then matches the events as it does any call.
+  `<MyAppWeb.Components.badge>` as calls to the component function, inside inline `~H`
+  bodies and inside `.heex` files alike, but not at the same column: a local tag carries
+  the column of the `<` that opens it, a remote one the column of the function name, one
+  past the last dot. `Grasp.Index.Heex.tag_sites/2` scans template text for those tags —
+  skipping slots (`<:name>`), comments, `{…}` interpolations and `<script>` / `<style>`
+  bodies — and yields call sites in file coordinates (a heredoc's stripped indentation is
+  added back; a single-line `~H"…"` starts at the sigil's own column), each keyed at the
+  column the compiler reports for its form and ranged from the character after `<` to the
+  end of the name, so the tag name is the clickable span whichever form it takes. The
+  extractor adds them to the definition holding each `~H` sigil; the join then matches the
+  events as it does any call.
 - **Template files are records.** The extractor records every `embed_templates "pattern"`
-  a module body calls. The builder globs each pattern relative to the module's file and
-  makes one definition per match, following Phoenix's naming — `home.html.heex` is
-  `PageHTML.home/1` — with `kind` `template`, the template path as `file`, the whole file
-  as `source` and span, and the tag sites as call sites; events the compiler reports for
-  that function (their file is the template) join to it. A template that also has a
+  a module body calls, with the `:suffix` and `:root` options it was given. The builder
+  globs each pattern under `:root` — resolved against the directory of the module that
+  embeds it, which is also where the pattern is looked for when no `:root` is given — and
+  makes one definition per match, following Phoenix's naming: the basename with its format
+  and engine extensions dropped and `:suffix` appended, so `home.html.heex` is
+  `PageHTML.home/1` and the same file under `suffix: "_html"` is `PageHTML.home_html/1`.
+  Each record carries `kind` `template`, the template path as `file`, the whole file as
+  `source` and span, and the tag sites as call sites; events the compiler reports for that
+  function (their file is the template) join to it. A template that also has a
   hand-written definition of the same name and arity is left to the hand-written one.
 - **`render` reaches the template.** A call to `Phoenix.Controller.render/2,3` in a
   module named `…Controller` whose second argument is a literal atom or string names a
@@ -241,6 +249,14 @@ touched is unchanged.
   ]
 }
 ```
+
+A record's `kind` is the definition form it was written as — `def`, `defp`, `defmacro`,
+`defmacrop`, `defguard`, `defguardp`, `defdelegate` — or `template`, for a file an
+`embed_templates` pattern matched, which no source line defines. A call's `kind` is the
+tracer's — `remote`, `local`, `imported`, `remote_macro`, `local_macro`, `imported_macro`
+— or `template`, for a controller's `render` retargeted at the template it names. The word
+means two different things in the two places: a record of kind `template` *is* a template,
+a call of kind `template` *reaches* one.
 
 `Grasp.Index` (shared reader): `load/1` into a plain struct, `fetch_function/2`,
 `callers/2` (reverse index built at load), `callees/2`, `search/3` (substring and
@@ -644,9 +660,12 @@ parsed into text runs, each carrying the class of its innermost span and a start
 a run can be split at a call range's boundary and the pieces inside a range wrapped in one
 clickable span. A record whose file ends in `.heex` is highlighted with Lumis's HEEx
 grammar; every other record with the Elixir one, which injects the HEEx grammar into a `~H`
-body, so a component tag is a run of its own on both sides and the call range falls on it. The theme is `github_light`, inlined into
-the root layout at compile time from `Lumis.Theme.build_css!/1`; the rest of the UI uses
-the same GitHub Light palette.
+body, so a component tag is a run of its own on both sides and the call range falls on it.
+A record's source is numbered by its own lines, its final newline read as ending the last
+one rather than opening an empty one after it — in the diff as in the source, so a
+template, whose source is a whole file, is not drawn a line past its own `end_line`. The
+theme is `github_light`, inlined into the root layout at compile time from
+`Lumis.Theme.build_css!/1`; the rest of the UI uses the same GitHub Light palette.
 
 tree-sitter is super-linear on deeply nested binary-operator trees — a twenty-step `|>`
 pipeline parses in tens of milliseconds, a forty-step one in hundreds — and a card
@@ -824,6 +843,20 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   the module that embedded a path which no longer exists, and the `.ex` file holding that
   `embed_templates` is in the diff only when it changed too. Added, modified and unchanged
   templates are all classified.
+- **A single-line `~H"…"` is keyed where the compiler thinks it is.** `sigil_H/2` reports
+  every sigil as if it were a heredoc — the content starting on the line after the sigil,
+  at column 1 — so a tag in a one-line sigil is keyed at `sigil line + 1` and its column
+  within the content, while the `range` the reader clicks is the tag's real place in the
+  file. The two coordinate systems coincide for a heredoc and only diverge here.
+- **`.eex` templates are records without call sites.** HEEx is the engine whose tags
+  compile to component calls, so an `.eex` file an embed matches is a record the compiler's
+  events still land on, with nothing clickable in it — and it is highlighted with the
+  Elixir grammar, since only `.heex` selects the HEEx one.
+- **A computed `:suffix` or `:root` reads as absent.** Both options are read from the
+  literal keyword list at the `embed_templates` call; one given a module attribute or any
+  other expression is a value no parser can know, and guessing it would name a function the
+  compiler never defined, so the embed is globbed and named as if the option were not
+  there.
 
 ### Known gaps (milestone 5.8)
 
