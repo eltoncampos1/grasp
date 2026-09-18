@@ -15,6 +15,15 @@ defmodule Grasp.Index.Extract do
   don't nest when rendered. A range can span lines: a receiver written on its own line
   (`Enum\n.map(list, f)`) starts the range one line above the name the compiler reports.
 
+  A `~H` sigil in a definition body contributes call sites too: `Grasp.Index.Heex` scans
+  the template for component tags, and the sites it returns join the ones the Elixir AST
+  produced. A heredoc `~H\"""` starts on the line after the sigil, with the `indentation`
+  Sourceror records on the sigil's string stripped from every line; a single-line `~H"..."`
+  starts at the sigil's own line, three columns past the `~`. A site made from a `render`
+  call whose second argument is a literal atom or string also carries that literal as
+  `template`, with any `.html` suffix removed, which is the name of the template the call
+  renders.
+
   Each definition also records where its clause heads are: `head_positions` is the
   `{line, column}` of the function name in every clause and `head_ranges` the matching
   ranges over that name. `Grasp.Index.Join` uses the positions to drop the events the
@@ -22,9 +31,16 @@ defmodule Grasp.Index.Extract do
   `defdelegate` makes, which the compiler reports with no column at all.
   """
 
+  alias Grasp.Index.Heex
+
   @type range :: %{start: {pos_integer(), pos_integer()}, end: {pos_integer(), pos_integer()}}
   @type position :: {pos_integer(), pos_integer()}
-  @type call_site :: %{line: pos_integer(), column: pos_integer(), range: range()}
+  @type call_site :: %{
+          line: pos_integer(),
+          column: pos_integer(),
+          range: range(),
+          template: String.t() | nil
+        }
   @type kind :: :def | :defp | :defmacro | :defmacrop | :defguard | :defguardp | :defdelegate
 
   @type definition :: %{
@@ -43,6 +59,13 @@ defmodule Grasp.Index.Extract do
         }
 
   @type module_info :: %{name: String.t(), file: String.t(), line: pos_integer()}
+
+  @type embed :: %{
+          module: String.t(),
+          pattern: String.t(),
+          file: String.t(),
+          line: pos_integer()
+        }
 
   @def_kinds [:def, :defp, :defmacro, :defmacrop, :defguard, :defguardp, :defdelegate]
   @attached_attributes [:doc, :spec, :impl, :deprecated, :since]
@@ -70,14 +93,26 @@ defmodule Grasp.Index.Extract do
     :\\
   ]
 
-  @doc "Parses `source`, read from the project-relative `file`, into definitions and modules."
+  @doc """
+  Parses `source`, read from the project-relative `file`, into definitions, modules and
+  the template patterns its modules embed.
+  """
   @spec extract(String.t(), String.t()) ::
-          {:ok, %{definitions: [definition()], modules: [module_info()]}} | {:error, term()}
+          {:ok, %{definitions: [definition()], modules: [module_info()], embeds: [embed()]}}
+          | {:error, term()}
   def extract(source, file) do
     with {:ok, ast} <- Sourceror.parse_string(source) do
       lines = String.split(source, "\n")
-      acc = walk(ast, [], %{definitions: [], modules: [], lines: lines, file: file})
-      {:ok, %{definitions: Enum.reverse(acc.definitions), modules: Enum.reverse(acc.modules)}}
+
+      acc =
+        walk(ast, [], %{definitions: [], modules: [], embeds: [], lines: lines, file: file})
+
+      {:ok,
+       %{
+         definitions: Enum.reverse(acc.definitions),
+         modules: Enum.reverse(acc.modules),
+         embeds: Enum.reverse(acc.embeds)
+       }}
     end
   end
 
@@ -128,12 +163,22 @@ defmodule Grasp.Index.Extract do
         {:defmodule, _, _} = node, {acc, _pending} ->
           {walk(node, parts, acc), []}
 
+        {:embed_templates, meta, [pattern | _opts]}, {acc, _pending} ->
+          {add_embed(acc, module, pattern, meta), []}
+
         _other, {acc, _pending} ->
           {acc, []}
       end)
 
     acc
   end
+
+  defp add_embed(acc, module, {:__block__, _meta, [pattern]}, meta) when is_binary(pattern) do
+    embed = %{module: module, pattern: pattern, file: acc.file, line: meta[:line]}
+    %{acc | embeds: [embed | acc.embeds]}
+  end
+
+  defp add_embed(acc, _module, _dynamic_pattern, _meta), do: acc
 
   defp add_clause(acc, module, kind, head, node, pending) do
     case head_signature(head) do
@@ -243,6 +288,10 @@ defmodule Grasp.Index.Extract do
         {:&, _, [{:/, _, [target, _arity]}]} = node, sites ->
           {node, add_site(sites, target)}
 
+        {:sigil_H, _meta, [{:<<>>, _str_meta, [content]}, _modifiers]} = node, sites
+        when is_binary(content) ->
+          {node, Enum.reverse(tag_sites(node)) ++ add_site(sites, node)}
+
         {{:., _, _}, _, args} = node, sites when is_list(args) ->
           {node, add_site(sites, node)}
 
@@ -264,10 +313,45 @@ defmodule Grasp.Index.Extract do
 
   defp add_site(sites, node) do
     case call_range(node) do
-      nil -> sites
-      {line, column, range} -> [%{line: line, column: column, range: range} | sites]
+      nil ->
+        sites
+
+      {line, column, range} ->
+        [%{line: line, column: column, range: range, template: template(node)} | sites]
     end
   end
+
+  # `~H"""` content reaches the compiler with the heredoc's indentation stripped, starting on
+  # the line below the sigil, which is where these file positions put it too. A single-line
+  # `~H"..."` starts three columns past the `~`, after the sigil name and its opening quote,
+  # but Phoenix compiles it as though it began on the next line at column 1, so no tracer
+  # event lands on the file position of its tags and the calls they make stay hidden.
+  defp tag_sites({:sigil_H, meta, [{:<<>>, str_meta, [content]}, _modifiers]}) do
+    with line when is_integer(line) <- meta[:line],
+         column when is_integer(column) <- meta[:column] do
+      delimiter = meta[:delimiter] || str_meta[:delimiter]
+
+      if delimiter in ~w(""" '''),
+        do: Heex.tag_sites(content, {line + 1, str_meta[:indentation] || 0}),
+        else: Heex.tag_sites(content, {line, 0}, column + 3)
+    else
+      _ -> []
+    end
+  end
+
+  # The template a `render(conn, :show, …)` or `render(conn, "show.html", …)` call renders.
+  defp template({{:., _, [_receiver, :render]}, _meta, [_first, second | _rest]}),
+    do: template_name(second)
+
+  defp template({:render, _meta, [_first, second | _rest]}), do: template_name(second)
+  defp template(_node), do: nil
+
+  defp template_name({:__block__, _meta, [name]}) when is_atom(name),
+    do: template_name(Atom.to_string(name))
+
+  defp template_name({:__block__, _meta, [name]}) when is_binary(name), do: template_name(name)
+  defp template_name(name) when is_binary(name), do: String.replace_suffix(name, ".html", "")
+  defp template_name(_other), do: nil
 
   # Remote call: the compiler reports the function name's position; the range starts at
   # the receiver when it is a literal alias/atom (`Formatter.wrap`) and at the name

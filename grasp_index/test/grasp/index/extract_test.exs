@@ -150,6 +150,59 @@ defmodule Grasp.Index.ExtractTest do
     assert find(defs, "Forms", :build).call_sites == []
   end
 
+  @templates ~S'''
+  defmodule SampleWeb.Page do
+    embed_templates "page_html/*"
+
+    def render(assigns) do
+      ~H"""
+      <.badge label="x" />
+      <SampleAppWeb.GreetingComponent.render name={@name} />
+      """
+    end
+
+    def show(conn, name) do
+      render(conn, :show, name: name)
+    end
+
+    def legacy(conn), do: render(conn, "show.html", [])
+  end
+  '''
+
+  test "turns the component tags of a ~H sigil into call sites with file coordinates" do
+    {:ok, %{definitions: defs}} = Extract.extract(@templates, "lib/sample_web/page.ex")
+    render = find(defs, "SampleWeb.Page", :render)
+
+    assert %{range: %{start: {6, 6}, end: {6, 12}}, template: nil} = site(render, 6, 5)
+    assert %{range: %{start: {7, 6}, end: {7, 43}}, template: nil} = site(render, 7, 37)
+  end
+
+  test "names the template a render call renders, dropping the .html suffix" do
+    {:ok, %{definitions: defs}} = Extract.extract(@templates, "lib/sample_web/page.ex")
+
+    assert %{template: "show"} = site(find(defs, "SampleWeb.Page", :show), 12, 5)
+    assert %{template: "show"} = site(find(defs, "SampleWeb.Page", :legacy), 15, 25)
+  end
+
+  test "collects the template patterns a module embeds" do
+    {:ok, %{embeds: embeds}} = Extract.extract(@templates, "lib/sample_web/page.ex")
+
+    assert embeds == [
+             %{
+               module: "SampleWeb.Page",
+               pattern: "page_html/*",
+               file: "lib/sample_web/page.ex",
+               line: 2
+             }
+           ]
+  end
+
+  test "leaves template nil on a call site that is not a render call" do
+    {:ok, %{definitions: defs}} = Extract.extract(@source, "lib/sample.ex")
+
+    assert %{template: nil} = site(find(defs, "Sample", :greet), 6, 22)
+  end
+
   defp find(defs, module, name), do: Enum.find(defs, &(&1.module == module and &1.name == name))
 
   defp site(def, line, column),
