@@ -139,12 +139,10 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
    units. The border is divided by the zoom so it stays a hairline however far out you are. */
 .frames { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .frame { position: absolute; border: calc(1px / var(--zoom, 1)) solid var(--border); border-radius: var(--radius); background: color-mix(in srgb, var(--bg-raised) 60%, transparent); }
-/* One section per group, stacked down the stage, with the ungrouped cards last. A section
-   is only as wide as its own columns, so the frames do not stretch to the widest one. */
-.flows { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-xl); padding: var(--space-m); position: relative; z-index: 1; }
-/* The section's own box only reserves room between sections; the frame a group is read as
-   is drawn by the canvas hook round the cards wherever they have been dragged to. */
-.flow[data-grouped] { padding: var(--space-s) var(--space-m) var(--space-m); }
+/* A section is its group's header and nothing else: the cards are on the stage at positions
+   of their own, and the canvas hook puts each header over the frame drawn round its group. */
+.flows { position: absolute; inset-block-start: 0; inset-inline-start: 0; z-index: 2; }
+.flow { position: absolute; inset-block-start: 0; inset-inline-start: 0; }
 /* A frame's header is counter-scaled by --zoom, which the canvas hook writes on #stage beside
    the transform, so the name of a group reads at one size however far out the canvas is
    zoomed: it is what tells one frame from another when the cards inside them are too small
@@ -159,10 +157,12 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
    given rather than as a gap in the header. */
 .flow__title .flow__title-text--empty { color: var(--fg-muted); font-style: italic; font-weight: 400; }
 .flow__rename input { font: inherit; font-size: calc(var(--frame-title-size) / var(--zoom, 1)); font-weight: 600; padding: 2px var(--space-xs); border: 1px solid var(--border); border-radius: 4px; background: var(--bg-sunken); color: var(--fg); }
-/* Callers to the left of what they call: one flex row of columns, each a stack of cards. */
-.columns { display: flex; align-items: flex-start; gap: var(--space-xl); }
-.column { display: flex; flex-direction: column; gap: var(--space-m); align-items: flex-start; }
-.node { translate: var(--dx, 0px) var(--dy, 0px); }
+/* The whiteboard: every card sits where it was put, in stage pixels from the stage's corner,
+   and a card nothing has placed yet is held back until the hook has measured it and said
+   where it goes — drawn, so it can be measured, but not seen. */
+.nodes { position: relative; z-index: 1; }
+.node { position: absolute; left: var(--x, 0px); top: var(--y, 0px); }
+.node[data-unplaced] { visibility: hidden; }
 
 /* A card is as wide as its widest line, up to a ceiling, so a column of one-line helpers
    does not reserve the width of the longest function on the canvas. */

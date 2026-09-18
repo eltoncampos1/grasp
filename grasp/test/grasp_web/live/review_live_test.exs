@@ -124,7 +124,7 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(
              view,
-             "#card-1[data-function-id='#{@greet}'][data-focused='true'][data-depth='0']"
+             "#node-1[data-depth='0'] #card-1[data-function-id='#{@greet}'][data-focused='true']"
            )
 
     assert has_element?(view, "#card-1 span.call[data-target='#{@wrap}']", "Formatter.wrap")
@@ -209,11 +209,11 @@ defmodule GraspWeb.ReviewLiveTest do
 
     view |> element("#card-1 span.call[data-target='#{@wrap}']") |> render_click()
 
-    assert has_element?(view, ".columns .column:first-child #card-1[data-depth='0']")
+    assert has_element?(view, "#node-1[data-depth='0'] #card-1")
 
     assert has_element?(
              view,
-             ".columns .column:nth-child(2) #card-2[data-function-id='#{@wrap}'][data-depth='1'][data-focused='true']"
+             "#node-2[data-depth='1'] #card-2[data-function-id='#{@wrap}'][data-focused='true']"
            )
 
     assert has_element?(
@@ -225,7 +225,7 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(
              view,
-             ".columns .column:nth-child(2) #card-3[data-function-id='#{@shout}']"
+             "#node-3[data-depth='1'] #card-3[data-function-id='#{@shout}']"
            )
 
     assert has_element?(
@@ -260,7 +260,7 @@ defmodule GraspWeb.ReviewLiveTest do
     view |> element("#card-2 span.call[data-target='#{@greet_alias}']") |> render_click()
 
     assert count(view, ".card[data-function-id='#{@greet}']") == 1
-    assert has_element?(view, ".columns .column:nth-child(2) #card-3[data-depth='1']")
+    assert has_element?(view, "#node-3[data-depth='1'] #card-3")
 
     assert has_element?(
              view,
@@ -284,9 +284,9 @@ defmodule GraspWeb.ReviewLiveTest do
     view |> element("#card-2 .card__close") |> render_click()
 
     refute has_element?(view, "#card-2")
-    assert has_element?(view, ".columns .column:first-child #card-1[data-depth='0']")
-    assert has_element?(view, ".columns .column:first-child #card-3[data-depth='0']")
-    refute has_element?(view, ".columns .column:nth-child(2)")
+    assert has_element?(view, "#node-1[data-depth='0'] #card-1")
+    assert has_element?(view, "#node-3[data-depth='0'] #card-3")
+    refute has_element?(view, ".node[data-depth='1']")
   end
 
   test "close_chain takes the cards that had no other way to be reached", %{
@@ -360,20 +360,20 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(
              view,
-             ".columns .column:first-child #card-2[data-function-id='#{@greet_all}'][data-depth='0'][data-focused='true']"
+             "#node-2[data-depth='0'] #card-2[data-function-id='#{@greet_all}'][data-focused='true']"
            )
 
-    assert has_element?(view, ".columns .column:nth-child(2) #card-1[data-depth='1']")
+    assert has_element?(view, "#node-1[data-depth='1'] #card-1")
     assert count(view, "#card-1") == 1
     assert count(view, ".card[data-function-id='#{@greet}']") == 1
 
     open_caller(view, 1, @perform)
 
-    assert count(view, ".columns .column:first-child .card") == 2
+    assert count(view, ".node[data-depth='0'] .card") == 2
 
     assert has_element?(
              view,
-             ".columns .column:first-child #card-3[data-function-id='#{@perform}']"
+             "#node-3[data-depth='0'] #card-3[data-function-id='#{@perform}']"
            )
 
     assert count(view, "#card-1") == 1
@@ -460,7 +460,7 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(
              view,
-             ".columns .column:nth-child(2) #card-2[data-function-id='#{@greet}']"
+             "#node-2[data-depth='1'] #card-2[data-function-id='#{@greet}']"
            )
 
     assert has_element?(
@@ -504,7 +504,7 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(
              view,
-             ".columns .column:nth-child(2) #card-2[data-function-id='#{@show_template}']"
+             "#node-2[data-depth='1'] #card-2[data-function-id='#{@show_template}']"
            )
   end
 
@@ -529,7 +529,7 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(
              view,
-             ".columns .column:nth-child(2) #card-2[data-function-id='#{@badge}']"
+             "#node-2[data-depth='1'] #card-2[data-function-id='#{@badge}']"
            )
 
     view |> element("#card-2 .card__callers-toggle") |> render_click()
@@ -677,21 +677,48 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "aside.sidebar")
   end
 
-  test "dragging a card stores its offset and reset_layout clears it", %{view: view, name: name} do
+  test "dragging a card stores its position and reset_layout empties it", %{
+    view: view,
+    name: name
+  } do
     Session.open_root(name, @greet)
 
-    render_hook(view, "move_card", %{"card" => 1, "dx" => 40, "dy" => -12})
-    assert has_element?(view, "#card-1[data-dx='40'][data-dy='-12']")
-    assert has_element?(view, ".node[style*='--dx: 40px'] > #card-1")
+    assert has_element?(view, "#node-1[data-unplaced] > #card-1")
 
-    render_hook(view, "move_card", %{"card" => "1", "dx" => "7", "dy" => "8"})
-    assert has_element?(view, "#card-1[data-dx='7'][data-dy='8']")
+    render_hook(view, "move_card", %{"card" => 1, "x" => 40, "y" => -12})
+    assert has_element?(view, "#node-1[style*='--x: 40px'][style*='--y: -12px'] > #card-1")
+    refute has_element?(view, "#node-1[data-unplaced]")
 
-    render_hook(view, "move_card", %{"card" => 1, "dx" => "nope", "dy" => 0})
-    assert has_element?(view, "#card-1[data-dx='7']")
+    render_hook(view, "move_card", %{"card" => "1", "x" => "7", "y" => "8"})
+    assert has_element?(view, "#node-1[style*='--x: 7px'][style*='--y: 8px']")
+
+    render_hook(view, "move_card", %{"card" => 1, "x" => "nope", "y" => 0})
+    assert has_element?(view, "#node-1[style*='--x: 7px'][style*='--y: 8px']")
 
     render_click(view, "reset_layout", %{})
-    assert has_element?(view, "#card-1[data-dx='0'][data-dy='0']")
+    assert has_element?(view, "#node-1[data-unplaced][style*='--x: 0px'][style*='--y: 0px']")
+  end
+
+  test "place_cards fills a position only while a card has none", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    Session.open_root(name, @perform)
+
+    render_hook(view, "place_cards", %{
+      "cards" => [%{"id" => 1, "x" => 100, "y" => 200}, %{"id" => "2", "x" => "0", "y" => "60"}]
+    })
+
+    assert has_element?(view, "#node-1[style*='--x: 100px'][style*='--y: 200px']")
+    assert has_element?(view, "#node-2[style*='--x: 0px'][style*='--y: 60px']")
+    refute has_element?(view, ".node[data-unplaced]")
+
+    # A pass measured before another tab's drag says where a card it saw unplaced should go;
+    # the card is somewhere by then, and stays there.
+    render_hook(view, "place_cards", %{"cards" => [%{"id" => 1, "x" => 1, "y" => 1}]})
+    assert has_element?(view, "#node-1[style*='--x: 100px'][style*='--y: 200px']")
+
+    render_hook(view, "place_cards", %{"cards" => [%{"id" => "nope"}, "junk"]})
+    render_hook(view, "place_cards", %{"cards" => "junk"})
+    assert has_element?(view, "#node-1[style*='--x: 100px'][style*='--y: 200px']")
   end
 
   test "dragging a frame's title moves every card of that group", %{view: view, name: name} do
@@ -699,16 +726,29 @@ defmodule GraspWeb.ReviewLiveTest do
     Session.open_root(name, @perform)
     Session.open_root(name, @show)
     Session.new_group(name, "Greeting", [1, 2])
-    render_hook(view, "move_card", %{"card" => 2, "dx" => 5, "dy" => 5})
+    render_hook(view, "move_card", %{"card" => 1, "x" => 0, "y" => 0})
+    render_hook(view, "move_card", %{"card" => 2, "x" => 5, "y" => 5})
 
     render_hook(view, "move_group", %{"group" => 1, "dx" => 40, "dy" => -10})
 
-    assert has_element?(view, "#flow-1 #card-1[data-dx='40'][data-dy='-10']")
-    assert has_element?(view, "#flow-1 #card-2[data-dx='45'][data-dy='-5']")
-    assert has_element?(view, "#card-3[data-dx='0'][data-dy='0']")
+    assert has_element?(view, "#node-1[style*='--x: 40px'][style*='--y: -10px']")
+    assert has_element?(view, "#node-2[style*='--x: 45px'][style*='--y: -5px']")
+    assert has_element?(view, "#node-3[data-unplaced]")
 
     render_hook(view, "move_group", %{"group" => "nope", "dx" => 1, "dy" => 1})
-    assert has_element?(view, "#flow-1 #card-1[data-dx='40'][data-dy='-10']")
+    assert has_element?(view, "#node-1[style*='--x: 40px'][style*='--y: -10px']")
+  end
+
+  test "a group drag leaves a member nothing has placed unplaced", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    Session.open_root(name, @perform)
+    Session.new_group(name, "Greeting", [1, 2])
+    render_hook(view, "move_card", %{"card" => 1, "x" => 10, "y" => 10})
+
+    render_hook(view, "move_group", %{"group" => 1, "dx" => 5, "dy" => 5})
+
+    assert has_element?(view, "#node-1[style*='--x: 15px'][style*='--y: 15px']")
+    assert has_element?(view, "#node-2[data-group='1'][data-unplaced]")
   end
 
   test "an unhandled direction or an unparsable card id leaves the view alive", %{
@@ -872,7 +912,7 @@ defmodule GraspWeb.ReviewLiveTest do
     |> element("#entries .group[data-kind='changes'] button.entry[phx-value-id='#{@shout}']")
     |> render_click()
 
-    assert has_element?(view, "#card-1[data-function-id='#{@shout}'][data-depth='0']")
+    assert has_element?(view, "#node-1[data-depth='0'] #card-1[data-function-id='#{@shout}']")
   end
 
   test "the Changes group collapses like any other", %{view: view} do
@@ -901,10 +941,10 @@ defmodule GraspWeb.ReviewLiveTest do
              "ungroup"
            )
 
-    assert has_element?(view, "#flow-1 .columns .column:first-child #card-1[data-depth='0']")
-    assert has_element?(view, "#flow-1 .columns .column:nth-child(2) #card-2[data-depth='1']")
+    assert has_element?(view, "#node-1[data-group='1'][data-depth='0'] #card-1")
+    assert has_element?(view, "#node-2[data-group='1'][data-depth='1'] #card-2")
 
-    assert has_element?(view, "#flow-none .columns .column:first-child #card-3[data-depth='0']")
+    assert has_element?(view, "#node-3[data-group=''][data-depth='0'] #card-3")
     refute has_element?(view, "#flow-none .flow__title")
     refute has_element?(view, "#flow-none[data-grouped]")
   end
@@ -918,10 +958,10 @@ defmodule GraspWeb.ReviewLiveTest do
 
     open_caller(view, 1, @greet_all)
 
-    assert has_element?(view, "#flow-1 .columns .column:first-child #card-2[data-depth='0']")
-    assert has_element?(view, "#flow-1 .columns .column:nth-child(2) #card-1[data-depth='1']")
+    assert has_element?(view, "#node-2[data-group='1'][data-depth='0'] #card-2")
+    assert has_element?(view, "#node-1[data-group='1'][data-depth='1'] #card-1")
     assert has_element?(view, "#flow-1 .flow__count", "2 cards")
-    refute has_element?(view, "#flow-none #card-2")
+    refute has_element?(view, "#node-2[data-group=''] #card-2")
   end
 
   test "a section of one card counts it in the singular", %{view: view, name: name} do
@@ -939,8 +979,8 @@ defmodule GraspWeb.ReviewLiveTest do
     view |> element("#flow-1 .flow__title button[phx-click='dissolve_group']") |> render_click()
 
     refute has_element?(view, "#flow-1")
-    assert has_element?(view, "#flow-none .columns .column:first-child #card-1[data-depth='0']")
-    assert has_element?(view, "#flow-none .columns .column:nth-child(2) #card-2[data-depth='1']")
+    assert has_element?(view, "#node-1[data-group=''][data-depth='0'] #card-1")
+    assert has_element?(view, "#node-2[data-group=''][data-depth='1'] #card-2")
   end
 
   test "Shift-clicked cards are marked selected, and ⌘G frames them without a name", %{
@@ -967,8 +1007,8 @@ defmodule GraspWeb.ReviewLiveTest do
              "Untitled group"
            )
 
-    assert has_element?(view, "#flow-1 #card-1")
-    assert has_element?(view, "#flow-1 #card-2")
+    assert has_element?(view, "#node-1[data-group='1'] #card-1")
+    assert has_element?(view, "#node-2[data-group='1'] #card-2")
     assert has_element?(view, "#flow-1 .flow__count", "2 cards")
     refute has_element?(view, ".card--selected")
   end
@@ -979,8 +1019,9 @@ defmodule GraspWeb.ReviewLiveTest do
 
     render_hook(view, "group_selected", %{})
 
-    assert has_element?(view, "#flow-1[data-grouped] #card-2")
-    assert has_element?(view, "#flow-none #card-1")
+    assert has_element?(view, "#flow-1[data-grouped]")
+    assert has_element?(view, "#node-2[data-group='1'] #card-2")
+    assert has_element?(view, "#node-1[data-group=''] #card-1")
   end
 
   test "⇧⌘G returns the selected cards to the unframed section and keeps them selected", %{
@@ -994,8 +1035,8 @@ defmodule GraspWeb.ReviewLiveTest do
     render_hook(view, "toggle_select", %{"card" => "2"})
     render_hook(view, "ungroup_selected", %{})
 
-    assert has_element?(view, "#flow-none #card-2")
-    assert has_element?(view, "#flow-1 #card-1")
+    assert has_element?(view, "#node-2[data-group=''] #card-2")
+    assert has_element?(view, "#node-1[data-group='1'] #card-1")
     assert has_element?(view, "#card-2.card--selected")
   end
 
@@ -1010,10 +1051,10 @@ defmodule GraspWeb.ReviewLiveTest do
 
     render_hook(view, "toggle_select", %{"card" => "2"})
     render_hook(view, "toggle_select", %{"card" => "3"})
-    render_hook(view, "move_card", %{"card" => 2, "dx" => 10, "dy" => 5, "group" => 1})
+    render_hook(view, "move_card", %{"card" => 2, "x" => 10, "y" => 5, "group" => 1})
 
-    assert has_element?(view, "#flow-1 #card-2[data-dx='10'][data-dy='5']")
-    assert has_element?(view, "#flow-1 #card-3[data-dx='0'][data-dy='0']")
+    assert has_element?(view, "#node-2[data-group='1'][style*='--x: 10px'][style*='--y: 5px']")
+    assert has_element?(view, "#node-3[data-group='1'][data-unplaced]")
   end
 
   test "the selection is cleared by Escape and loses a card that closes", %{
@@ -1036,7 +1077,7 @@ defmodule GraspWeb.ReviewLiveTest do
     # to rather than framing a card nobody can see.
     render_hook(view, "group_selected", %{})
 
-    assert has_element?(view, "#flow-1 #card-2")
+    assert has_element?(view, "#node-2[data-group='1'] #card-2")
     assert has_element?(view, "#flow-1 .flow__count", "1 card")
   end
 
@@ -1061,7 +1102,7 @@ defmodule GraspWeb.ReviewLiveTest do
 
     render_hook(view, "group_selected", %{})
 
-    assert has_element?(view, "#flow-1 #card-2")
+    assert has_element?(view, "#node-2[data-group='1'] #card-2")
     assert has_element?(view, "#flow-1 .flow__count", "1 card")
   end
 
@@ -1079,7 +1120,7 @@ defmodule GraspWeb.ReviewLiveTest do
 
     render_hook(view, "group_selected", %{})
 
-    assert has_element?(view, "#flow-1 #card-3")
+    assert has_element?(view, "#node-3[data-group='1'] #card-3")
     assert has_element?(view, "#flow-1 .flow__count", "1 card")
   end
 
@@ -1151,13 +1192,13 @@ defmodule GraspWeb.ReviewLiveTest do
     Session.open_root(name, @perform)
     Session.group_cards(name, "Greeting", [1])
 
-    render_hook(view, "move_card", %{"card" => 2, "dx" => 10, "dy" => 5, "group" => 1})
+    render_hook(view, "move_card", %{"card" => 2, "x" => 10, "y" => 5, "group" => 1})
 
-    assert has_element?(view, "#flow-1 #card-2[data-dx='10'][data-dy='5']")
+    assert has_element?(view, "#node-2[data-group='1'][style*='--x: 10px'][style*='--y: 5px']")
 
-    render_hook(view, "move_card", %{"card" => 2, "dx" => 20, "dy" => 6})
+    render_hook(view, "move_card", %{"card" => 2, "x" => 20, "y" => 6})
 
-    assert has_element?(view, "#flow-1 #card-2[data-dx='20'][data-dy='6']")
+    assert has_element?(view, "#node-2[data-group='1'][style*='--x: 20px'][style*='--y: 6px']")
   end
 
   test "opening the callers menu closes a rename under way, and a rename closes it", %{
@@ -1194,9 +1235,9 @@ defmodule GraspWeb.ReviewLiveTest do
 
     Session.group_cards(name, "Greeting", [1])
 
-    render_hook(view, "move_card", %{"card" => 2, "dx" => 0, "dy" => 0, "group" => 1})
+    render_hook(view, "move_card", %{"card" => 2, "x" => 0, "y" => 0, "group" => 1})
 
-    assert has_element?(view, "#flow-1 #card-2.stub")
+    assert has_element?(view, "#node-2[data-group='1'] #card-2.stub")
 
     render_hook(view, "toggle_select", %{"card" => "2"})
 
@@ -1204,7 +1245,7 @@ defmodule GraspWeb.ReviewLiveTest do
 
     render_hook(view, "ungroup_selected", %{})
 
-    assert has_element?(view, "#flow-none #card-2.stub")
+    assert has_element?(view, "#node-2[data-group=''] #card-2.stub")
   end
 
   test "the project line names the base the review is against", %{view: view} do

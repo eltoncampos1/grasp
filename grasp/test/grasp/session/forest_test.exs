@@ -14,7 +14,7 @@ defmodule Grasp.Session.ForestTest do
     assert Forest.find(forest, "B.g/0") == b
     assert Forest.find(forest, "Z.z/0") == nil
 
-    assert %{id: ^b, function_id: "B.g/0", collapsed: false, offset: {0, 0}, highlight: nil} =
+    assert %{id: ^b, function_id: "B.g/0", collapsed: false, position: nil, highlight: nil} =
              Forest.card(forest, b)
   end
 
@@ -271,30 +271,53 @@ defmodule Grasp.Session.ForestTest do
     assert Forest.move_focus(Forest.new(), :next) == Forest.new()
   end
 
-  test "move/3 sets a card's offset and reset_offsets/1 clears every offset" do
+  test "move/3 sets a card's position and reset_layout/1 empties every position" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_child(forest, a, "B.g/0")
 
-    assert Forest.card(forest, a).offset == {0, 0}
+    assert Forest.card(forest, a).position == nil
     forest = Forest.move(forest, b, {40, -12})
-    assert Forest.card(forest, b).offset == {40, -12}
+    assert Forest.card(forest, b).position == {40, -12}
+    forest = Forest.move(forest, b, {7, 8})
+    assert Forest.card(forest, b).position == {7, 8}
     assert Forest.move(forest, 999, {1, 1}) == forest
 
-    forest = Forest.reset_offsets(forest)
-    assert Forest.card(forest, b).offset == {0, 0}
+    forest = Forest.reset_layout(forest)
+    assert Forest.card(forest, b).position == nil
   end
 
-  test "shift_group/3 adds to every member's offset and leaves the rest alone" do
+  test "place/2 fills a position only while a card has none" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+
+    forest = Forest.place(forest, [{a, 10, 20}, {b, 30, 40}, {999, 1, 1}])
+
+    assert Forest.card(forest, a).position == {10, 20}
+    assert Forest.card(forest, b).position == {30, 40}
+
+    # A second pass says nothing about a card that is already somewhere, so a placement
+    # computed before a drag cannot pull the dragged card back.
+    moved = Forest.move(forest, a, {100, 200})
+
+    assert Forest.place(moved, [{a, 10, 20}]) == moved
+    assert Forest.place(forest, []) == forest
+  end
+
+  test "shift_group/3 adds to every placed member and leaves the rest alone" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_child(forest, a, "B.g/0")
     {forest, c} = Forest.open_child(forest, a, "C.h/2")
-    {forest, group} = Forest.new_group(forest, "Flow", [a, b])
+    {forest, group} = Forest.new_group(forest, "Flow", [a, b, c])
 
-    forest = forest |> Forest.move(b, {5, 5}) |> Forest.shift_group(group, {40, -10})
+    forest =
+      forest
+      |> Forest.move(a, {0, 0})
+      |> Forest.move(b, {5, 5})
+      |> Forest.shift_group(group, {40, -10})
 
-    assert Forest.card(forest, a).offset == {40, -10}
-    assert Forest.card(forest, b).offset == {45, -5}
-    assert Forest.card(forest, c).offset == {0, 0}
+    assert Forest.card(forest, a).position == {40, -10}
+    assert Forest.card(forest, b).position == {45, -5}
+    assert Forest.card(forest, c).position == nil
 
     assert Forest.shift_group(forest, group + 999, {1, 1}) == forest
   end
@@ -449,6 +472,7 @@ defmodule Grasp.Session.ForestTest do
     {forest, b} = Forest.open_child(forest, a, "B.g/0")
     forest = Forest.set_highlight(forest, b, %{"call" => "C.h/0"})
     forest = Forest.set_view(forest, b, :diff)
+    forest = Forest.move(forest, a, {10, 20})
 
     assert Forest.to_map(forest) == %{
              "focus" => b,
@@ -457,6 +481,7 @@ defmodule Grasp.Session.ForestTest do
                  "id" => a,
                  "function_id" => "A.f/1",
                  "collapsed" => false,
+                 "position" => [10, 20],
                  "view" => "auto",
                  "context" => "auto",
                  "highlight" => nil,
@@ -468,6 +493,7 @@ defmodule Grasp.Session.ForestTest do
                  "id" => b,
                  "function_id" => "B.g/0",
                  "collapsed" => false,
+                 "position" => nil,
                  "view" => "diff",
                  "context" => "auto",
                  "highlight" => %{"call" => "C.h/0"},
@@ -877,7 +903,37 @@ defmodule Grasp.Session.ForestTest do
     end
 
     test "a document of another version is refused" do
-      assert Forest.load(%{Forest.dump(Forest.new()) | "version" => 2}, nil) == :error
+      assert Forest.dump(Forest.new())["version"] == 2
+      assert Forest.load(%{Forest.dump(Forest.new()) | "version" => 3}, nil) == :error
+    end
+
+    test "a version 1 document loads with its cards unplaced" do
+      {forest, greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+      {forest, wrap} = Forest.open_child(forest, greeter, "SampleApp.Formatter.wrap/1")
+
+      cards =
+        forest
+        |> Forest.dump()
+        |> Map.fetch!("cards")
+        |> Enum.map(fn card -> card |> Map.delete("position") |> Map.put("offset", [40, -12]) end)
+
+      document = %{Forest.dump(forest) | "version" => 1, "cards" => cards}
+
+      assert {:ok, loaded} = Forest.load(document, nil)
+      assert Forest.card(loaded, greeter).position == nil
+      assert Forest.card(loaded, wrap).position == nil
+      assert loaded == forest
+    end
+
+    test "a position that is not a pair of integers is refused" do
+      {forest, _greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+      document = Forest.dump(forest)
+
+      for position <- [[1], ["1", 2], %{"x" => 1}, 7] do
+        cards = Enum.map(document["cards"], &Map.put(&1, "position", position))
+
+        assert Forest.load(%{document | "cards" => cards}, nil) == :error
+      end
     end
 
     test "a card whose view names nothing is refused" do

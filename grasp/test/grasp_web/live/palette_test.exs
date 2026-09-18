@@ -73,7 +73,7 @@ defmodule GraspWeb.PaletteTest do
 
     render_hook(view, "palette_choose", %{"child" => false})
 
-    assert has_element?(view, "#card-1[data-function-id='#{@shout}'][data-depth='0']")
+    assert has_element?(view, "#node-1[data-depth='0'] #card-1[data-function-id='#{@shout}']")
     refute has_element?(view, "dialog#palette[open]")
     refute has_element?(view, "#palette-results li")
   end
@@ -98,7 +98,7 @@ defmodule GraspWeb.PaletteTest do
     search(view, "greet")
     render_hook(view, "palette_choose", %{"q" => "greet"})
 
-    assert has_element?(view, "#card-1[data-function-id='#{@greet}'][data-depth='0']")
+    assert has_element?(view, "#node-1[data-depth='0'] #card-1[data-function-id='#{@greet}']")
   end
 
   test "clicking a result opens it as a root and closes the palette", %{view: view} do
@@ -107,7 +107,7 @@ defmodule GraspWeb.PaletteTest do
 
     view |> element("#palette-results li[data-id='#{@wrap}'] button") |> render_click()
 
-    assert has_element?(view, "#card-1[data-function-id='#{@wrap}'][data-depth='0']")
+    assert has_element?(view, "#node-1[data-depth='0'] #card-1[data-function-id='#{@wrap}']")
     refute has_element?(view, "dialog#palette[open]")
   end
 
@@ -115,7 +115,7 @@ defmodule GraspWeb.PaletteTest do
     render_hook(view, "palette_show", %{})
     render_hook(view, "palette_open", %{"id" => @wrap, "child" => false})
 
-    assert has_element?(view, "#card-1[data-function-id='#{@wrap}'][data-depth='0']")
+    assert has_element?(view, "#node-1[data-depth='0'] #card-1[data-function-id='#{@wrap}']")
     refute has_element?(view, "dialog#palette[open]")
   end
 
@@ -125,7 +125,7 @@ defmodule GraspWeb.PaletteTest do
 
     assert has_element?(
              view,
-             ".columns .column:nth-child(2) #card-2[data-function-id='#{@wrap}'][data-depth='1']"
+             "#node-2[data-depth='1'] #card-2[data-function-id='#{@wrap}']"
            )
   end
 
@@ -143,7 +143,7 @@ defmodule GraspWeb.PaletteTest do
 
     assert has_element?(
              view,
-             ".columns .column:nth-child(2) #card-2[data-function-id='#{@greet}']"
+             "#node-2[data-depth='1'] #card-2[data-function-id='#{@greet}']"
            )
 
     assert has_element?(
@@ -154,7 +154,7 @@ defmodule GraspWeb.PaletteTest do
 
   test "palette_open with child: true and no focus opens a root", %{view: view} do
     render_hook(view, "palette_open", %{"id" => @wrap, "child" => true})
-    assert has_element?(view, "#card-1[data-depth='0']")
+    assert has_element?(view, "#node-1[data-depth='0'] #card-1")
   end
 
   test "a result the branch changed wears its change badge", %{view: view} do

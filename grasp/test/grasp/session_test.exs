@@ -73,7 +73,7 @@ defmodule Grasp.SessionTest do
     assert Session.get(name) == forest
   end
 
-  test "move/3 stores a card's offset and reset_offsets/1 clears it", %{name: name} do
+  test "move/3 stores a card's position and reset_layout/1 empties it", %{name: name} do
     :ok = Session.subscribe(name)
 
     forest = Session.open_root(name, "A.f/0")
@@ -81,12 +81,23 @@ defmodule Grasp.SessionTest do
     assert_receive {:session, ^name, ^forest}
 
     forest = Session.move(name, root, {10, 20})
-    assert Forest.card(forest, root).offset == {10, 20}
+    assert Forest.card(forest, root).position == {10, 20}
     assert_receive {:session, ^name, ^forest}
 
-    forest = Session.reset_offsets(name)
-    assert Forest.card(forest, root).offset == {0, 0}
+    forest = Session.reset_layout(name)
+    assert Forest.card(forest, root).position == nil
     assert_receive {:session, ^name, ^forest}
+  end
+
+  test "place/2 places a card that has no position and leaves a placed one", %{name: name} do
+    forest = Session.open_root(name, "A.f/0")
+    root = forest.focus
+
+    forest = Session.place(name, [{root, 30, 40}])
+    assert Forest.card(forest, root).position == {30, 40}
+
+    forest = Session.place(name, [{root, 1, 1}])
+    assert Forest.card(forest, root).position == {30, 40}
   end
 
   test "sessions are isolated by name", %{name: name} do
@@ -294,7 +305,7 @@ defmodule Grasp.SessionTest do
       assert moves > length(written)
 
       assert wait_until(fn ->
-               match?({:ok, %{offset: {^moves, ^moves}}}, last_card(name, card))
+               match?({:ok, %{position: {^moves, ^moves}}}, last_card(name, card))
              end)
     end
 

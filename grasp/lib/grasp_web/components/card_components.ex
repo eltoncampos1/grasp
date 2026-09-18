@@ -42,22 +42,30 @@ defmodule GraspWeb.CardComponents do
   attr :expanded_threads, :any, doc: "ids of the resolved threads shown in full", default: nil
   attr :expanded_folds, :any, doc: "`{card id, first line}` of every fold opened", default: nil
 
-  # The drag hook translates the node rather than the card, so the offset survives a
-  # re-render: LiveView owns the card's attributes, and the node is where the hand-placed
-  # position lives.
+  # The node is the card's place on the stage and the card is what is drawn there, so a
+  # re-render of the card's contents leaves the position alone and a drag moves the node
+  # without touching anything LiveView owns inside it. A card nothing has placed yet renders
+  # at the origin and hidden, waiting for the canvas to measure it and say where it goes.
   def card_node(assigns) do
     card = Forest.card(assigns.forest, assigns.card_id)
-    {dx, dy} = card.offset
+    {x, y} = card.position || {0, 0}
 
-    assigns = assign(assigns, card: card, dx: dx, dy: dy)
+    assigns = assign(assigns, card: card, x: x, y: y)
 
     ~H"""
-    <div class="node" style={"--dx: #{@dx}px; --dy: #{@dy}px"}>
+    <div
+      class="node"
+      id={"node-#{@card.id}"}
+      data-card={@card.id}
+      data-depth={@column}
+      data-group={@card.group || ""}
+      data-unplaced={@card.position == nil}
+      style={"--x: #{@x}px; --y: #{@y}px"}
+    >
       <.card
         forest={@forest}
         index={@index}
         card={@card}
-        column={@column}
         open_calls={@open_calls}
         editor={@editor}
         callers_open={@callers_open}
@@ -74,7 +82,6 @@ defmodule GraspWeb.CardComponents do
   attr :forest, Forest, required: true
   attr :index, Index, required: true
   attr :card, :map, required: true
-  attr :column, :integer, required: true
   attr :open_calls, :map, required: true
   attr :editor, :string, default: nil
   attr :callers_open, :integer, default: nil
@@ -115,8 +122,6 @@ defmodule GraspWeb.CardComponents do
     %{forest: forest, index: index, card: card, record: record, comments: comments} = assigns
 
     external? = fn target -> match?(:error, Index.fetch_function(index, target)) end
-
-    {dx, dy} = card.offset
 
     change = record["change"] || "unchanged"
     diffable? = Diff.diffable?(record)
@@ -189,8 +194,6 @@ defmodule GraspWeb.CardComponents do
         placed: placed,
         aside: aside,
         expanded_threads: assigns.expanded_threads || MapSet.new(),
-        dx: dx,
-        dy: dy,
         change: change,
         diffable?: diffable?,
         stats: diffable? && Diff.stats(record["base_source"], record["source"]),
@@ -231,9 +234,6 @@ defmodule GraspWeb.CardComponents do
       data-view={to_string(@view)}
       data-context={@context && to_string(@context)}
       data-highlight-key={highlight_key(@card.highlight)}
-      data-depth={@column}
-      data-dx={@dx}
-      data-dy={@dy}
     >
       <header class="card__header" phx-click="focus_card" phx-value-card={@card.id}>
         <.change_badge change={@change} />
@@ -429,13 +429,9 @@ defmodule GraspWeb.CardComponents do
   defp badge_label(%{"kind" => kind}), do: Map.get(@badge_labels, kind, kind)
 
   defp stub_card(assigns) do
-    {dx, dy} = assigns.card.offset
-
     assigns =
       assign(assigns,
         focused?: assigns.forest.focus == assigns.card.id,
-        dx: dx,
-        dy: dy,
         docs: hexdocs_url(assigns.card.function_id),
         stale?: indexed_module?(assigns.index, assigns.card.function_id)
       )
@@ -447,9 +443,6 @@ defmodule GraspWeb.CardComponents do
       data-function-id={@card.function_id}
       data-focused={to_string(@focused?)}
       data-selected={to_string(@selected)}
-      data-depth={@column}
-      data-dx={@dx}
-      data-dy={@dy}
     >
       <header class="card__header" phx-click="focus_card" phx-value-card={@card.id}>
         <h2 class="card__title">{@card.function_id}</h2>

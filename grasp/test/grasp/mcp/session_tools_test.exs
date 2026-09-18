@@ -55,6 +55,7 @@ defmodule Grasp.MCP.SessionToolsTest do
                "callers" => [1],
                "callees" => [],
                "collapsed" => false,
+               "position" => nil,
                "view" => "auto",
                "context" => "auto",
                "highlight" => %{"call" => @wrap},

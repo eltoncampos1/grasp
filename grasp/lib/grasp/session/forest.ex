@@ -10,17 +10,25 @@ defmodule Grasp.Session.Forest do
   from an eight-entry palette in creation order, so a call site and the edge leaving it can
   be painted alike. At most one edge runs from one card to another, whichever call opened it,
   so mutual recursion is visibly two edges.
-  Focus is a single card id; `offset` is a card's displacement in stage pixels from where
-  the layout puts it, so a card dragged by hand keeps its place; `highlight` marks what to
-  point at inside a card; `view` chooses whether a modified function reads as the source on
-  the branch or as the diff against the base, and `context` whether that diff shows every
-  line or only the changed hunks.
+  Focus is a single card id; `position` is where a card's top-left corner sits on the stage,
+  in stage pixels, and is nil until something places it, so a card is wherever it was put
+  and nothing but a drag or a reset moves it; `highlight` marks what to point at inside a
+  card; `view` chooses whether a modified function reads as the source on the branch or as
+  the diff against the base, and `context` whether that diff shows every line or only the
+  changed hunks.
 
   ## Layout
 
-  `layout/1` puts the cards in columns, callers to the left of what they call. Sources —
-  cards nothing on screen calls — are column 0, and a card sits one column right of the
-  furthest-right caller that reaches it. The columns are computed by a depth-first walk
+  The stage is a whiteboard: a card holds an absolute position, and opening a card moves no
+  other card. `place/2` fills the position of a card that has none and leaves a card that
+  has one alone, so the renderer — which is the only thing that knows how large a card came
+  out — decides where a new card lands without being able to undo a drag it measured before.
+  `reset_layout/1` empties every position, which is how the whole canvas is laid out again.
+
+  `layout/1` is the order placement follows rather than a placement of its own: it puts the
+  cards in columns, callers to the left of what they call. Sources — cards nothing on screen
+  calls — are column 0, and a card sits one column right of the furthest-right caller that
+  reaches it. The columns are computed by a depth-first walk
   from the sources that refuses to re-enter a card already on its own stack: that edge is a
   back-edge, a recursive or mutually recursive call, and following it would never end. A
   graph made only of cycles has no source at all, so the lowest-id card no walk has reached
@@ -96,11 +104,17 @@ defmodule Grasp.Session.Forest do
   view ignores it.
   """
   @type context :: :auto | :hunks | :full
+  @typedoc """
+  Where a card's node sits on the stage: `{x, y}` in stage pixels, of its top-left corner.
+  `nil` for a card nothing has placed yet, which the canvas draws hidden until it has
+  measured it and said where it goes.
+  """
+  @type position :: {integer(), integer()} | nil
   @type card :: %{
           id: id(),
           function_id: String.t(),
           collapsed: boolean(),
-          offset: {integer(), integer()},
+          position: position(),
           highlight: highlight(),
           view: view(),
           context: context(),
@@ -488,21 +502,44 @@ defmodule Grasp.Session.Forest do
   @spec depth(t(), id()) :: non_neg_integer()
   def depth(%__MODULE__{} = forest, id), do: Map.get(columns_of(forest), id, 0)
 
-  @doc "Sets a card's layout offset in stage pixels; no-op on an unknown id."
+  @doc "Puts a card's top-left corner at `{x, y}` on the stage; no-op on an unknown id."
   @spec move(t(), id(), {integer(), integer()}) :: t()
-  def move(%__MODULE__{} = forest, id, {dx, dy}) when is_integer(dx) and is_integer(dy) do
+  def move(%__MODULE__{} = forest, id, {x, y}) when is_integer(x) and is_integer(y) do
     case card(forest, id) do
       nil -> forest
-      card -> put_card(forest, %{card | offset: {dx, dy}})
+      card -> put_card(forest, %{card | position: {x, y}})
     end
   end
 
   @doc """
-  Adds `{dx, dy}` to the offset of every card in `group_id`, moving the group as one piece.
+  Places each `{id, x, y}` whose card has no position yet, leaving every placed card alone.
+
+  This is the one way a position arrives other than by hand, and it never overwrites one:
+  a placement is computed from the canvas as it was rendered, so a tab that measured the
+  stage before another tab's drag would otherwise pull the dragged card back to where it
+  used to be. An unknown id places nothing.
+  """
+  @spec place(t(), [{id(), integer(), integer()}]) :: t()
+  def place(%__MODULE__{} = forest, placements) when is_list(placements) do
+    cards =
+      Enum.reduce(placements, forest.cards, fn {id, x, y}, cards ->
+        case Map.get(cards, id) do
+          %{position: nil} = card -> Map.put(cards, id, %{card | position: {x, y}})
+          _placed_or_unknown -> cards
+        end
+      end)
+
+    %{forest | cards: cards}
+  end
+
+  @doc """
+  Adds `{dx, dy}` to the position of every placed card in `group_id`, moving the group as
+  one piece.
 
   The members keep their positions relative to one another, which is what makes the frame
-  drawn round them travel unchanged. Deltas rather than an absolute offset, since the cards
-  start from offsets of their own. An unknown group changes nothing.
+  drawn round them travel unchanged. Deltas rather than a position each, since they start
+  from positions of their own. A member with no position keeps none — it is placed where
+  the group now stands rather than where it stood. An unknown group changes nothing.
   """
   @spec shift_group(t(), group_id(), {integer(), integer()}) :: t()
   def shift_group(%__MODULE__{} = forest, group_id, {dx, dy})
@@ -510,8 +547,8 @@ defmodule Grasp.Session.Forest do
     if Map.has_key?(forest.groups, group_id) do
       cards =
         Map.new(forest.cards, fn
-          {id, %{group: ^group_id, offset: {x, y}} = card} ->
-            {id, %{card | offset: {x + dx, y + dy}}}
+          {id, %{group: ^group_id, position: {x, y}} = card} ->
+            {id, %{card | position: {x + dx, y + dy}}}
 
           {id, card} ->
             {id, card}
@@ -523,10 +560,10 @@ defmodule Grasp.Session.Forest do
     end
   end
 
-  @doc "Clears every card's offset so the graph returns to its automatic layout."
-  @spec reset_offsets(t()) :: t()
-  def reset_offsets(%__MODULE__{} = forest) do
-    %{forest | cards: Map.new(forest.cards, fn {id, card} -> {id, %{card | offset: {0, 0}}} end)}
+  @doc "Empties every card's position, so the whole canvas is laid out again."
+  @spec reset_layout(t()) :: t()
+  def reset_layout(%__MODULE__{} = forest) do
+    %{forest | cards: Map.new(forest.cards, fn {id, card} -> {id, %{card | position: nil}} end)}
   end
 
   @doc """
@@ -675,9 +712,10 @@ defmodule Grasp.Session.Forest do
   @doc """
   The graph as plain maps with string keys, the shape the MCP tools return.
 
-  Cards read in id order and carry the ids they call and are called by; `edges`, `columns`
-  and `sections` describe only what is visible, so a collapsed card's hidden part is absent
-  from all three. `groups` reads in id order and names every member, hidden ones included,
+  Cards read in id order and carry the ids they call and are called by, and the `[x, y]` of
+  the card's corner on the stage or null for one nothing has placed; `edges`, `columns` and
+  `sections` describe only what is visible, so a collapsed card's hidden part is absent from
+  all three. `groups` reads in id order and names every member, hidden ones included,
   because a group is a fact about the cards rather than about the layout.
   """
   @spec to_map(t()) :: graph_map()
@@ -691,6 +729,7 @@ defmodule Grasp.Session.Forest do
           "id" => card.id,
           "function_id" => card.function_id,
           "collapsed" => card.collapsed,
+          "position" => dumped_position(card.position),
           "view" => Atom.to_string(card.view),
           "context" => Atom.to_string(card.context),
           "highlight" => card.highlight,
@@ -731,9 +770,10 @@ defmodule Grasp.Session.Forest do
 
   Every field of the struct is written, hidden cards and the id, colour and group counters
   included, so `load/2` returns the graph as it stands and a card id an agent is holding
-  still names the same card after a restart. `offset` is written as `[dx, dy]`, and `view`
-  and `context` as their names. Cards and groups read in id order and edges in the order
-  they were opened, which is the order `callers/2` and `callees/2` report them in.
+  still names the same card after a restart. `position` is written as `[x, y]`, or as null
+  for a card nothing has placed, and `view` and `context` as their names. Cards and groups
+  read in id order and edges in the order they were opened, which is the order `callers/2`
+  and `callees/2` report them in.
   """
   @spec dump(t()) :: map()
   def dump(%__MODULE__{} = forest) do
@@ -742,13 +782,11 @@ defmodule Grasp.Session.Forest do
       |> Map.values()
       |> Enum.sort_by(& &1.id)
       |> Enum.map(fn card ->
-        {dx, dy} = card.offset
-
         %{
           "id" => card.id,
           "function_id" => card.function_id,
           "collapsed" => card.collapsed,
-          "offset" => [dx, dy],
+          "position" => dumped_position(card.position),
           "highlight" => card.highlight,
           "view" => Atom.to_string(card.view),
           "context" => Atom.to_string(card.context),
@@ -769,7 +807,7 @@ defmodule Grasp.Session.Forest do
       |> Enum.map(&%{"id" => &1.id, "title" => &1.title})
 
     %{
-      "version" => 1,
+      "version" => 2,
       "cards" => cards,
       "edges" => edges,
       "groups" => groups,
@@ -783,13 +821,18 @@ defmodule Grasp.Session.Forest do
   @doc """
   Rebuilds a graph from what `dump/1` wrote, pruning it against `index`.
 
+  Version 2 is what `dump/1` writes. Version 1 held a displacement from a column layout
+  instead of a position on the stage, which describes nothing on a whiteboard, so its cards
+  load unplaced and the canvas lays them out once; everything else in the document is read
+  the same way.
+
   `:error` for a document of another version and for one whose fields do not decode: an id
-  that is not a positive integer, a `view` or `context` that names nothing, an `offset` that
-  is not two integers, a `highlight` that is neither a call nor a pair of line numbers, a
-  colour outside the palette, an edge naming a card the document does not hold, or a group a
-  card claims to belong to and the document does not describe. A half-written file is
-  therefore refused whole rather than drawn in part, and a card the renderer would crash on
-  never reaches it.
+  that is not a positive integer, a `view` or `context` that names nothing, a `position`
+  that is neither null nor two integers, a `highlight` that is neither a call nor a pair of
+  line numbers, a colour outside the palette, an edge naming a card the document does not
+  hold, or a group a card claims to belong to and the document does not describe. A
+  half-written file is therefore refused whole rather than drawn in part, and a card the
+  renderer would crash on never reaches it.
 
   With an `index`, a card whose `function_id` the index no longer holds is dropped together
   with the edges touching it, and a group left with no members goes as well, so a file
@@ -809,8 +852,8 @@ defmodule Grasp.Session.Forest do
   @spec load(term(), Grasp.Index.t() | nil) :: {:ok, t()} | :error
   def load(document, index)
 
-  def load(%{"version" => 1} = document, index) do
-    with {:ok, cards} <- decode_cards(Map.get(document, "cards")),
+  def load(%{"version" => version} = document, index) when version in [1, 2] do
+    with {:ok, cards} <- decode_cards(Map.get(document, "cards"), version),
          {:ok, groups} <- decode_groups(Map.get(document, "groups")),
          :ok <- check_memberships(cards, groups),
          {:ok, edges} <- decode_edges(Map.get(document, "edges"), cards),
@@ -836,10 +879,10 @@ defmodule Grasp.Session.Forest do
 
   def load(_document, _index), do: :error
 
-  defp decode_cards(cards) when is_list(cards) do
+  defp decode_cards(cards, version) when is_list(cards) do
     cards
     |> Enum.reduce_while({:ok, %{}}, fn card, {:ok, decoded} ->
-      case decode_card(card) do
+      case decode_card(card, version) do
         {:ok, card} -> {:cont, {:ok, Map.put(decoded, card.id, card)}}
         :error -> {:halt, :error}
       end
@@ -847,33 +890,33 @@ defmodule Grasp.Session.Forest do
     |> unrepeated(length(cards))
   end
 
-  defp decode_cards(_cards), do: :error
+  defp decode_cards(_cards, _version), do: :error
 
   defp decode_card(
          %{
            "id" => id,
            "function_id" => function_id,
            "collapsed" => collapsed,
-           "offset" => [dx, dy],
            "view" => view,
            "context" => context
-         } = card
+         } = card,
+         version
        )
-       when is_integer(id) and id > 0 and is_binary(function_id) and is_boolean(collapsed) and
-              is_integer(dx) and is_integer(dy) do
+       when is_integer(id) and id > 0 and is_binary(function_id) and is_boolean(collapsed) do
     highlight = Map.get(card, "highlight")
     group = Map.get(card, "group")
 
     with {:ok, view} <- decode_name(view, [:auto, :source, :diff]),
          {:ok, context} <- decode_name(context, [:auto, :hunks, :full]),
          {:ok, highlight} <- decode_highlight(highlight),
+         {:ok, position} <- decode_position(version, Map.get(card, "position")),
          true <- is_nil(group) or (is_integer(group) and group > 0) do
       {:ok,
        %{
          id: id,
          function_id: function_id,
          collapsed: collapsed,
-         offset: {dx, dy},
+         position: position,
          highlight: highlight,
          view: view,
          context: context,
@@ -884,7 +927,17 @@ defmodule Grasp.Session.Forest do
     end
   end
 
-  defp decode_card(_card), do: :error
+  defp decode_card(_card, _version), do: :error
+
+  # Version 1 wrote a displacement from a layout rather than a place on the stage, so its
+  # cards arrive unplaced whatever it holds and are laid out once by the canvas reading it.
+  defp decode_position(1, _offset), do: {:ok, nil}
+  defp decode_position(2, nil), do: {:ok, nil}
+  defp decode_position(2, [x, y]) when is_integer(x) and is_integer(y), do: {:ok, {x, y}}
+  defp decode_position(_version, _position), do: :error
+
+  defp dumped_position(nil), do: nil
+  defp dumped_position({x, y}), do: [x, y]
 
   # The names are matched against the atoms the struct already holds, so a document naming
   # something else is refused rather than turned into an atom the graph has no meaning for.
@@ -1131,7 +1184,7 @@ defmodule Grasp.Session.Forest do
       id: id,
       function_id: function_id,
       collapsed: false,
-      offset: {0, 0},
+      position: nil,
       highlight: nil,
       view: :auto,
       context: :auto,

@@ -146,21 +146,28 @@ defmodule Grasp.Session do
   def toggle_context(name, card_id, loc),
     do: mutate(name, &Forest.toggle_context(&1, card_id, loc))
 
-  @doc "Sets `card_id`'s layout offset in stage pixels."
+  @doc "Puts `card_id`'s top-left corner at `{x, y}` on the stage."
   @spec move(name(), Forest.id(), {integer(), integer()}) :: Forest.t()
-  def move(name, card_id, {dx, dy}), do: mutate(name, &Forest.move(&1, card_id, {dx, dy}))
+  def move(name, card_id, {x, y}), do: mutate(name, &Forest.move(&1, card_id, {x, y}))
 
   @doc """
-  Adds `{dx, dy}` to the layout offset of every card in `group_id`, moving the group as one.
-  An unknown group changes nothing.
+  Places each `{card_id, x, y}` whose card has no position yet, leaving a placed card where
+  it is, so a placement computed before a drag cannot undo it.
+  """
+  @spec place(name(), [{Forest.id(), integer(), integer()}]) :: Forest.t()
+  def place(name, placements), do: mutate(name, &Forest.place(&1, placements))
+
+  @doc """
+  Adds `{dx, dy}` to the position of every placed card in `group_id`, moving the group as
+  one. An unknown group changes nothing.
   """
   @spec shift_group(name(), Forest.group_id(), {integer(), integer()}) :: Forest.t()
   def shift_group(name, group_id, {dx, dy}) when is_integer(dx) and is_integer(dy),
     do: mutate(name, &Forest.shift_group(&1, group_id, {dx, dy}))
 
-  @doc "Clears every card's offset, returning the cards to their automatic layout."
-  @spec reset_offsets(name()) :: Forest.t()
-  def reset_offsets(name), do: mutate(name, &Forest.reset_offsets/1)
+  @doc "Empties every card's position, so the whole canvas is laid out again."
+  @spec reset_layout(name()) :: Forest.t()
+  def reset_layout(name), do: mutate(name, &Forest.reset_layout/1)
 
   @doc """
   Puts `card_ids` into a group of their own, titled `title` or untitled when that is nil or

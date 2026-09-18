@@ -283,15 +283,15 @@ defmodule GraspWeb.ReviewLive do
   # A drop carries a group only when it landed inside another group's frame; every other
   # drop is a move alone, so a card keeps the group it was in wherever on the canvas it is
   # put down. Dragging a selected card into a frame takes the rest of the selection with it,
-  # which is what makes the set a set — the others keep the offsets they had, since only the
-  # one under the pointer was moved.
-  def handle_event("move_card", %{"card" => card, "dx" => dx, "dy" => dy} = params, socket) do
-    case {int(card), int(dx), int(dy)} do
-      {id, dx, dy} when is_integer(id) and is_integer(dx) and is_integer(dy) ->
+  # which is what makes the set a set — the others keep the positions they had, since only
+  # the one under the pointer was moved.
+  def handle_event("move_card", %{"card" => card, "x" => x, "y" => y} = params, socket) do
+    case {int(card), int(x), int(y)} do
+      {id, x, y} when is_integer(id) and is_integer(x) and is_integer(y) ->
         joining = dragged_set(socket, id)
 
         mutate(socket, fn name ->
-          moved = Session.move(name, id, {dx, dy})
+          moved = Session.move(name, id, {x, y})
 
           case int(params["group"]) do
             nil -> moved
@@ -304,8 +304,33 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
-  # A group drag carries deltas rather than the offset each card lands on: the members start
-  # from offsets of their own and keep their places relative to one another, so the frame drawn
+  # The canvas is the only thing that knows how large a card came out, so it says where a
+  # card with no position goes. It says it for everything it placed in one pass, and the
+  # session keeps only what is still unplaced, so a pass measured before a drag in another
+  # tab cannot pull the dragged card back.
+  def handle_event("place_cards", %{"cards" => cards}, socket) when is_list(cards) do
+    placements =
+      Enum.flat_map(cards, fn
+        %{"id" => id, "x" => x, "y" => y} ->
+          case {int(id), int(x), int(y)} do
+            {id, x, y} when is_integer(id) and is_integer(x) and is_integer(y) -> [{id, x, y}]
+            _unreadable -> []
+          end
+
+        _not_a_placement ->
+          []
+      end)
+
+    case placements do
+      [] -> {:noreply, socket}
+      placements -> mutate(socket, &Session.place(&1, placements))
+    end
+  end
+
+  def handle_event("place_cards", _params, socket), do: {:noreply, socket}
+
+  # A group drag carries deltas rather than the position each card lands on: the members start
+  # from positions of their own and keep their places relative to one another, so the frame drawn
   # round them moves unchanged. Membership is untouched — a group is moved, not regrouped.
   def handle_event("move_group", %{"group" => group, "dx" => dx, "dy" => dy}, socket) do
     case {int(group), int(dx), int(dy)} do
@@ -318,7 +343,7 @@ defmodule GraspWeb.ReviewLive do
   end
 
   def handle_event("reset_layout", _params, socket),
-    do: mutate(socket, &Session.reset_offsets/1)
+    do: mutate(socket, &Session.reset_layout/1)
 
   def handle_event("dissolve_group", %{"group" => group}, socket),
     do: mutate(socket, &Session.dissolve_group(&1, int(group)))
@@ -816,6 +841,17 @@ defmodule GraspWeb.ReviewLive do
 
   defp base_label(_index), do: nil
 
+  # Every visible card, flattened out of the sections: the columns are the order a card with
+  # no position is placed in, which the node carries as its depth, and no longer a box the
+  # card is drawn inside.
+  defp nodes(sections) do
+    Enum.flat_map(sections, fn section ->
+      section.columns
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {ids, depth} -> Enum.map(ids, &%{id: &1, depth: depth}) end)
+    end)
+  end
+
   # A section's cards are spread over its columns, and the count in its header speaks of the
   # cards the reader can see rather than of the columns they happen to fall into.
   defp card_count(%{columns: columns}) do
@@ -862,7 +898,15 @@ defmodule GraspWeb.ReviewLive do
       |> Enum.group_by(& &1.from, &{&1.target, %{to: &1.to, color: &1.color}})
       |> Map.new(fn {from, calls} -> {from, Map.new(calls)} end)
 
-    assigns = assign(assigns, open_calls: open_calls, base: base_label(assigns.index))
+    sections = Forest.sections(assigns.forest)
+
+    assigns =
+      assign(assigns,
+        open_calls: open_calls,
+        base: base_label(assigns.index),
+        sections: sections,
+        nodes: nodes(sections)
+      )
 
     ~H"""
     <main
@@ -992,7 +1036,7 @@ defmodule GraspWeb.ReviewLive do
           </svg>
           <div class="flows">
             <section
-              :for={section <- Forest.sections(@forest)}
+              :for={section <- @sections}
               class="flow"
               id={"flow-#{(section.group && section.group.id) || "none"}"}
               data-grouped={section.group != nil}
@@ -1039,26 +1083,26 @@ defmodule GraspWeb.ReviewLive do
                   ungroup
                 </button>
               </header>
-              <div class="columns">
-                <div :for={{ids, column} <- Enum.with_index(section.columns)} class="column">
-                  <.card_node
-                    :for={id <- ids}
-                    forest={@forest}
-                    index={@index}
-                    card_id={id}
-                    column={column}
-                    open_calls={Map.get(@open_calls, id, %{})}
-                    editor={@editor}
-                    callers_open={@callers_open}
-                    selected={MapSet.member?(@selected, id)}
-                    comments={@comments}
-                    composing={@composing}
-                    expanded_threads={@expanded_threads}
-                    expanded_folds={@expanded_folds}
-                  />
-                </div>
-              </div>
             </section>
+          </div>
+          <%!-- Every card of every section in one flat layer: a card is where it was put on
+          the stage, so nothing about the document order says where it is drawn. --%>
+          <div id="nodes" class="nodes">
+            <.card_node
+              :for={node <- @nodes}
+              forest={@forest}
+              index={@index}
+              card_id={node.id}
+              column={node.depth}
+              open_calls={Map.get(@open_calls, node.id, %{})}
+              editor={@editor}
+              callers_open={@callers_open}
+              selected={MapSet.member?(@selected, node.id)}
+              comments={@comments}
+              composing={@composing}
+              expanded_threads={@expanded_threads}
+              expanded_folds={@expanded_folds}
+            />
           </div>
         </div>
       </section>

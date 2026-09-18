@@ -21,10 +21,40 @@ defmodule Grasp.Session.DiskTest do
 
   test "a written session reads back as the forest that was written", %{name: name} do
     {forest, greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
-    {forest, _wrap} = Forest.open_child(forest, greeter, "SampleApp.Formatter.wrap/1")
+    {forest, wrap} = Forest.open_child(forest, greeter, "SampleApp.Formatter.wrap/1")
+    forest = Forest.move(forest, wrap, {40, -12})
 
     assert Disk.write(name, forest) == :ok
     assert Disk.read(name, nil) == {:ok, forest}
+    assert Forest.card(forest, greeter).position == nil
+  end
+
+  test "a version 1 file opens with its cards unplaced", %{name: name, tmp_dir: tmp_dir} do
+    {forest, greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+
+    cards =
+      forest
+      |> Forest.dump()
+      |> Map.fetch!("cards")
+      |> Enum.map(fn card -> card |> Map.delete("position") |> Map.put("offset", [40, -12]) end)
+
+    document = %{Forest.dump(forest) | "version" => 1, "cards" => cards}
+    File.write!(Path.join(tmp_dir, name <> ".json"), Jason.encode!(document))
+
+    assert {:ok, loaded} = Disk.read(name, nil)
+    assert Forest.card(loaded, greeter).position == nil
+  end
+
+  test "a file of a version the viewer does not know is kept aside", %{
+    name: name,
+    tmp_dir: tmp_dir
+  } do
+    document = %{Forest.dump(Forest.new()) | "version" => 3}
+    path = Path.join(tmp_dir, name <> ".json")
+    File.write!(path, Jason.encode!(document))
+
+    assert {:error, {:corrupt, kept}} = Disk.read(name, nil)
+    assert kept == path <> ".corrupt"
   end
 
   test "a file that is not a session is kept aside and reported", %{name: name, tmp_dir: tmp_dir} do

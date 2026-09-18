@@ -6,7 +6,10 @@ defmodule Grasp.Session.Disk do
   viewer process that drew it: each one is a JSON document under `.grasp/sessions/` in the
   indexed project, named after the session. The directory sits beside the index and the
   comments file, so a session travels with the checkout it describes and can be read like
-  any other file in it. `:grasp, :sessions_dir` overrides the directory, and when neither
+  any other file in it. `Grasp.Session.Forest.dump/1` writes version 2 of that document, in
+  which a card holds its position on the stage; a version 1 file, which held a displacement
+  from a layout the canvas no longer draws, still opens, with its cards laid out afresh.
+  `:grasp, :sessions_dir` overrides the directory, and when neither
   that nor a project root on this machine gives one, every call here is a no-op and
   sessions live in memory only — a viewer pointed at an index whose project is not checked
   out still runs, it just forgets.
