@@ -15,6 +15,9 @@ defmodule GraspWeb.ReviewLiveTest do
   @greet_alias "SampleApp.Greeter.greet/1"
   @nested "SampleApp.Greeter.Nested.hello/0"
   @whisper "SampleApp.Formatter.whisper/1"
+  @render "SampleAppWeb.HelloLive.render/1"
+  @badge "SampleAppWeb.GreetHTML.badge/1"
+  @show_template "SampleAppWeb.GreetHTML.show/1"
 
   setup %{conn: conn} do
     name = "t-#{System.unique_integer([:positive])}"
@@ -449,21 +452,21 @@ defmodule GraspWeb.ReviewLiveTest do
     view: view,
     name: name
   } do
-    Session.open_root(name, @greet_all)
+    Session.open_root(name, @render)
 
     refute has_element?(view, "#card-1 .card__also button.also[data-open='true']")
 
-    view |> element("#card-1 .card__also button.also", @shout) |> render_click()
+    view |> element("#card-1 .card__also button.also", @greet_alias) |> render_click()
 
     assert has_element?(
              view,
-             ".columns .column:nth-child(2) #card-2[data-function-id='#{@shout}']"
+             ".columns .column:nth-child(2) #card-2[data-function-id='#{@greet}']"
            )
 
     assert has_element?(
              view,
              "#card-1 .card__also button.also[data-open='true'][data-color='0'][data-edge-to='2']",
-             @shout
+             @greet_alias
            )
   end
 
@@ -487,15 +490,57 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#card-2.stub a[href='https://hexdocs.pm/elixir/Enum.html#map/2']")
   end
 
-  test "hidden calls are listed under the card", %{view: view, name: name} do
-    Session.open_root(name, @greet_all)
-    assert has_element?(view, "#card-1 .card__also", @shout)
+  test "a template's card lists the call its interpolation hides", %{view: view, name: name} do
+    Session.open_root(name, @show_template)
+    assert has_element?(view, "#card-1 .card__also", @greet_alias)
+  end
+
+  test "a controller's render opens the template it names", %{view: view, name: name} do
+    Session.open_root(name, @show)
+
+    view
+    |> element("#card-1 span.call[data-target='#{@show_template}']", "render")
+    |> render_click()
+
+    assert has_element?(
+             view,
+             ".columns .column:nth-child(2) #card-2[data-function-id='#{@show_template}']"
+           )
+  end
+
+  test "a template opens from the palette, and its component tags are clickable", %{view: view} do
+    render_hook(view, "palette_show", %{})
+    view |> form("#palette-form", %{q: "GreetHTML.show"}) |> render_change()
+    view |> element("#palette-results li[data-id='#{@show_template}'] button") |> render_click()
+
+    assert has_element?(view, "#card-1[data-function-id='#{@show_template}']")
+    assert has_element?(view, "#card-1 .card__kind", "template")
+
+    assert has_element?(
+             view,
+             "#card-1 .card__file",
+             "lib/sample_app_web/greet_html/show.html.heex:1"
+           )
+
+    assert has_element?(view, "#card-1 .line[data-line='1'] .l-tag-attribute", "label")
+    assert has_element?(view, "#card-1 span.call[data-target='#{@badge}']", ".badge")
+
+    view |> element("#card-1 span.call[data-target='#{@badge}']") |> render_click()
+
+    assert has_element?(
+             view,
+             ".columns .column:nth-child(2) #card-2[data-function-id='#{@badge}']"
+           )
+
+    view |> element("#card-2 .card__callers-toggle") |> render_click()
+
+    assert has_element?(view, "#card-2 .card__callers ul button.caller", @show_template)
   end
 
   test "a call made inside a template is listed under the view's card", %{view: view, name: name} do
-    Session.open_root(name, "SampleAppWeb.HelloLive.render/1")
+    Session.open_root(name, @render)
 
-    assert has_element?(view, "#card-1 .card__also button.also", "SampleApp.Greeter.greet/1")
+    assert has_element?(view, "#card-1 .card__also button.also", @greet_alias)
   end
 
   test "changes made through the session API render live", %{view: view, name: name} do

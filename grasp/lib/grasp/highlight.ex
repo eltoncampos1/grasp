@@ -8,6 +8,10 @@ defmodule Grasp.Highlight do
   a `span.l-string`. Each text run becomes a piece carrying the class of its innermost
   span, positioned by counting characters along the line.
 
+  A record whose file ends in `.heex` is a template and is read with the heex grammar; every
+  other record with the elixir one, whose HEEx injection tokenises a `~H` body as markup, so
+  a component tag is a run of its own on both sides.
+
   A call range (from the index, `{line, column}` pairs with an exclusive end column, in
   file coordinates) may start or end inside a run and may span lines; run text is
   therefore split at range boundaries, and consecutive pieces inside the same range on the
@@ -104,7 +108,10 @@ defmodule Grasp.Highlight do
 
     # Lines are driven by the source, not by the tokens: a blank line carries no piece, and
     # numbering it from the token groups alone would drop it and skip a number in the gutter.
-    last_line = first_line + length(String.split(source, "\n")) - 1
+    # A template record's source is a whole file, whose final newline ends its last line
+    # rather than opening an empty one after it.
+    last_line =
+      first_line + length(String.split(String.replace_suffix(source, "\n", ""), "\n")) - 1
 
     for line <- first_line..last_line do
       html =
@@ -152,7 +159,11 @@ defmodule Grasp.Highlight do
     card_id = Keyword.fetch!(opts, :card_id)
     highlight = Keyword.get(opts, :highlight)
     body = body_builder(record, opts)
-    base_by_line = base_source |> pieces(1, record["id"] <> "@base") |> Enum.group_by(& &1.line)
+
+    base_by_line =
+      base_source
+      |> pieces(1, record["id"] <> "@base", language(record))
+      |> Enum.group_by(& &1.line)
 
     {lines, _current, _base} =
       base_source
@@ -205,7 +216,7 @@ defmodule Grasp.Highlight do
 
     by_line =
       record["source"]
-      |> pieces(record["span"]["start_line"], record["id"])
+      |> pieces(record["span"]["start_line"], record["id"], language(record))
       |> Enum.group_by(& &1.line)
 
     fn line ->
@@ -237,7 +248,7 @@ defmodule Grasp.Highlight do
       {line, _text} ->
         html =
           source
-          |> pieces(first_line, id)
+          |> pieces(first_line, id, language(record))
           |> Enum.filter(&(&1.line == line))
           |> trim_signature()
           |> Enum.map_join(&token_html/1)
@@ -332,25 +343,25 @@ defmodule Grasp.Highlight do
 
   # Each Lumis text run becomes a piece %{line, col, text, css}; col is the 1-based start
   # column, css the class of the run's innermost span (nil for unhighlighted text).
-  defp pieces(source, first_line, id) do
+  defp pieces(source, first_line, id, language) do
     if :ets.whereis(@cache) == :undefined do
-      parse(source, first_line, id)
+      parse(source, first_line, id, language)
     else
       case :ets.lookup(@cache, id) do
         [{^id, pieces}] ->
           pieces
 
         [] ->
-          pieces = parse(source, first_line, id)
+          pieces = parse(source, first_line, id, language)
           :ets.insert(@cache, {id, pieces})
           pieces
       end
     end
   end
 
-  defp parse(source, first_line, id) do
+  defp parse(source, first_line, id, language) do
     source
-    |> line_trees(id)
+    |> line_trees(id, language)
     |> Enum.with_index(first_line)
     |> Enum.flat_map(fn {children, line} ->
       {pieces, _col} = Enum.reduce(children, {[], 1}, &runs(&1, nil, line, &2))
@@ -358,15 +369,22 @@ defmodule Grasp.Highlight do
     end)
   end
 
+  # Which grammar a record's source is read with. A record whose file is a `.heex` template
+  # holds markup, not Elixir, and the elixir grammar would give its whole body one class.
+  defp language(record) do
+    if String.ends_with?(to_string(record["file"]), ".heex"), do: "heex", else: "elixir"
+  end
+
   # The children of each `div.l-line`, taken from one whole-document parse rather than one
   # per line. A source Lumis will not highlight still has to render — unparseable bytes
   # raise inside the NIF rather than returning an error — so anything unexpected falls back
   # to one unhighlighted run per line, and the card is served as plain text rather than not
   # at all. The parse is memoised per function id, so the warning is one per function.
-  defp line_trees(source, id) do
+  defp line_trees(source, id, language) do
     result =
       try do
-        with {:ok, html} <- Lumis.highlight(source, formatter: {:html_linked, language: "elixir"}),
+        with {:ok, html} <-
+               Lumis.highlight(source, formatter: {:html_linked, language: language}),
              [{"pre", _, [{"code", _, lines}]}] <-
                html |> LazyHTML.from_fragment() |> LazyHTML.to_tree() do
           {:ok, for({"div", _attrs, children} <- lines, do: children)}

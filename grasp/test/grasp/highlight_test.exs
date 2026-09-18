@@ -229,6 +229,58 @@ defmodule Grasp.HighlightTest do
     end
   end
 
+  describe "templates" do
+    test "a record whose file is a .heex is read with the heex grammar" do
+      record = %{
+        "id" => "SampleAppWeb.PageHTML.show/1",
+        "file" => "lib/sample_app_web/page_html/show.html.heex",
+        "span" => %{"start_line" => 1, "end_line" => 2},
+        "source" => ~s(<div class="card">\n  <p>hello</p>\n),
+        "calls" => []
+      }
+
+      lines = Highlight.lines(record, card_id: 7, open_calls: %{}, external?: fn _ -> false end)
+
+      assert Enum.map(lines, & &1.line) == [1, 2]
+
+      doc = lines |> Enum.map_join(& &1.html) |> LazyHTML.from_fragment()
+
+      assert doc |> LazyHTML.query("span.line") |> Enum.count() == 2
+      assert doc |> LazyHTML.query("span.line .l-tag") |> LazyHTML.text() == "divpp"
+
+      assert doc
+             |> LazyHTML.query("span.line[data-line='1'] .l-tag-attribute")
+             |> LazyHTML.text() == "class"
+    end
+
+    test "a component tag in a template is a clickable call span" do
+      doc = fixture_lines("SampleAppWeb.GreetHTML.show/1")
+
+      assert doc |> LazyHTML.query("span.line") |> Enum.count() == 4
+
+      assert doc
+             |> LazyHTML.query(~s(span.call[phx-click="open_call"]))
+             |> LazyHTML.attribute("data-target") == [
+               "SampleAppWeb.GreetHTML.badge/1",
+               "SampleAppWeb.GreetingComponent.render/1"
+             ]
+
+      assert doc
+             |> LazyHTML.query(~s(span.call[data-target="SampleAppWeb.GreetHTML.badge/1"]))
+             |> LazyHTML.text() == ".badge"
+    end
+
+    test "a component tag inside a ~H heredoc is a clickable call span" do
+      doc = fixture_lines("SampleAppWeb.HelloLive.render/1")
+
+      assert doc
+             |> LazyHTML.query(
+               ~s(span.call[phx-click="open_call"][data-target="SampleAppWeb.GreetingComponent.render/1"])
+             )
+             |> LazyHTML.text() == "SampleAppWeb.GreetingComponent.render"
+    end
+  end
+
   describe "diff_lines/2" do
     test "a deleted line is an old-side entry addressing its base line" do
       {:ok, index} = Grasp.Index.load(@fixture)
@@ -514,6 +566,16 @@ defmodule Grasp.HighlightTest do
     test "is nil when no line defines anything" do
       assert Highlight.signature_line(%{"id" => "M.f/1", "source" => "  :ok"}) == nil
     end
+  end
+
+  defp fixture_lines(function_id) do
+    {:ok, index} = Grasp.Index.load(@fixture)
+    {:ok, record} = Grasp.Index.fetch_function(index, function_id)
+
+    record
+    |> Highlight.lines(card_id: 7, open_calls: %{}, external?: fn _ -> false end)
+    |> Enum.map_join(& &1.html)
+    |> LazyHTML.from_fragment()
   end
 
   defp fixture_signature(function_id) do

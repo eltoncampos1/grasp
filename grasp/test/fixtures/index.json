@@ -375,13 +375,7 @@
       ],
       "change": "unchanged",
       "file": "lib/sample_app/greeter.ex",
-      "hidden_calls": [
-        {
-          "kind": "remote",
-          "line": 15,
-          "target": "SampleApp.Formatter.shout/1"
-        }
-      ],
+      "hidden_calls": [],
       "id": "SampleApp.Greeter.greet_all/1",
       "kind": "def",
       "module": "SampleApp.Greeter",
@@ -545,29 +539,29 @@
       "base_source": null,
       "calls": [
         {
-          "kind": "imported",
+          "kind": "template",
           "range": {
             "end": [
-              6,
-              46
+              7,
+              11
             ],
             "start": [
-              6,
-              42
+              7,
+              5
             ]
           },
-          "target": "Phoenix.Controller.text/2"
+          "target": "SampleAppWeb.GreetHTML.show/1"
         },
         {
           "kind": "remote",
           "range": {
             "end": [
-              6,
-              76
+              7,
+              54
             ],
             "start": [
-              6,
-              53
+              7,
+              31
             ]
           },
           "target": "SampleApp.Greeter.greet/1"
@@ -581,9 +575,9 @@
       "module": "SampleAppWeb.GreetController",
       "name": "show",
       "removed": false,
-      "source": "  @doc \"Greets the named person.\"\n  def show(conn, %{\"name\" => name}), do: text(conn, SampleApp.Greeter.greet(name))",
+      "source": "  @doc \"Greets the named person.\"\n  def show(conn, %{\"name\" => name}) do\n    render(conn, :show, name: SampleApp.Greeter.greet(name))\n  end",
       "span": {
-        "end_line": 6,
+        "end_line": 8,
         "start_line": 5
       }
     },
@@ -598,11 +592,11 @@
           "kind": "imported",
           "range": {
             "end": [
-              9,
+              11,
               48
             ],
             "start": [
-              9,
+              11,
               44
             ]
           },
@@ -612,11 +606,11 @@
           "kind": "remote",
           "range": {
             "end": [
-              9,
+              11,
               78
             ],
             "start": [
-              9,
+              11,
               55
             ]
           },
@@ -633,8 +627,44 @@
       "removed": false,
       "source": "  @doc \"Greets loudly.\"\n  def create(conn, %{\"name\" => name}), do: text(conn, SampleApp.Greeter.greet(name, true))",
       "span": {
-        "end_line": 9,
-        "start_line": 8
+        "end_line": 11,
+        "start_line": 10
+      }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "imported_macro",
+          "range": {
+            "end": [
+              9,
+              12
+            ],
+            "start": [
+              9,
+              5
+            ]
+          },
+          "target": "Phoenix.Component.sigil_H/2"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/greet_html.ex",
+      "hidden_calls": [],
+      "id": "SampleAppWeb.GreetHTML.badge/1",
+      "kind": "def",
+      "module": "SampleAppWeb.GreetHTML",
+      "name": "badge",
+      "removed": false,
+      "source": "  @doc \"A small label.\"\n  def badge(assigns) do\n    ~H\"\"\"\n    <span>{@label}</span>\n    \"\"\"\n  end",
+      "span": {
+        "end_line": 12,
+        "start_line": 7
       }
     },
     {
@@ -807,6 +837,20 @@
             ]
           },
           "target": "Phoenix.Component.sigil_H/2"
+        },
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              13,
+              43
+            ],
+            "start": [
+              13,
+              6
+            ]
+          },
+          "target": "SampleAppWeb.GreetingComponent.render/1"
         }
       ],
       "change": "unchanged",
@@ -823,9 +867,9 @@
       "module": "SampleAppWeb.HelloLive",
       "name": "render",
       "removed": false,
-      "source": "  def render(assigns) do\n    ~H\"\"\"\n    <p>{SampleApp.Greeter.greet(@name)}</p>\n    \"\"\"\n  end",
+      "source": "  def render(assigns) do\n    ~H\"\"\"\n    <p>{SampleApp.Greeter.greet(@name)}</p>\n    <SampleAppWeb.GreetingComponent.render name={@name} />\n    \"\"\"\n  end",
       "span": {
-        "end_line": 14,
+        "end_line": 15,
         "start_line": 10
       }
     },
@@ -884,6 +928,62 @@
       "span": {
         "end_line": 7,
         "start_line": 7
+      }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "local",
+          "range": {
+            "end": [
+              1,
+              8
+            ],
+            "start": [
+              1,
+              2
+            ]
+          },
+          "target": "SampleAppWeb.GreetHTML.badge/1"
+        },
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              2,
+              39
+            ],
+            "start": [
+              2,
+              2
+            ]
+          },
+          "target": "SampleAppWeb.GreetingComponent.render/1"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/greet_html/show.html.heex",
+      "hidden_calls": [
+        {
+          "kind": "remote",
+          "line": 4,
+          "target": "SampleApp.Greeter.greet/1"
+        }
+      ],
+      "id": "SampleAppWeb.GreetHTML.show/1",
+      "kind": "template",
+      "module": "SampleAppWeb.GreetHTML",
+      "name": "show",
+      "removed": false,
+      "source": "<.badge label=\"hi\" />\n<SampleAppWeb.GreetingComponent.render name={@name} />\n<a href=\"/greet/bob\">again</a>\n<p>{SampleApp.Greeter.greet(@name)}</p>\n",
+      "span": {
+        "end_line": 4,
+        "start_line": 1
       }
     },
     {
@@ -991,6 +1091,12 @@
       "file": "lib/sample_app_web/greet_controller.ex",
       "line": 1,
       "name": "SampleAppWeb.GreetController"
+    },
+    {
+      "behaviours": [],
+      "file": "lib/sample_app_web/greet_html.ex",
+      "line": 1,
+      "name": "SampleAppWeb.GreetHTML"
     },
     {
       "behaviours": [

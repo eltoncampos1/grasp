@@ -96,6 +96,10 @@ cd grasp && mix setup && mix grasp.viewer --index /path/to/project/.grasp/index.
   edge from each of them. A caller opened this way, or a callee opened by clicking a call,
   joins the group of the card it was opened from when it is new to the canvas, so it lands
   in the column beside that card inside the same frame.
+- A `.heex` template is a card like any other, its markup highlighted and its `file:line`
+  linked into your editor. A component tag inside it — or inside a `~H` body — is a call
+  site you click to open the component, and a controller's `render` opens the template it
+  names, so a route reads through its action and its page into the contexts underneath.
 - Click a line number to comment — hover it first for the `+` that marks it clickable.
   ⌘/Ctrl+Enter saves, Escape cancels; reply, resolve or reopen, delete on the thread. A
   resolved thread collapses to one line and expands on click. A thread whose line moved

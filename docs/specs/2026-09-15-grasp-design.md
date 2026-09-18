@@ -193,8 +193,9 @@ HEEx is code the graph knows, in three parts:
   `put_view` naming another module is not followed.
 
 Against a base ref, a template's `change` compares the whole file with the base commit's
-copy (`git show <base>:<path>`), and a template the base had and the branch removed is a
-removed record like any function.
+copy (`git show <base>:<path>`): a template the base does not have is added, one whose text
+differs is modified and carries the base file as `base_source`, and one the diff never
+touched is unchanged.
 
 ### Index JSON (version 1)
 
@@ -642,7 +643,8 @@ returns one `div` per source line whose children are nested `span.l-*` runs; the
 parsed into text runs, each carrying the class of its innermost span and a start column, so
 a run can be split at a call range's boundary and the pieces inside a range wrapped in one
 clickable span. A record whose file ends in `.heex` is highlighted with Lumis's HEEx
-grammar; every other record with the Elixir one. The theme is `github_light`, inlined into
+grammar; every other record with the Elixir one, which injects the HEEx grammar into a `~H`
+body, so a component tag is a run of its own on both sides and the call range falls on it. The theme is `github_light`, inlined into
 the root layout at compile time from `Lumis.Theme.build_css!/1`; the rest of the UI uses
 the same GitHub Light palette.
 
@@ -818,6 +820,10 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   `render_to_string`, is not linked to its template.
 - **A template's diff is the whole file.** Its `change` and `base_source` compare the
   template file with the base commit's copy, since a template has no smaller unit.
+- **A deleted template is not reported as removed.** Writing a removed record for it needs
+  the module that embedded a path which no longer exists, and the `.ex` file holding that
+  `embed_templates` is in the diff only when it changed too. Added, modified and unchanged
+  templates are all classified.
 
 ### Known gaps (milestone 5.8)
 
