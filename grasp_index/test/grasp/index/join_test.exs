@@ -248,6 +248,69 @@ defmodule Grasp.Index.JoinTest do
     assert greet.hidden_calls == []
   end
 
+  @controller ~S"""
+  defmodule Grasp.JoinTest.GreetController do
+    def show(conn, name) do
+      render(conn, :show, name: name)
+    end
+  end
+  """
+
+  @html ~S"""
+  defmodule Grasp.JoinTest.GreetHTML do
+    def show(assigns), do: assigns
+  end
+  """
+
+  test "retargets a controller's render at the template the HTML module holds" do
+    {:ok, %{definitions: controller}} = Extract.extract(@controller, "lib/greet_controller.ex")
+    {:ok, %{definitions: html}} = Extract.extract(@html, "lib/greet_html.ex")
+
+    events = [render_event()]
+
+    show =
+      (controller ++ html)
+      |> Join.join(events)
+      |> record("Grasp.JoinTest.GreetController", :show)
+
+    assert show.calls == [
+             %{
+               target: "Grasp.JoinTest.GreetHTML.show/1",
+               kind: :template,
+               range: %{start: {3, 5}, end: {3, 11}}
+             }
+           ]
+  end
+
+  test "leaves a render whose template the index does not hold as the call the compiler made" do
+    {:ok, %{definitions: controller}} = Extract.extract(@controller, "lib/greet_controller.ex")
+
+    show =
+      controller
+      |> Join.join([render_event()])
+      |> record("Grasp.JoinTest.GreetController", :show)
+
+    assert show.calls == [
+             %{
+               target: "Phoenix.Controller.render/3",
+               kind: :imported,
+               range: %{start: {3, 5}, end: {3, 11}}
+             }
+           ]
+  end
+
+  defp render_event do
+    %{
+      file: "lib/greet_controller.ex",
+      module: Grasp.JoinTest.GreetController,
+      function: {:show, 2},
+      line: 3,
+      column: 5,
+      target: {Phoenix.Controller, :render, 3},
+      kind: :imported
+    }
+  end
+
   defp join_source(source, file) do
     events = Compile.trace(source, file)
     {:ok, %{definitions: defs}} = Extract.extract(source, file)

@@ -26,6 +26,12 @@ defmodule Grasp.Index.Changes do
   `f/2` beside a removed `f/1` that is still perfectly callable. The canonical id is tried
   first, so an exact match always wins over an alias.
 
+  A template is one file rather than a definition inside one, so it is classified by its
+  whole text: the base contents of its path, when the diff holds them, are what "modified"
+  compares against and what `:base_source` carries. Known gap: a template the branch
+  deleted is not reported as removed — the module that embedded it is only at hand when
+  that module's own file changed too.
+
   Definitions the base holds that no current record answers to under any of their arities
   become removed records: the same shape as any other record, carrying the base file, span
   and source and no calls, so a reader can still see what a deleted function used to be.
@@ -70,16 +76,19 @@ defmodule Grasp.Index.Changes do
 
     base_definitions =
       Enum.flat_map(compared_sources, fn {file, source} ->
-        case Extract.extract(source, file) do
-          {:ok, %{definitions: definitions}} -> definitions
-          {:error, _reason} -> []
+        # Only Elixir sources hold definitions to match by name; a template is compared as
+        # a whole file, and running it through the parser would yield nothing anyway.
+        with ".ex" <- Path.extname(file),
+             {:ok, %{definitions: definitions}} <- Extract.extract(source, file) do
+          definitions
+        else
+          _ -> []
         end
       end)
 
     base_ids =
       Map.new(base_definitions, &{Join.function_id(&1.module, &1.name, &1.arity), &1})
 
-    compared = MapSet.new(Map.keys(compared_sources))
     current_ids = MapSet.new(Enum.flat_map(records, &ids/1))
 
     removed =
@@ -90,13 +99,22 @@ defmodule Grasp.Index.Changes do
       |> Enum.sort_by(fn {id, _definition} -> id end)
       |> Enum.map(fn {_id, definition} -> removed_record(definition) end)
 
-    Enum.map(records, &classify_record(&1, base_ids, compared)) ++ removed
+    Enum.map(records, &classify_record(&1, base_ids, compared_sources)) ++ removed
   end
 
-  defp classify_record(record, base_ids, compared) do
+  defp classify_record(%{kind: :template} = record, _base_ids, compared_sources) do
+    case Map.fetch(compared_sources, record.file) do
+      :error -> change(record, "unchanged", nil)
+      {:ok, ""} -> change(record, "added", nil)
+      {:ok, base} when base == record.source -> change(record, "unchanged", nil)
+      {:ok, base} -> change(record, "modified", base)
+    end
+  end
+
+  defp classify_record(record, base_ids, compared_sources) do
     case Enum.find_value(ids(record), &Map.get(base_ids, &1)) do
       nil ->
-        if MapSet.member?(compared, record.file),
+        if Map.has_key?(compared_sources, record.file),
           do: change(record, "added", nil),
           else: change(record, "unchanged", nil)
 

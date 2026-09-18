@@ -73,6 +73,7 @@ defmodule Grasp.Index.BuilderTest do
              "SampleApp.Workers.Mailer.perform/1",
              "SampleAppWeb.GreetController.create/2",
              "SampleAppWeb.GreetController.show/2",
+             "SampleAppWeb.GreetHTML.show/1",
              "SampleAppWeb.GreetingComponent.render/1",
              "SampleAppWeb.HelloLive.render/1"
            ]
@@ -89,6 +90,42 @@ defmodule Grasp.Index.BuilderTest do
              index,
              "SampleAppWeb.HelloLive.render/1"
            )
+  end
+
+  test "indexes an embedded template as a record of its own", %{index: index} do
+    {:ok, show} = Grasp.Index.fetch_function(index, "SampleAppWeb.GreetHTML.show/1")
+    file = Path.join(@fixture, "lib/sample_app_web/greet_html/show.html.heex")
+
+    assert show["kind"] == "template"
+    assert show["file"] == "lib/sample_app_web/greet_html/show.html.heex"
+    assert show["span"] == %{"start_line" => 1, "end_line" => 4}
+    assert show["source"] == File.read!(file)
+
+    assert %{"range" => %{"start" => [1, 2], "end" => [1, 8]}} =
+             call(show, "SampleAppWeb.GreetHTML.badge/1")
+
+    assert %{"range" => %{"start" => [2, 2], "end" => [2, 39]}} =
+             call(show, "SampleAppWeb.GreetingComponent.render/1")
+
+    assert %{"kind" => "remote", "line" => 4} = hidden(show, "SampleApp.Greeter.greet/1")
+  end
+
+  test "reaches the template a controller renders and the component a template calls",
+       %{index: index} do
+    {:ok, controller} = Grasp.Index.fetch_function(index, "SampleAppWeb.GreetController.show/2")
+
+    assert %{"kind" => "template", "range" => %{"start" => [7, 5], "end" => [7, 11]}} =
+             call(controller, "SampleAppWeb.GreetHTML.show/1")
+
+    {:ok, live} = Grasp.Index.fetch_function(index, "SampleAppWeb.HelloLive.render/1")
+
+    assert %{"kind" => "remote", "range" => %{"start" => [13, 6], "end" => [13, 43]}} =
+             call(live, "SampleAppWeb.GreetingComponent.render/1")
+
+    assert Grasp.Index.callers(index, "SampleAppWeb.GreetingComponent.render/1") == [
+             "SampleAppWeb.GreetHTML.show/1",
+             "SampleAppWeb.HelloLive.render/1"
+           ]
   end
 
   test "lists modules including nested ones", %{index: index} do
@@ -179,6 +216,9 @@ defmodule Grasp.Index.BuilderTest do
   end
 
   defp call(record, target), do: Enum.find(record["calls"], &(&1["target"] == target))
+
+  defp hidden(record, target),
+    do: Enum.find(record["hidden_calls"], &(&1["target"] == target))
 
   defp find(entries, target), do: Enum.find(entries, &(&1["target"] == target))
 

@@ -155,6 +155,52 @@ defmodule Grasp.Index.ChangesTest do
     assert removed.source =~ "def g, do: :g"
   end
 
+  @template "<p>{@name}</p>\n"
+  @base_template "<p>hello</p>\n"
+
+  test "classifies a template by its whole text" do
+    file = "lib/a_web/page_html/show.html.heex"
+
+    modified =
+      Changes.classify(template_records(file, @template), %{file => @base_template}, ["lib"])
+
+    assert [%{change: "modified", base_source: @base_template}] = modified
+
+    unchanged =
+      Changes.classify(template_records(file, @template), %{file => @template}, ["lib"])
+
+    assert [%{change: "unchanged", base_source: nil}] = unchanged
+  end
+
+  test "classifies a template the branch added, and leaves one the diff never touched" do
+    file = "lib/a_web/page_html/show.html.heex"
+
+    assert [%{change: "added", base_source: nil}] =
+             Changes.classify(template_records(file, @template), %{file => ""}, ["lib"])
+
+    assert [%{change: "unchanged"}] =
+             Changes.classify(template_records(file, @template), %{}, ["lib"])
+  end
+
+  defp template_records(file, source) do
+    definition = %{
+      module: "AWeb.PageHTML",
+      name: :show,
+      arity: 1,
+      arities: [1],
+      kind: :template,
+      file: file,
+      start_line: 1,
+      end_line: 1,
+      source: source,
+      call_sites: [],
+      head_positions: [],
+      head_ranges: []
+    }
+
+    Join.join([definition], [])
+  end
+
   defp records(source, file) do
     {:ok, %{definitions: definitions}} = Extract.extract(source, file)
     Join.join(definitions, [])

@@ -7,11 +7,13 @@ defmodule Grasp.Index.Builder do
   `Grasp.Index.Tracer`, forces a full recompile so every call in the project is traced
   (dependencies are compiled only if stale and filtered out by path), extracts
   definitions from every `.ex` file under `:elixirc_paths`, joins the two and writes the
-  document `Grasp.Index.load/1` reads. Git metadata is best-effort: `nil` when the
-  project is not in a repository or `git` is not installed, and a file that cannot be
-  read or parsed is reported and skipped rather than aborting the run. Entry points and
-  module behaviours come from `Grasp.Index.EntryPoints`, which introspects the modules
-  the compile just produced.
+  document `Grasp.Index.load/1` reads. A file an `embed_templates` pattern matches is a
+  definition too, built by `Grasp.Index.Templates`, so a template is a record with calls of
+  its own rather than a file the graph stops at. Git
+  metadata is best-effort: `nil` when the project is not in a repository or `git` is not
+  installed, and a file that cannot be read or parsed is reported and skipped rather than
+  aborting the run. Entry points and module behaviours come from `Grasp.Index.EntryPoints`,
+  which introspects the modules the compile just produced.
 
   With a `:base` git ref, `Grasp.Index.BaseRef` resolves the commit to compare against and
   `Grasp.Index.Changes` marks every record added, modified, unchanged or removed. The ref
@@ -22,7 +24,7 @@ defmodule Grasp.Index.Builder do
   functions the compile produced.
   """
 
-  alias Grasp.Index.{BaseRef, Changes, EntryPoints, Extract, Join, Tracer}
+  alias Grasp.Index.{BaseRef, Changes, EntryPoints, Extract, Join, Templates, Tracer}
 
   @type summary :: %{
           path: String.t(),
@@ -48,7 +50,8 @@ defmodule Grasp.Index.Builder do
 
     base = resolve_base(root, paths, Keyword.get(opts, :base))
     events = trace_compile(root, paths)
-    {definitions, modules} = extract_all(root, paths)
+    {definitions, modules, embeds} = extract_all(root, paths)
+    definitions = definitions ++ Templates.definitions(root, embeds, definitions)
     functions = Join.join(definitions, events)
 
     records =
@@ -128,16 +131,17 @@ defmodule Grasp.Index.Builder do
     paths
     |> Enum.flat_map(&Path.wildcard(Path.join([root, &1, "**", "*.ex"])))
     |> Enum.sort()
-    |> Enum.reduce({[], []}, fn file, {definitions, modules} ->
+    |> Enum.reduce({[], [], []}, fn file, {definitions, modules, embeds} ->
       relative = Path.relative_to(file, root)
 
       case extract_file(file, relative) do
         {:ok, extracted} ->
-          {definitions ++ extracted.definitions, modules ++ extracted.modules}
+          {definitions ++ extracted.definitions, modules ++ extracted.modules,
+           embeds ++ extracted.embeds}
 
         {:error, reason} ->
           Mix.shell().error("grasp: skipping #{relative}: #{inspect(reason)}")
-          {definitions, modules}
+          {definitions, modules, embeds}
       end
     end)
   end

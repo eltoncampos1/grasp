@@ -18,11 +18,14 @@ defmodule Grasp.Index.Extract do
   A `~H` sigil in a definition body contributes call sites too: `Grasp.Index.Heex` scans
   the template for component tags, and the sites it returns join the ones the Elixir AST
   produced. A heredoc `~H\"""` starts on the line after the sigil, with the `indentation`
-  Sourceror records on the sigil's string stripped from every line; a single-line `~H"..."`
-  starts at the sigil's own line, three columns past the `~`. A site made from a `render`
-  call whose second argument is a literal atom or string also carries that literal as
-  `template`, with any `.html` suffix removed, which is the name of the template the call
-  renders.
+  Sourceror records on the sigil's string stripped from every line, which is where the file
+  has it too. A single-line `~H"..."` is the one place a site's key and its range part
+  ways: Phoenix compiles it as though it began on the next line at column 1, so the site is
+  keyed there — where the tracer reports its tags — while the `range` stays on the sigil's
+  own line, three columns past the `~`, where the reader sees the tag. A site made from a
+  `render` call whose second argument is a literal atom or string also carries that literal
+  as `template`, with any `.html` suffix removed, which is the name of the template the
+  call renders.
 
   Each definition also records where its clause heads are: `head_positions` is the
   `{line, column}` of the function name in every clause and `head_ranges` the matching
@@ -41,7 +44,17 @@ defmodule Grasp.Index.Extract do
           range: range(),
           template: String.t() | nil
         }
-  @type kind :: :def | :defp | :defmacro | :defmacrop | :defguard | :defguardp | :defdelegate
+  # `:template` is not a kind this module reads: `Grasp.Index.Templates` builds a definition
+  # of that kind, in this same shape, for every file an `embed_templates` pattern matches.
+  @type kind ::
+          :def
+          | :defp
+          | :defmacro
+          | :defmacrop
+          | :defguard
+          | :defguardp
+          | :defdelegate
+          | :template
 
   @type definition :: %{
           module: String.t(),
@@ -322,10 +335,7 @@ defmodule Grasp.Index.Extract do
   end
 
   # `~H"""` content reaches the compiler with the heredoc's indentation stripped, starting on
-  # the line below the sigil, which is where these file positions put it too. A single-line
-  # `~H"..."` starts three columns past the `~`, after the sigil name and its opening quote,
-  # but Phoenix compiles it as though it began on the next line at column 1, so no tracer
-  # event lands on the file position of its tags and the calls they make stay hidden.
+  # the line below the sigil, which is where these file positions put it too.
   defp tag_sites({:sigil_H, meta, [{:<<>>, str_meta, [content]}, _modifiers]}) do
     with line when is_integer(line) <- meta[:line],
          column when is_integer(column) <- meta[:column] do
@@ -333,10 +343,23 @@ defmodule Grasp.Index.Extract do
 
       if delimiter in ~w(""" '''),
         do: Heex.tag_sites(content, {line + 1, str_meta[:indentation] || 0}),
-        else: Heex.tag_sites(content, {line, 0}, column + 3)
+        else: inline_tag_sites(content, line, column)
     else
       _ -> []
     end
+  end
+
+  # `Phoenix.Component.sigil_H/2` hands EEx `line: caller line + 1` and `indentation: 0`
+  # whatever the delimiter, so the compiler reports the tags of a single-line `~H"..."` one
+  # line below the sigil at their column within the content. `Grasp.Index.Join` keys a site
+  # by line and column and renders its range, so the site carries the compiler's position as
+  # the key and the file's own — three columns past the `~`, after the sigil name and its
+  # opening quote — as the range the reader clicks.
+  defp inline_tag_sites(content, line, column) do
+    keys = Heex.tag_sites(content, {line + 1, 0})
+    ranges = Heex.tag_sites(content, {line, 0}, column + 3)
+
+    Enum.zip_with(keys, ranges, &%{&1 | range: &2.range})
   end
 
   # The template a `render(conn, :show, …)` or `render(conn, "show.html", …)` call renders.

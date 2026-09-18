@@ -33,10 +33,34 @@ defmodule Grasp.Index.HeexTest do
            ]
   end
 
-  test "skips slots, comments and interpolation" do
-    sites = Heex.tag_sites(@template, {10, 4})
+  test "reads script and style bodies as raw text, where a brace opens no interpolation" do
+    template = """
+    <script>const brace = "{";</script>
+    <.badge label="x" />
+    <style>.a { color: red }</style>
+    <.footer />
+    """
 
-    assert Enum.map(sites, & &1.line) == [11, 12]
+    assert Heex.tag_sites(template, {1, 0}) |> Enum.map(& &1.line) == [2, 4]
+  end
+
+  test "reads an element whose name only starts with a raw one as an ordinary tag" do
+    assert Heex.tag_sites("<scriptish>\n<.badge />\n", {1, 0}) |> Enum.map(& &1.line) == [2]
+  end
+
+  test "does not read a `<` inside an attribute value as a tag" do
+    template = "<.badge label=\"a < b\" />\n<.footer />\n"
+
+    assert Heex.tag_sites(template, {1, 0}) == [
+             %{line: 1, column: 1, range: %{start: {1, 2}, end: {1, 8}}, template: nil},
+             %{line: 2, column: 1, range: %{start: {2, 2}, end: {2, 9}}, template: nil}
+           ]
+  end
+
+  test "reports a tag whose name runs to the end of the text" do
+    assert Heex.tag_sites("<.badge", {1, 0}) == [
+             %{line: 1, column: 1, range: %{start: {1, 2}, end: {1, 8}}, template: nil}
+           ]
   end
 
   test "places a template that starts mid-line from the column of its first character" do

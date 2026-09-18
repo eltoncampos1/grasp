@@ -10,6 +10,7 @@ defmodule SampleAppWeb.HelloLive do
   def render(assigns) do
     ~H"""
     <p>{SampleApp.Greeter.greet(@name)}</p>
+    <SampleAppWeb.GreetingComponent.render name={@name} />
     """
   end
 end

@@ -42,6 +42,15 @@ defmodule Grasp.Index.Join do
       macro-generated code — a function component in a `~H` template, code injected by
       `use` — and is kept as a hidden call so the graph stays complete even though
       nothing in the source can be clicked.
+
+  One call is rewritten rather than filtered. `render(conn, :show)` in a controller is
+  reported as a call into `Phoenix.Controller`, which tells a reader nothing; under
+  Phoenix 1.7's `use Phoenix.Controller, formats: [:html]` convention it renders the
+  template `show` of the module whose name is the controller's with `Controller` swapped
+  for `HTML`. When the index holds that template, the call is written against it with kind
+  `:template`, so the controller's card reaches the markup it renders. Known gap: a
+  controller that names another module with `put_view` is not followed — its `render` stays
+  the external call the compiler reported.
   """
 
   alias Grasp.Index.{Extract, Tracer}
@@ -52,7 +61,7 @@ defmodule Grasp.Index.Join do
   # the target tells it apart from the delegated call.
   @definition_bookkeeping {Module, :compile_definition_attributes, 6}
 
-  @type call :: %{target: String.t(), kind: Tracer.kind(), range: Extract.range()}
+  @type call :: %{target: String.t(), kind: Tracer.kind() | :template, range: Extract.range()}
   @type hidden_call :: %{target: String.t(), kind: Tracer.kind(), line: pos_integer()}
 
   @type function_record :: %{
@@ -121,8 +130,25 @@ defmodule Grasp.Index.Join do
     String.starts_with?(name, "__") and String.ends_with?(name, "__")
   end
 
+  # The template a controller's `render` reaches, when the index holds it: the HTML module
+  # Phoenix resolves by convention, the name the site read from the call's second argument,
+  # and arity 1, which is every embedded template's arity.
+  defp template_call(%{target: {_module, :render, _arity}}, definition, site, indexed) do
+    with template when is_binary(template) <- site.template,
+         true <- String.ends_with?(definition.module, "Controller"),
+         html = String.replace_suffix(definition.module, "Controller", "HTML"),
+         target = "#{html}.#{template}/1",
+         true <- MapSet.member?(indexed, target) do
+      %{target: target, kind: :template, range: site.range}
+    else
+      _ -> nil
+    end
+  end
+
+  defp template_call(_event, _definition, _site, _indexed), do: nil
+
   defp build(definition, events, indexed) do
-    sites = Map.new(definition.call_sites, &{{&1.line, &1.column}, &1.range})
+    sites = Map.new(definition.call_sites, &{{&1.line, &1.column}, &1})
     heads = MapSet.new(definition.head_positions)
     delegate_range = if definition.kind == :defdelegate, do: List.first(definition.head_ranges)
     span = definition.start_line..definition.end_line
@@ -151,8 +177,12 @@ defmodule Grasp.Index.Join do
 
           true ->
             case Map.fetch(sites, {event.line, event.column}) do
-              {:ok, range} -> {[call.(range) | calls], hidden}
-              :error -> {calls, [hidden_call | hidden]}
+              {:ok, site} ->
+                resolved = template_call(event, definition, site, indexed) || call.(site.range)
+                {[resolved | calls], hidden}
+
+              :error ->
+                {calls, [hidden_call | hidden]}
             end
         end
       end)

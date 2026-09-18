@@ -177,6 +177,24 @@ defmodule Grasp.Index.ExtractTest do
     assert %{range: %{start: {7, 6}, end: {7, 43}}, template: nil} = site(render, 7, 37)
   end
 
+  @inline_template ~S'''
+  defmodule SampleWeb.Inline do
+    def badge(assigns), do: ~H"<.label text={@text} />"
+  end
+  '''
+
+  test "keys a single-line ~H sigil's tags where the compiler reports them, ranged where written" do
+    {:ok, %{definitions: defs}} = Extract.extract(@inline_template, "lib/sample_web/inline.ex")
+    badge = find(defs, "SampleWeb.Inline", :badge)
+
+    assert site(badge, 3, 1) == %{
+             line: 3,
+             column: 1,
+             range: %{start: {2, 31}, end: {2, 37}},
+             template: nil
+           }
+  end
+
   test "names the template a render call renders, dropping the .html suffix" do
     {:ok, %{definitions: defs}} = Extract.extract(@templates, "lib/sample_web/page.ex")
 

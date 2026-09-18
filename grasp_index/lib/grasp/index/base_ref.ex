@@ -12,9 +12,9 @@ defmodule Grasp.Index.BaseRef do
   command looking for an object that cannot exist.
 
   The file list is the union of the tracked paths that differ from the base commit and the
-  files git reports as untracked, narrowed to the `.ex` sources under the project's
-  compile paths. A deleted file stays in the list: its functions still have to be reported
-  as removed. Rename detection is off, so a file git would have reported as renamed
+  files git reports as untracked, narrowed to the sources the index reads under the
+  project's compile paths: `.ex` files and the `.heex` and `.eex` templates they embed. A
+  deleted file stays in the list: its functions still have to be reported as removed. Rename detection is off, so a file git would have reported as renamed
   appears under both its old and its new path and keeps the base source it had under the
   old one. Paths are asked for, and resolved, relative to the working directory rather than
   the repository root, so a Mix project sitting in a subdirectory of a larger repository
@@ -29,6 +29,10 @@ defmodule Grasp.Index.BaseRef do
 
   # Enough to tell a commit hash from anything git decided to say instead.
   @commit ~r/^[0-9a-f]{40}$/
+
+  # What the index extracts definitions from: Elixir sources and the templates a module
+  # embeds, which are records of their own.
+  @source_extensions [".ex", ".heex", ".eex"]
 
   @type resolved :: %{
           base_ref: String.t(),
@@ -132,10 +136,12 @@ defmodule Grasp.Index.BaseRef do
     prefixes = Enum.map(roots, &(String.trim_trailing(&1, "/") <> "/"))
 
     paths
-    # `.ex` only, matching the glob the index itself is extracted with: a changed `.exs`
-    # would carry base definitions no current record could ever answer to, and every one of
-    # them would read as a deletion.
-    |> Enum.filter(&(Path.extname(&1) == ".ex" and String.starts_with?(&1, prefixes)))
+    # The extensions the index is built from, and no others: a changed `.exs` would carry
+    # base definitions no current record could ever answer to, and every one of them would
+    # read as a deletion.
+    |> Enum.filter(
+      &(Path.extname(&1) in @source_extensions and String.starts_with?(&1, prefixes))
+    )
     |> Enum.uniq()
     |> Enum.sort()
   end
