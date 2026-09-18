@@ -8,12 +8,12 @@ defmodule Grasp.Index.Builder do
   (dependencies are compiled only if stale and filtered out by path), extracts
   definitions from every `.ex` file under `:elixirc_paths`, joins the two and writes the
   document `Grasp.Index.load/1` reads. A file an `embed_templates` pattern matches is a
-  definition too, built by `Grasp.Index.Templates`, so a template is a record with calls of
-  its own rather than a file the graph stops at. Git
-  metadata is best-effort: `nil` when the project is not in a repository or `git` is not
-  installed, and a file that cannot be read or parsed is reported and skipped rather than
-  aborting the run. Entry points and module behaviours come from `Grasp.Index.EntryPoints`,
-  which introspects the modules the compile just produced.
+  definition too, built by `Grasp.Index.Templates`, so a template is a record with calls
+  of its own rather than a file the graph stops at. Git metadata is best-effort: `nil`
+  when the project is not in a repository or `git` is not installed, and a file that
+  cannot be read or parsed is reported and skipped rather than aborting the run. Entry
+  points and module behaviours come from `Grasp.Index.EntryPoints`, which introspects the
+  modules the compile just produced.
 
   With a `:base` git ref, `Grasp.Index.BaseRef` resolves the commit to compare against and
   `Grasp.Index.Changes` marks every record added, modified, unchanged or removed. The ref

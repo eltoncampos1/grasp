@@ -85,11 +85,15 @@ defmodule Grasp.Index.Heex do
     scan(rest, state, sites)
   end
 
-  defp scan(<<"<script", rest::binary>>, state, sites) when raw_boundary(rest),
-    do: skip_raw(rest, advance(state, 7), "</script>", sites)
+  defp scan(<<"<script", rest::binary>>, state, sites) when raw_boundary(rest) do
+    {rest, state} = skip_past(rest, advance(state, 7), "</script>")
+    scan(rest, state, sites)
+  end
 
-  defp scan(<<"<style", rest::binary>>, state, sites) when raw_boundary(rest),
-    do: skip_raw(rest, advance(state, 6), "</style>", sites)
+  defp scan(<<"<style", rest::binary>>, state, sites) when raw_boundary(rest) do
+    {rest, state} = skip_past(rest, advance(state, 6), "</style>")
+    scan(rest, state, sites)
+  end
 
   defp scan(<<"<", rest::binary>>, state, sites) do
     case tag_site(rest, state) do
@@ -130,11 +134,6 @@ defmodule Grasp.Index.Heex do
       nil ->
         nil
     end
-  end
-
-  defp skip_raw(binary, state, closing, sites) do
-    {rest, state} = skip_past(binary, state, closing)
-    scan(rest, state, sites)
   end
 
   defp skip_past(<<>>, state, _marker), do: {<<>>, state}

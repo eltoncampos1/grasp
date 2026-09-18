@@ -132,8 +132,10 @@ defmodule Grasp.Index.Join do
 
   # The template a controller's `render` reaches, when the index holds it: the HTML module
   # Phoenix resolves by convention, the name the site read from the call's second argument,
-  # and arity 1, which is every embedded template's arity.
-  defp template_call(%{target: {_module, :render, _arity}}, definition, site, indexed) do
+  # and arity 1, which is every embedded template's arity. Only `Phoenix.Controller`'s own
+  # `render` renders through that convention, so another module's `render` — a PDF or CSV
+  # renderer a controller calls with the same literal — stays the call the compiler made.
+  defp template_call(%{target: {Phoenix.Controller, :render, _arity}}, definition, site, indexed) do
     with template when is_binary(template) <- site.template,
          true <- String.ends_with?(definition.module, "Controller"),
          html = String.replace_suffix(definition.module, "Controller", "HTML"),

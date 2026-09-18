@@ -299,6 +299,48 @@ defmodule Grasp.Index.JoinTest do
            ]
   end
 
+  @pdf_controller ~S"""
+  defmodule Grasp.JoinTest.PdfController do
+    def show(conn, name) do
+      MyApp.PDF.render(conn, :show, name: name)
+    end
+  end
+  """
+
+  @pdf_html ~S"""
+  defmodule Grasp.JoinTest.PdfHTML do
+    def show(assigns), do: assigns
+  end
+  """
+
+  test "leaves a render made through another module alone, template or not" do
+    {:ok, %{definitions: controller}} = Extract.extract(@pdf_controller, "lib/pdf_controller.ex")
+    {:ok, %{definitions: html}} = Extract.extract(@pdf_html, "lib/pdf_html.ex")
+
+    event = %{
+      file: "lib/pdf_controller.ex",
+      module: Grasp.JoinTest.PdfController,
+      function: {:show, 2},
+      line: 3,
+      column: 15,
+      target: {MyApp.PDF, :render, 3},
+      kind: :remote
+    }
+
+    show =
+      (controller ++ html)
+      |> Join.join([event])
+      |> record("Grasp.JoinTest.PdfController", :show)
+
+    assert show.calls == [
+             %{
+               target: "MyApp.PDF.render/3",
+               kind: :remote,
+               range: %{start: {3, 5}, end: {3, 21}}
+             }
+           ]
+  end
+
   defp render_event do
     %{
       file: "lib/greet_controller.ex",

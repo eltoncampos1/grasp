@@ -14,11 +14,12 @@ defmodule Grasp.Index.BaseRef do
   The file list is the union of the tracked paths that differ from the base commit and the
   files git reports as untracked, narrowed to the sources the index reads under the
   project's compile paths: `.ex` files and the `.heex` and `.eex` templates they embed. A
-  deleted file stays in the list: its functions still have to be reported as removed. Rename detection is off, so a file git would have reported as renamed
-  appears under both its old and its new path and keeps the base source it had under the
-  old one. Paths are asked for, and resolved, relative to the working directory rather than
-  the repository root, so a Mix project sitting in a subdirectory of a larger repository
-  sees the project-relative paths the index itself uses.
+  deleted file stays in the list: its functions still have to be reported as removed.
+  Rename detection is off, so a file git would have reported as renamed appears under both
+  its old and its new path and keeps the base source it had under the old one. Paths are
+  asked for, and resolved, relative to the working directory rather than the repository
+  root, so a Mix project sitting in a subdirectory of a larger repository sees the
+  project-relative paths the index itself uses.
 
   Everything goes through `git` as an external command, and only the exit status decides
   whether a command succeeded: stdout is captured on its own so nothing git says can be

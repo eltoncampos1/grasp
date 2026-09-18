@@ -10,6 +10,15 @@ defmodule Grasp.Index.Templates do
   calls land on, and it gives the template's component tags — scanned by
   `Grasp.Index.Heex` — a range a reader can click. The whole file is the definition: it
   spans line 1 to its last line and its source is the file's text.
+
+  Only a `.heex` template carries call sites. HEEx is the engine whose tags compile to
+  component calls, so an `.eex` template is a record with no sites: the calls the tracer
+  reports inside it still land on it, and nothing in it is clickable.
+
+  A pattern may reach out of the directory it is written in (`"../shared_html/*"`) but not
+  out of the project: every match is expanded to a canonical path, one outside the root is
+  dropped, and what the definition carries is the path relative to the root, which is the
+  name the index and git both use.
   """
 
   alias Grasp.Index.{Extract, Heex}
@@ -26,7 +35,15 @@ defmodule Grasp.Index.Templates do
           Extract.definition()
         ]
   def definitions(root, embeds, definitions) do
-    written = MapSet.new(definitions, &{&1.module, &1.name, &1.arity})
+    root = Path.expand(root)
+
+    # Every arity a definition answers to, as `Grasp.Index.Join` reaches them: a component
+    # written by hand with a default argument still owns the name the template would claim.
+    written =
+      for definition <- definitions,
+          arity <- definition.arities,
+          into: MapSet.new(),
+          do: {definition.module, definition.name, arity}
 
     {templates, _claimed} =
       embeds
@@ -56,13 +73,19 @@ defmodule Grasp.Index.Templates do
 
   # The pattern is relative to the directory of the module that embeds it, and Phoenix
   # appends the extension of every engine it compiles, so `"greet_html/*"` matches
-  # `greet_html/show.html.heex` and not the fixtures or assets sitting beside it.
+  # `greet_html/show.html.heex` and not the fixtures or assets sitting beside it. A match is
+  # expanded before anything is done with it: a pattern that walks up (`"../shared_html/*"`)
+  # would otherwise leave the `..` in the path the record carries, which no path git reports
+  # can ever equal, and a pattern that walks out of the project would write a path only this
+  # machine could resolve.
   defp paths(root, embed) do
     directory = Path.dirname(Path.join(root, embed.file))
 
     directory
     |> Path.join(embed.pattern <> ".{heex,eex}")
     |> Path.wildcard()
+    |> Enum.map(&Path.expand/1)
+    |> Enum.filter(&String.starts_with?(&1, root <> "/"))
     |> Enum.sort()
     |> Enum.map(&{embed.module, &1})
   end
