@@ -89,9 +89,8 @@ mix grasp.index [--base main] [--out .grasp/index.json]
 3. **Join.** Each tracer event finds its definition by caller MFA (falling back to
    file and line containment) and its call node by line and column, producing a call
    with a target id, kind and range. An event that has a column but no matching node is
-   macro-generated (a function component inside `~H`, `use`-injected code) and is kept
-   as a `hidden_call`, so the callers/callees graph stays exact even where nothing is
-   clickable. Events reported with **no column at all** come from the same machinery but
+   macro-generated (`use`-injected code) and is kept as a `hidden_call`, so the
+   callers/callees graph stays exact even where nothing is clickable. Events reported with **no column at all** come from the same machinery but
    are mostly the expansion's own plumbing — a template engine, a query builder,
    `Logger`, `and` and `>` compiling to `:erlang` — which describes how the code was
    built rather than what the function set out to do, and on a real project outnumbers
@@ -99,10 +98,9 @@ mix grasp.index [--base main] [--out .grasp/index.json]
    hidden call only when its line falls inside the definition's span and its target is a
    definition the index itself holds. That keeps the calls a `~H` body makes into the
    project's own contexts — the controller to template to context chain — while leaving
-   the macro's implementation out. So a call written inside an inline `~H` body reaches
-   the graph as a hidden call; a call inside a `.heex` template file compiled by
-   `embed_templates` still does not, because the function that template compiles into has
-   no definition record for the event to attach to. `defdelegate` is the one column-less
+   the macro's implementation out. So a call interpolated in `{…}` inside a `~H` body or a
+   template file reaches the graph as a hidden call, while a component tag there is a
+   visible call (see [Templates](#templates)). `defdelegate` is the one column-less
    case placed as a visible call, ranged over the delegate's own name. A `__name__`-shaped
    target (`__schema__/1`, `__struct__/1`, `Phoenix.VerifiedRoutes.__encode_segment__/1`)
    is dropped before any of this, whatever position it carries: it is machinery a macro
@@ -166,6 +164,37 @@ mix grasp.index [--base main] [--out .grasp/index.json]
    `removed: true` with no calls. A function moved between files without change counts as
    unchanged.
 6. **Write JSON** to `--out`.
+
+### Templates
+
+HEEx is code the graph knows, in three parts:
+
+- **Component tags are call sites.** The compiler reports `<.badge>` and
+  `<MyAppWeb.Components.badge>` as calls to the component function, at the tag's line and
+  the column of the function name, inside inline `~H` bodies and inside `.heex` files alike.
+  `Grasp.Index.Heex.tag_sites/2` scans template text for those tags — skipping slots
+  (`<:name>`), comments and `{…}` interpolations — and yields call sites in file
+  coordinates (a heredoc's stripped indentation is added back; a single-line `~H"…"`
+  starts at the sigil's own column), ranged from the character after `<` to the end of the
+  name, so the tag name is the clickable span. The extractor adds them to the definition
+  holding each `~H` sigil; the join then matches the events as it does any call.
+- **Template files are records.** The extractor records every `embed_templates "pattern"`
+  a module body calls. The builder globs each pattern relative to the module's file and
+  makes one definition per match, following Phoenix's naming — `home.html.heex` is
+  `PageHTML.home/1` — with `kind` `template`, the template path as `file`, the whole file
+  as `source` and span, and the tag sites as call sites; events the compiler reports for
+  that function (their file is the template) join to it. A template that also has a
+  hand-written definition of the same name and arity is left to the hand-written one.
+- **`render` reaches the template.** A call to `Phoenix.Controller.render/2,3` in a
+  module named `…Controller` whose second argument is a literal atom or string names a
+  template; when `…HTML.<name>/1` is a record, the call's target becomes that record with
+  call kind `template`, so a route leads through its action to the page it renders. The
+  convention followed is Phoenix 1.7's `use Phoenix.Controller, formats: [:html]`; a
+  `put_view` naming another module is not followed.
+
+Against a base ref, a template's `change` compares the whole file with the base commit's
+copy (`git show <base>:<path>`), and a template the base had and the branch removed is a
+removed record like any function.
 
 ### Index JSON (version 1)
 
@@ -232,13 +261,10 @@ tracer event whose caller has no definition record is dropped entirely.
   tracer events are dropped.
 - **Definitions nested under a control structure.** A `def` written inside `if`, `for`,
   `case` or `quote` in a module body is invisible to the extractor for the same reason.
-- **Macro-generated functions.** A function a macro defines — `embed_templates`, the
-  `def`s a `use` injects — has no source of its own to extract, so it has no definition
-  record, and `.heex` templates are therefore not cards of their own. Milestone 3 narrowed
-  the consequence where the generated code sits inside a function that does have a record:
-  a call written in an inline `~H` body is kept as a hidden call on the function holding
-  it, so a LiveView reaches its context through its own template. A template compiled from
-  its own file is still out of reach — see Known gaps (milestone 3).
+- **Macro-generated functions.** A function a macro defines — the `def`s a `use`
+  injects — has no source of its own to extract, so it has no definition record. The one
+  exception is `embed_templates`, whose functions have a source: the template file. Those
+  are records since milestone 6.1 (see [Templates](#templates)).
 
 ## Part 2 — `grasp` viewer
 
@@ -615,8 +641,10 @@ Lumis (tree-sitter) runs server-side. `Lumis.highlight/2` with the `:html_linked
 returns one `div` per source line whose children are nested `span.l-*` runs; the HTML is
 parsed into text runs, each carrying the class of its innermost span and a start column, so
 a run can be split at a call range's boundary and the pieces inside a range wrapped in one
-clickable span. The theme is `github_light`, inlined into the root layout at compile time
-from `Lumis.Theme.build_css!/1`; the rest of the UI uses the same GitHub Light palette.
+clickable span. A record whose file ends in `.heex` is highlighted with Lumis's HEEx
+grammar; every other record with the Elixir one. The theme is `github_light`, inlined into
+the root layout at compile time from `Lumis.Theme.build_css!/1`; the rest of the UI uses
+the same GitHub Light palette.
 
 tree-sitter is super-linear on deeply nested binary-operator trees — a twenty-step `|>`
 pipeline parses in tens of milliseconds, a forty-step one in hundreds — and a card
@@ -677,12 +705,9 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   hidden call while its call into a dependency's helper — a component library, the HTML
   helpers — does not. The alternative is the ten-to-one flood of expansion internals that
   made the whole class unusable.
-- **A `.heex` template file does not reach the call graph.** A call written in an inline
-  `~H` body is kept as a hidden call on the function holding it, but a template
-  `embed_templates` compiles from its own file becomes a function the extractor never saw,
-  so the events for every call it makes are dropped with their caller. Giving those
-  generated functions a definition record — the template file as their source — is the
-  fix, and it belongs with the extractor rather than the join.
+- **A `.heex` template file does not reach the call graph.** Resolved in milestone 6.1:
+  templates `embed_templates` compiles are records with the template file as their source
+  (see [Templates](#templates)).
 - **`defimpl`, `defprotocol` and definitions nested under a control structure** are still
   invisible to the extractor, so a callback implemented there is neither a card nor an
   entry point. Unchanged from milestone 1.
@@ -782,6 +807,17 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 - **Edit mode trusts the CLI's allowlist.** `Bash(mix:*)` admits every mix task, including
   ones that write outside the project; there is no sandbox beyond what Claude Code applies.
   The mode is off unless the reader turns it on, and per viewer session.
+
+### Known gaps (milestone 6.1)
+
+- **Interpolated calls in templates stay hidden.** The compiler reports a call written in
+  `{…}` inside a template with no column, so it is a hidden call on the template or the
+  function holding the `~H`; only component tags are clickable.
+- **Only the `…Controller` → `…HTML` convention is followed.** A controller that
+  `put_view`s another module, or renders through `Phoenix.Template.render/4` or
+  `render_to_string`, is not linked to its template.
+- **A template's diff is the whole file.** Its `change` and `base_source` compare the
+  template file with the base commit's copy, since a template has no smaller unit.
 
 ### Known gaps (milestone 5.8)
 
@@ -1031,6 +1067,8 @@ conversation.
    `mix grasp.viewer`).
 6. Sessions on disk: persistence of the forest and its groups, a session menu, saved
    sessions listed by `list_sessions`. Tours (the former milestone 7) were dropped.
+   - Milestone 6.1 makes HEEx code the graph knows: component tags are clickable calls,
+     `embed_templates` files are records, `render` reaches its template.
 7. README for strangers, CI, editor links, `mix grasp.serve` polish.
 
 ## Verification
