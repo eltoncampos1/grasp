@@ -191,6 +191,11 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
 .badge--change[data-change="modified"] { background: var(--accent-soft); color: var(--accent); }
 .badge--change[data-change="removed"] { background: var(--diff-del-bg); color: var(--diff-del-fg); }
 .card--removed .card__header { background: var(--diff-del-bg); }
+/* An added function reads as green from the header down, the way a removed one reads as red:
+   the badge alone is easy to miss on a canvas of many cards. */
+.card--added .card__header { background: var(--diff-ins-bg); }
+.card--added .card__body { background: color-mix(in srgb, var(--diff-ins-bg) 45%, var(--code-bg)); }
+.card--added { border-color: color-mix(in srgb, var(--diff-ins-fg) 35%, var(--border)); }
 .card__title { margin: 0; font-size: 15px; font-weight: 600; }
 .card__module { color: var(--fg-muted); font-weight: 400; }
 .card__kind { margin-inline-start: var(--space-s); color: var(--fg-muted); font-weight: 400; font-size: 12px; }

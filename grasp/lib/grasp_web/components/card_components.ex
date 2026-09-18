@@ -226,7 +226,8 @@ defmodule GraspWeb.CardComponents do
         "card",
         @focused? && "card--focused",
         @selected && "card--selected",
-        @record["removed"] && "card--removed"
+        @record["removed"] && "card--removed",
+        !@record["removed"] && @record["change"] == "added" && "card--added"
       ]}
       data-function-id={@record["id"]}
       data-focused={to_string(@focused?)}
