@@ -1083,6 +1083,124 @@ conversation.
   every tab on the session sees the same conversation, and card changes arrive through
   the ordinary session broadcast because the agent went through MCP like any other client.
 
+## Part 4 — In-app Grasp
+
+Milestone 7 changes how Grasp is installed and where it runs, the way Tidewave and
+LiveDashboard run: as one development dependency mounted inside the reviewed application's
+own endpoint. Where this part contradicts Parts 1–3, this part wins; the earlier text stays
+as the record of how the pieces work.
+
+### One package
+
+`grasp_index` and the viewer become one Mix project and one Hex package, `grasp`, whose
+modules keep their names (`Grasp.Index.*` for the indexer, `Grasp.*` and `GraspWeb.*` for
+the viewer). The reviewed project installs it with one line:
+
+```elixir
+{:grasp, "~> 0.1", only: :dev}
+```
+
+Its dependencies are what the viewer needs — Phoenix `~> 1.8`, LiveView `~> 1.1` (the viewer
+uses nothing newer; it is tested against 1.1 and 1.2), Phoenix.HTML, Jason, Lumis `~> 0.8`,
+LazyHTML, anubis_mcp, Sourceror — and they resolve against the host's lock file. That is the
+trap accepted: a host on an older LiveView or Lumis upgrades to use Grasp. Bandit is
+optional, used only by the standalone endpoint.
+
+The OTP application starts Grasp's core — PubSub, the index store, the comments store, the
+session and agent registries and supervisors, the MCP server, the reindexer — whenever Mix
+is running (a release has no Mix and gets nothing, as Tidewave does). The viewer's own
+endpoint starts only when `config :grasp, standalone: true`, which `mix grasp.viewer` and
+the test environment set; embedded in a host it starts no endpoint of its own.
+
+### Mounting
+
+The host adds Grasp to its router inside a scope that runs its `:browser` pipeline:
+
+```elixir
+import Grasp.Router
+
+scope "/" do
+  pipe_through :browser
+  grasp "/grasp"
+end
+```
+
+`grasp/2` expands, as `live_dashboard/2` does, to a `live_session` named `:grasp` with
+Grasp's own root layout and no app layout, routing `/grasp` and `/grasp/s/:name` to
+`GraspWeb.ReviewLive`; a `forward "/grasp/mcp"` to the Streamable HTTP plug behind
+`GraspWeb.Plugs.LocalOnly`; and `/grasp/assets/:asset` served by `GraspWeb.Assets`, a plug
+that embeds at compile time the host's own `phoenix.js` and `phoenix_live_view.js` (read
+from those applications' `priv/static`, so the JavaScript always matches the LiveView the
+host runs) followed by Grasp's hooks bundle, and Grasp's stylesheet, each under a content
+hash. Grasp's bundle therefore does not bundle Phoenix or LiveView: `app.js` reads them from
+the globals those files define and connects its own `LiveSocket` to the host's live socket
+path (`live_socket_path` from the endpoint's configuration, `/live` by default). The Lumis
+theme stays inlined in the root layout. The standalone endpoint mounts the same macro at
+`/`, so the viewer's own tests exercise the mounted form.
+
+Configuration lives under `:grasp` in the host's `config/dev.exs`, all optional:
+`index_path` (default `.grasp/index.json` under the project root), `editor`, `agent_command`,
+`agent_model`. The project root is the directory the host was started from. When the index
+file does not exist the page says so and names `mix grasp.index`; nothing crashes.
+
+### The tracer rides the code reloader
+
+Grasp's reindexer installs `Grasp.Index.Tracer` into the VM's compiler options when it
+starts (and `parser_options: [columns: true]`), so every compile the host's code reloader
+performs — the incremental compile that follows a save — reports its call events to Grasp.
+Events accumulate; 300 ms after the last one, the reindexer updates the index incrementally:
+it takes the set of project files the events name, re-extracts those files with Sourceror
+(a file that no longer exists drops its definitions), joins the new events to the new
+definitions, recomputes entry points from the modules now loaded, classifies the changed
+files against the base ref the index was built with (base sources come from `git show`,
+cached), writes the whole document back to the index file and reloads the store. Cards
+therefore follow a save within a second or two, with no `mix grasp.index` run. What the
+incremental path cannot see — a compile that happened before Grasp started, a change to
+which files are compiled at all — is what `mix grasp.index` is for; it stays the full build.
+
+`mix grasp.index` compiles in a build directory of its own, `_build/grasp` (`--build-path`),
+seeded by copying the host's `_build/dev` the first time it is missing, so the forced
+recompile never contends with the running dev server's build lock and never invalidates its
+beams.
+
+### Pull requests from worktrees
+
+"Open PR 1251" no longer switches the reader's working tree. `mix grasp.pr N` does the
+whole recipe deterministically: reads the pull request with `gh pr view` (base branch,
+head branch, title, URL), fetches both branches, adds or updates a worktree at
+`.grasp/worktrees/pr-N` on the head branch, symlinks the host's `deps/` into it, seeds its
+build path from the host's `_build/dev` when missing, and runs the index build inside it
+against `origin/<base>`, writing the index to the host's `.grasp/index.json` with the
+worktree as `project.root`. `mix grasp.pr --close N` removes the worktree. The agent's
+edit-mode recipe becomes: `mix grasp.pr N`, then `reload_index`, then `list_changes` and
+`set_cards` one group per flow; the allowlist drops `git switch` and `gh pr checkout` and
+gains nothing, since the task does the git work. In edit mode the agent's edits land in the
+worktree (`project.root`), as do `mix format` and the rebuild; the host keeps running the
+code it started with.
+
+Comments and sessions belong to the reader, not to the tree under review: their files live
+under the host project's own `.grasp/` — the directory Grasp started in — whatever
+`project.root` the index names, so a review survives the worktree being removed.
+
+### What goes away
+
+`mix grasp.serve`, the launcher and its checkout under `~/.grasp/viewer`, and port 4040.
+`mix grasp.viewer` remains for working on Grasp itself. The known gap "Opening a pull
+request switches the working tree" is closed.
+
+### Known gaps (milestone 7)
+
+- **The first index is still a full build.** The reindexer only sees compiles that happen
+  after Grasp started; `mix grasp.index` (30 s on a large project, in its own build
+  directory) is how a canvas begins.
+- **One host, one Grasp.** Two dev servers of the same project share `.grasp/` and would
+  fight over the index file; run one.
+- **The worktree's dependencies are the host's.** A pull request that changes `mix.lock`
+  compiles against the host's `deps/`; its index may miss or mis-resolve calls into the
+  changed dependency until the reader runs `mix deps.get` in the worktree.
+- **Version coupling.** Grasp's Phoenix, LiveView and Lumis requirements are the host's
+  to satisfy.
+
 ## Testing
 
 - `grasp_index`: a fixture project at `test/fixtures/sample_app` with phoenix,
@@ -1135,7 +1253,10 @@ conversation.
      `embed_templates` files are records, `render` reaches its template.
    - Milestone 6.2 turns the canvas into a whiteboard: absolute positions, the hook places
      a new card beside its opener, nothing else moves; session files move to version 2.
-7. README for strangers, CI, editor links, `mix grasp.serve` polish.
+7. In-app Grasp: one dev dependency mounted in the host's endpoint, the tracer riding the
+   host's code reloader for incremental indexing, pull requests reviewed from worktrees
+   (see [Part 4](#part-4--in-app-grasp)).
+8. README for strangers, CI, editor links, polish.
 
 ## Verification
 
