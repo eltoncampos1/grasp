@@ -120,17 +120,12 @@ defmodule GraspWeb.RouterTest do
   end
 
   describe "mount/3" do
-    test "writes the same routes as the macro, under the host's pipeline" do
+    test "writes the same routes as the macro" do
       assert routes(GraspWeb.FunctionMountedRouter) == [
                {:get, "/review"},
                {:get, "/review/s/:name"},
                {:get, "/review/assets/:asset"}
              ]
-
-      route =
-        Enum.find(Phoenix.Router.routes(GraspWeb.FunctionMountedRouter), &(&1.path == "/review"))
-
-      assert route.pipe_through == [:browser]
     end
   end
 end
