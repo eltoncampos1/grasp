@@ -153,6 +153,8 @@ cd grasp && mix setup && mix grasp.viewer --index /path/to/project/.grasp/index.
   linked into your editor. A component tag inside it — or inside a `~H` body — is a call
   site you click to open the component, and a controller's `render` opens the template it
   names, so a route reads through its action and its page into the contexts underneath.
+- Double-click an arrow to jump to the card at its far end — the caller or the callee that
+  is out of sight — which takes focus and pans into view.
 - Click a line number to comment — hover it first for the `+` that marks it clickable.
   ⌘/Ctrl+Enter saves, Escape cancels; reply, resolve or reopen, delete on the thread. A
   resolved thread collapses to one line and expands on click. A thread whose line moved

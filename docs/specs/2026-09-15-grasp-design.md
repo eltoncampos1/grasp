@@ -1185,9 +1185,21 @@ Events accumulate; 300 ms after the last one, the reindexer updates the index in
 it takes the set of project files the events name, re-extracts those files with Sourceror
 (a file that no longer exists drops its definitions), joins the new events to the new
 definitions, recomputes entry points from the modules now loaded, classifies the changed
-files against the base ref the index was built with (base sources come from `git show`,
-cached), writes the whole document back to the index file and reloads the store. Cards
-therefore follow a save within a second or two, with no `mix grasp.index` run. What the
+files against the base commit the document records as `git.base_sha` (the commit is verified
+once per flush, then each changed file's base source comes from `git show`; nothing is
+cached — a flush reads only the files the save touched, and a git that cannot answer leaves
+the records with the classification they already had), writes the whole document back to the index file and reloads the store. Cards
+therefore follow a save within a second or two, with no `mix grasp.index` run. The 300 ms
+throttle on the tracer's notifications is held per compiler process, in that process's own
+dictionary, so a compile of a thousand files costs of the order of one message per file.
+Two rules keep an event from being joined to a file that moved under it: an event carrying
+a column that lands on no call site is dropped (where a full build keeps it as a hidden
+call), and an event older than the mtime of the file it names is not joined at all. A batch
+naming more than fifty project files is a rebuild rather than a save: the reindexer says so
+and leaves the index to `mix grasp.index`. The reindexer follows a document only while its
+`project.root` is Grasp's home directory: `mix grasp.pr` writes an index rooted in a
+worktree, and the host's compiles describe a different tree, so live reindexing pauses —
+once, with a line saying so — until an index of the host's own tree is loaded again. What the
 incremental path cannot see — a compile that happened before Grasp started, a change to
 which files are compiled at all — is what `mix grasp.index` is for; it stays the full build.
 
@@ -1195,6 +1207,10 @@ which files are compiled at all — is what `mix grasp.index` is for; it stays t
 seeded by copying the host's `_build/dev` the first time it is missing, so the forced
 recompile never contends with the running dev server's build lock and never invalidates its
 beams.
+The full build and the incremental update share `Grasp.Index.Builder`'s stages:
+`source_files/2`, `extract/2`, `Grasp.Index.Join.join/3` (options `:known_ids` and
+`:unmatched_positions`), `entry_points/2` (app and records), `classify/3` (records, resolved
+base, compile paths) and `document/5`.
 
 ### Pull requests from worktrees
 
@@ -1240,6 +1256,14 @@ request switches the working tree" is closed.
   changed dependency until the reader runs `mix deps.get` in the worktree.
 - **Version coupling.** Grasp's Phoenix, LiveView and Lumis requirements are the host's
   to satisfy.
+- **The build seed goes stale.** `_build/grasp` is copied from `_build/dev` once. A
+  dependency rebuilt afterwards is not copied again; deleting `_build/grasp` takes a fresh
+  seed. A worktree's seeded build directory ages the same way.
+- **Two prefixes, no check.** `grasp "/grasp"` in the router and `plug Grasp.Plug, at: "/grasp"`
+  in the endpoint must name the same mount; nothing verifies it, and a host that changes one
+  gets a partly unguarded page or an agent pointed at a 404.
+- **Worktrees are not cleaned up.** `.grasp/worktrees/` grows one checkout and one seeded
+  build per pull request until `mix grasp.pr N --close`, which discards uncommitted edits.
 
 ## Testing
 

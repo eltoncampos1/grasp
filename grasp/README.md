@@ -34,6 +34,10 @@ copying the project's current build the first time it is missing, so it neither 
 the dev server's build lock nor invalidates the beams the server is running. `--build-path`
 names another one; naming the project's own runs the build in place.
 
+The seed is a copy, and it is taken once. A dependency rebuilt in `_build/dev` afterwards is
+not copied across again — the forced recompile refreshes the project's own modules, not the
+dependencies underneath them. Delete `_build/grasp` to take a fresh seed.
+
 `--base REF` classifies every function against the merge base of `REF` and `HEAD` — added,
 modified, unchanged or removed — and carries the base version of each modified function's
 source, which is what turns the canvas into a pull-request review.
