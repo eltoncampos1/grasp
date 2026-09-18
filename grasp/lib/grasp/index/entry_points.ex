@@ -45,10 +45,18 @@ defmodule Grasp.Index.EntryPoints do
   # A forward can mount a router that itself forwards; each pass composes one more level.
   @max_forward_depth 8
 
-  @doc "Entry points and per-module behaviours for `app`, keeping only targets in `indexed`."
+  @doc """
+  Entry points and per-module behaviours for `app`, keeping only targets in `indexed`.
+
+  `:skipped` names the LiveViews whose routes could not be given a target because the index
+  holds none of their functions. Reporting them is the caller's business: the same
+  detection runs once from `mix grasp.index`, where a line on the terminal is what a reader
+  wants, and again after every save, where it is not.
+  """
   @spec detect(atom(), MapSet.t(String.t())) :: %{
           entry_points: [entry()],
-          behaviours: %{String.t() => [String.t()]}
+          behaviours: %{String.t() => [String.t()]},
+          skipped: [String.t()]
         }
   def detect(app, indexed) do
     case app_modules(app) do
@@ -60,7 +68,7 @@ defmodule Grasp.Index.EntryPoints do
           "grasp: no application modules found for #{inspect(app)}; entry points skipped"
         )
 
-        %{entry_points: [], behaviours: %{}}
+        %{entry_points: [], behaviours: %{}, skipped: []}
     end
   end
 
@@ -122,23 +130,17 @@ defmodule Grasp.Index.EntryPoints do
     {skipped, routes} =
       routers
       |> Enum.flat_map(&routes(&1, indexed, Map.get(prefixes, &1, "")))
-      |> Enum.split_with(&(&1 == :skipped_live))
-
-    report_skipped(length(skipped))
+      |> Enum.split_with(&match?({:skipped_live, _view}, &1))
 
     controllers = MapSet.new(routes, &module_of(&1.target))
     callbacks = Enum.flat_map(modules, &module_entries(&1, indexed, controllers))
 
     %{
       entry_points: Enum.sort_by(routes ++ callbacks, &{rank(&1.kind), &1.label, &1.target}),
-      behaviours: behaviours
+      behaviours: behaviours,
+      skipped: skipped |> Enum.map(fn {:skipped_live, view} -> view end) |> Enum.sort()
     }
   end
-
-  defp report_skipped(0), do: :ok
-
-  defp report_skipped(count),
-    do: Mix.shell().info("grasp: #{count} live routes skipped (view has no indexed functions)")
 
   # A forwarded router's own routes are relative to the mount, and the forward route itself
   # (`verb == :*`) is not an entry, so the mount survives only as this prefix.
@@ -191,7 +193,7 @@ defmodule Grasp.Index.EntryPoints do
          prefix
        ) do
     case live_route_target(view, indexed) do
-      nil -> :skipped_live
+      nil -> {:skipped_live, inspect(view)}
       target -> entry("live_route", target, route, router, prefix)
     end
   end

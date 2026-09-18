@@ -1,6 +1,8 @@
 defmodule Grasp.Index.IncrementalTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   alias Grasp.Index.Incremental
 
   @moduletag :tmp_dir
@@ -103,8 +105,60 @@ defmodule Grasp.Index.IncrementalTest do
          %{document: document, root: root, events: events} do
       {:ok, updated} = update(document, root, [@greeter], events)
 
-      before = Enum.reject(document["functions"], &(&1["file"] == @greeter))
-      assert Enum.reject(updated["functions"], &(&1["file"] == @greeter)) == before
+      before = by_id(Enum.reject(document["functions"], &(&1["file"] == @greeter)))
+      assert by_id(Enum.reject(updated["functions"], &(&1["file"] == @greeter))) == before
+    end
+
+    test "orders records and modules the way a full build writes them",
+         %{document: document, root: root, events: events} do
+      {:ok, updated} = update(document, root, [@greeter], events)
+
+      assert updated["functions"] ==
+               Enum.sort_by(
+                 updated["functions"],
+                 &{&1["file"], &1["span"]["start_line"], &1["id"]}
+               )
+
+      assert updated["modules"] ==
+               Enum.sort_by(updated["modules"], &{&1["file"], &1["line"], &1["name"]})
+    end
+
+    test "drops a positioned event that lands on no call site",
+         %{document: document, root: root, events: events} do
+      moved = %{
+        file: @greeter,
+        module: SampleApp.Greeter,
+        function: {:greet_none, 0},
+        line: 19,
+        column: 99,
+        target: {SampleApp.Formatter, :wrap, 1},
+        kind: :remote
+      }
+
+      {:ok, updated} = update(document, root, [@greeter], [moved | events])
+      record = fetch(updated, "SampleApp.Greeter.greet_none/0")
+
+      assert record["hidden_calls"] == []
+      assert targets(record) == ["SampleApp.Formatter.shout/1"]
+    end
+
+    test "recomputes entry points when the application can be introspected",
+         %{document: document, root: root, events: events} do
+      document = put_in(document, ["project", "app"], "grasp")
+      {:ok, updated} = update(document, root, [@greeter], events)
+
+      assert updated["entry_points"] == []
+      refute updated["entry_points"] == document["entry_points"]
+    end
+
+    test "drops the records of a file that is no longer there",
+         %{document: document, root: root, events: events} do
+      File.rm!(Path.join(root, @greeter))
+      {:ok, updated} = update(document, root, [@greeter], events)
+
+      refute Enum.any?(updated["functions"], &(&1["file"] == @greeter))
+      refute Enum.any?(updated["modules"], &(&1["file"] == @greeter))
+      assert fetch(updated, "SampleApp.Formatter.wrap/1")
     end
 
     test "re-reads the modules the file defines, keeping their behaviours",
@@ -221,6 +275,21 @@ defmodule Grasp.Index.IncrementalTest do
       assert fetch(updated, "SampleApp.Greeter.greet_none/0")["change"] == "added"
       assert fetch(updated, "SampleApp.Greeter.greet_all/1")["change"] == "unchanged"
     end
+
+    test "keeps the classification it had when git cannot answer",
+         %{document: document, root: root} do
+      write(root, @greeter, @changed_greeter)
+      base = %{root: root, base_sha: String.duplicate("a", 40), paths: ["lib"]}
+
+      {result, log} = with_log(fn -> update(document, root, [@greeter], [], base) end)
+      {:ok, updated} = result
+
+      assert log =~ "keep the classification they had"
+      assert fetch(updated, "SampleApp.Greeter.Nested.hello/0")["change"] == "added"
+      assert fetch(updated, "SampleApp.Greeter.greet/2")["change"] == "unchanged"
+      assert fetch(updated, "SampleApp.Greeter.greet_none/0")["change"] == "unchanged"
+      assert fetch(updated, "SampleApp.Greeter.greet_none/0")["base_source"] == nil
+    end
   end
 
   defp update(document, root, changed, events, base \\ nil),
@@ -279,6 +348,8 @@ defmodule Grasp.Index.IncrementalTest do
     {sha, 0} = System.cmd("git", ["rev-parse", "HEAD"], cd: root)
     %{root: root, base_sha: String.trim(sha), paths: ["lib"]}
   end
+
+  defp by_id(records), do: Map.new(records, &{&1["id"], &1})
 
   defp fetch(document, id), do: Enum.find(document["functions"], &(&1["id"] == id))
 

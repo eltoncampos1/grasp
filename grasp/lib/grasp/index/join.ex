@@ -94,16 +94,29 @@ defmodule Grasp.Index.Join do
   @doc """
   Turns definitions and tracer events into function records with resolved calls.
 
-  `known_ids` are function ids the index holds beyond `definitions`. A hidden call is kept
-  only when its target is a function the index holds, and a controller's `render` is
-  rewritten only against a template the index holds, so a caller joining one file at a time
-  — `Grasp.Index.Incremental` — passes the ids of the records it is not rebuilding; without
-  them every call reaching out of that file would read as a call into nothing.
+  Options:
+
+    * `:known_ids` — function ids the index holds beyond `definitions`. A hidden call is
+      kept only when its target is a function the index holds, and a controller's `render`
+      is rewritten only against a template the index holds, so a caller joining one file at
+      a time — `Grasp.Index.Incremental` — passes the ids of the records it is not
+      rebuilding; without them every call reaching out of that file would read as a call
+      into nothing.
+    * `:unmatched_positions` — what becomes of an event that carries a column but lands on
+      no call site in the definition. `:hide` (the default) keeps it as a hidden call,
+      which is what a full build wants: the position came from macro-generated code and the
+      call is real even though nothing in the source can be clicked. `:drop` discards it,
+      which is what a caller joining events to a file that may have been saved since wants:
+      there the same shape is just as likely to be an event describing a line that has
+      moved, and a phantom hidden call is worse than a missing one.
   """
-  @spec join([Extract.definition()], [Tracer.event()], MapSet.t(String.t())) :: [
-          function_record()
-        ]
-  def join(definitions, events, known_ids \\ MapSet.new()) do
+  @spec join([Extract.definition()], [Tracer.event()],
+          known_ids: MapSet.t(String.t()),
+          unmatched_positions: :hide | :drop
+        ) :: [function_record()]
+  def join(definitions, events, opts \\ []) do
+    known_ids = Keyword.get(opts, :known_ids, MapSet.new())
+    unmatched = Keyword.get(opts, :unmatched_positions, :hide)
     {canonical, indexed} = reachable(definitions, known_ids)
 
     events_by_definition =
@@ -116,7 +129,7 @@ defmodule Grasp.Index.Join do
 
     Enum.map(definitions, fn definition ->
       key = {definition.module, definition.name, definition.arity}
-      build(definition, Map.get(events_by_definition, key, []), indexed)
+      build(definition, Map.get(events_by_definition, key, []), indexed, unmatched)
     end)
   end
 
@@ -165,7 +178,7 @@ defmodule Grasp.Index.Join do
 
   defp template_call(_event, _definition, _site, _indexed), do: nil
 
-  defp build(definition, events, indexed) do
+  defp build(definition, events, indexed, unmatched) do
     sites = Map.new(definition.call_sites, &{{&1.line, &1.column}, &1})
     heads = MapSet.new(definition.head_positions)
     delegate_range = if definition.kind == :defdelegate, do: List.first(definition.head_ranges)
@@ -199,8 +212,11 @@ defmodule Grasp.Index.Join do
                 resolved = template_call(event, definition, site, indexed) || call.(site.range)
                 {[resolved | calls], hidden}
 
-              :error ->
+              :error when unmatched == :hide ->
                 {calls, [hidden_call | hidden]}
+
+              :error ->
+                {calls, hidden}
             end
         end
       end)

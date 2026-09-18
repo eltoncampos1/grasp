@@ -47,7 +47,8 @@ defmodule Grasp.Index.Builder do
 
   @type detected :: %{
           entry_points: [EntryPoints.entry()],
-          behaviours: %{String.t() => [String.t()]}
+          behaviours: %{String.t() => [String.t()]},
+          skipped: [String.t()]
         }
 
   @doc """
@@ -74,12 +75,14 @@ defmodule Grasp.Index.Builder do
 
     functions = Join.join(definitions, events)
     records = classify(functions, base, paths)
+    detected = entry_points(config[:app], functions)
+    report_skipped(detected.skipped)
 
     document =
       document(
         records,
         extracted.modules,
-        entry_points(config[:app], functions),
+        detected,
         %{"app" => to_string(config[:app]), "root" => root, "elixirc_paths" => paths},
         git_info(root, base)
       )
@@ -247,9 +250,27 @@ defmodule Grasp.Index.Builder do
     }
   end
 
-  @doc "Git metadata for `root`, or `nil` outside a repository. `base` may be `nil`."
-  @spec git_info(String.t(), BaseRef.resolved() | nil) :: map() | nil
-  def git_info(root, base) do
+  @doc "The JSON shape of one entry point."
+  @spec entry_point_json(EntryPoints.entry()) :: map()
+  def entry_point_json(entry),
+    do: %{
+      "kind" => entry.kind,
+      "label" => entry.label,
+      "target" => entry.target,
+      "meta" => entry.meta
+    }
+
+  defp report_skipped([]), do: :ok
+
+  defp report_skipped(views) do
+    Mix.shell().info(
+      "grasp: #{length(views)} live routes skipped (view has no indexed functions): " <>
+        Enum.join(views, ", ")
+    )
+  end
+
+  # Git metadata for `root`, or `nil` outside a repository. `base` may be `nil`.
+  defp git_info(root, base) do
     with {head, 0} <- git(["rev-parse", "HEAD"], root),
          {branch, 0} <- git(["rev-parse", "--abbrev-ref", "HEAD"], root) do
       %{
@@ -262,14 +283,6 @@ defmodule Grasp.Index.Builder do
       _ -> nil
     end
   end
-
-  defp entry_point_json(entry),
-    do: %{
-      "kind" => entry.kind,
-      "label" => entry.label,
-      "target" => entry.target,
-      "meta" => entry.meta
-    }
 
   # Every file the diff touched, under the contents the base had for it. A file the base
   # did not have maps to an empty string rather than being left out: without an entry the
@@ -287,26 +300,29 @@ defmodule Grasp.Index.Builder do
     end
   end
 
+  # The event table is drained rather than replaced, and the tracer installed only if it is
+  # not already there: a full build run from an IEx session that has a `Grasp.Reindexer`
+  # in it shares both with that process, and deleting the table would stop live reindexing
+  # with nothing to say why. The compiler options are still put back, so a build that
+  # installed the tracer itself leaves the VM as it found it.
   defp trace_compile(root, paths) do
     previous_tracers = Code.get_compiler_option(:tracers)
     previous_parser = Code.get_compiler_option(:parser_options)
-    Tracer.stop()
     Tracer.start()
-    Code.put_compiler_option(:tracers, [Tracer | previous_tracers])
-    Code.put_compiler_option(:parser_options, Keyword.put(previous_parser, :columns, true))
+    Tracer.take_events()
+    Tracer.install()
 
     try do
       Mix.Task.rerun("compile", ["--force"])
       roots = Enum.map(paths, &(Path.expand(&1, root) <> "/"))
 
-      Tracer.events()
+      Tracer.take_events()
       |> Enum.map(&%{&1 | file: Path.expand(&1.file, root)})
       |> Enum.filter(fn event -> Enum.any?(roots, &String.starts_with?(event.file, &1)) end)
       |> Enum.map(&%{&1 | file: Path.relative_to(&1.file, root)})
     after
       Code.put_compiler_option(:tracers, previous_tracers)
       Code.put_compiler_option(:parser_options, previous_parser)
-      Tracer.stop()
     end
   end
 

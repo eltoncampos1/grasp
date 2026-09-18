@@ -20,6 +20,23 @@ defmodule Grasp.Index.Incremental do
   being kept are handed to `Grasp.Index.Join.join/3`: without them a hidden call into an
   untouched module would read as a call into nothing and disappear from the graph.
 
+  ## Events and the file they are joined to
+
+  A full build compiles and reads in one breath, so an event and the source it came from
+  always agree. Here they need not: the events were recorded by a compile that finished
+  some time ago, and the file may have been saved again since. Two rules keep that from
+  inventing calls.
+
+    * An event carrying a column that lands on no call site is **dropped**, where a full
+      build keeps it as a hidden call (`unmatched_positions: :drop`). In a full build such
+      an event came from macro-generated code and the call is real; here it is at least as
+      likely to be an event pointing at a line that has moved, and a call the reader cannot
+      find anywhere is worse than one that is missing.
+    * An event older than the mtime of the file it names describes a version of that file
+      that is no longer on disk, and `Grasp.Reindexer` drops it before calling this
+      module. A file left with no events at all is not rebuilt: a record built from an
+      empty event set would claim the function calls nothing.
+
   Classification is per file, against the base commit the document was built with: the
   base contents of the changed files come from `git show`, and a file the base does not
   hold compares against an empty string, which is how `Grasp.Index.Changes` recognises a
@@ -41,10 +58,15 @@ defmodule Grasp.Index.Incremental do
       through the modules that used to call into it.
     * Entry points are recomputed from the modules loaded in the running VM, so a route
       added to a router the reloader has not compiled yet is not there.
+    * A template file added on its own, with no change to the module whose
+      `embed_templates` matches it, is not seen: the widening starts from the template
+      records the document already holds, and a template nothing has indexed yet has none.
     * Which files are compiled at all is fixed at the document's `elixirc_paths`.
 
   `mix grasp.index` is the answer to each of those: it is the full build, and it stays.
   """
+
+  require Logger
 
   alias Grasp.Index.{Builder, Changes, EntryPoints, Join, Templates}
 
@@ -83,21 +105,26 @@ defmodule Grasp.Index.Incremental do
 
     records =
       definitions
-      |> Join.join(events_for(events, definitions), ids(kept))
-      |> classify(rebuilt, base_ctx, paths)
+      |> Join.join(events_for(events, definitions),
+        known_ids: ids(kept),
+        unmatched_positions: :drop
+      )
+      |> classify(rebuilt, base_ctx, paths, document)
 
-    functions = kept ++ Enum.map(records, &Builder.function_json/1)
+    functions = sort_functions(kept ++ Enum.map(records, &Builder.function_json/1))
     kept_modules = Enum.reject(document["modules"] || [], &MapSet.member?(rebuilt, &1["file"]))
     {entry_points, behaviours} = detect(document, project["app"], functions)
+
+    modules =
+      sort_modules(
+        kept_modules ++ Enum.map(extracted.modules, &Builder.module_json(&1, behaviours))
+      )
 
     {:ok,
      document
      |> Map.put("generated_at", timestamp())
      |> Map.put("functions", functions)
-     |> Map.put(
-       "modules",
-       kept_modules ++ Enum.map(extracted.modules, &Builder.module_json(&1, behaviours))
-     )
+     |> Map.put("modules", modules)
      |> Map.put("entry_points", entry_points)}
   rescue
     error -> {:error, error}
@@ -112,20 +139,20 @@ defmodule Grasp.Index.Incremental do
 
     if EntryPoints.available?(app) do
       detected = EntryPoints.detect(app, ids(functions))
-      {Enum.map(detected.entry_points, &entry_point_json/1), detected.behaviours}
+      report_skipped(detected.skipped)
+      {Enum.map(detected.entry_points, &Builder.entry_point_json/1), detected.behaviours}
     else
       {document["entry_points"] || [],
        Map.new(document["modules"] || [], &{&1["name"], &1["behaviours"] || []})}
     end
   end
 
-  defp entry_point_json(entry),
-    do: %{
-      "kind" => entry.kind,
-      "label" => entry.label,
-      "target" => entry.target,
-      "meta" => entry.meta
-    }
+  # Records land where a full build would have put them rather than at the end, so the
+  # document an update writes diffs against one a full build writes.
+  defp sort_functions(functions),
+    do: Enum.sort_by(functions, &{&1["file"], &1["span"]["start_line"], &1["id"]})
+
+  defp sort_modules(modules), do: Enum.sort_by(modules, &{&1["file"], &1["line"], &1["name"]})
 
   # Every id the given document records answer to. A removed record describes a function
   # the base commit had and this project no longer defines, so nothing may resolve to it.
@@ -165,34 +192,93 @@ defmodule Grasp.Index.Incremental do
     Enum.filter(events, &MapSet.member?(files, &1.file))
   end
 
-  defp classify(records, _rebuilt, nil, _paths), do: records
+  defp report_skipped([]), do: :ok
 
-  defp classify(records, rebuilt, base_ctx, paths) do
-    compared = Map.new(rebuilt, &{&1, base_source(base_ctx, &1)})
-    Changes.classify(records, compared, paths)
+  defp report_skipped(views),
+    do:
+      Logger.debug("grasp: live routes skipped, no indexed functions: #{Enum.join(views, ", ")}")
+
+  defp classify(records, _rebuilt, nil, _paths, _document), do: records
+
+  defp classify(records, rebuilt, base_ctx, paths, document) do
+    case compared_sources(base_ctx, rebuilt) do
+      {:ok, compared} ->
+        Changes.classify(records, compared, paths)
+
+      :error ->
+        Logger.warning(
+          "grasp: could not read #{base_ctx.base_sha} in #{base_ctx.root}; the files just " <>
+            "rebuilt keep the classification they had"
+        )
+
+        preserve(records, document)
+    end
   end
 
-  # A file the base commit does not hold is an empty string rather than a missing key:
-  # `Grasp.Index.Changes` reads the absence of a key as "this file was never touched" and
-  # would call every function in a file the branch added unchanged.
+  # The base commit is checked once, before any path is asked for. That is what tells an
+  # absent path — a file this branch added, which `Grasp.Index.Changes` recognises by an
+  # empty base source — apart from a git that cannot answer at all, where reading every
+  # failure as "absent" would mark the whole project added.
+  defp compared_sources(base_ctx, rebuilt) do
+    if commit?(base_ctx) do
+      Enum.reduce_while(rebuilt, {:ok, %{}}, fn file, {:ok, sources} ->
+        case base_source(base_ctx, file) do
+          {:ok, source} -> {:cont, {:ok, Map.put(sources, file, source)}}
+          :error -> {:halt, :error}
+        end
+      end)
+    else
+      :error
+    end
+  end
+
+  defp commit?(base_ctx),
+    do: match?({_output, 0}, git(base_ctx, ["cat-file", "-e", "#{base_ctx.base_sha}^{commit}"]))
+
   defp base_source(base_ctx, file) do
     object = "#{base_ctx.base_sha}:./#{file}"
 
-    # Existence is asked first, with git's own complaint swallowed, so a file the branch
-    # added does not print a fatal error into the host's console on every save; `show`
-    # then runs with stderr left alone, so nothing git says can land inside the source.
-    with {_output, 0} <-
-           System.cmd("git", ["cat-file", "-e", object],
-             cd: base_ctx.root,
-             stderr_to_stdout: true
-           ),
-         {source, 0} <- System.cmd("git", ["show", object], cd: base_ctx.root) do
-      source
-    else
-      _missing -> ""
+    case git(base_ctx, ["cat-file", "-e", object]) do
+      {_output, 0} -> show(base_ctx, object)
+      {_output, _status} -> {:ok, ""}
+      :no_git -> :error
+    end
+  end
+
+  # `show` is the one command whose output is a value, so its stderr is left alone: a
+  # warning folded into stdout would be read as part of the file.
+  defp show(base_ctx, object) do
+    case System.cmd("git", ["show", object], cd: base_ctx.root) do
+      {source, 0} -> {:ok, source}
+      _failed -> :error
     end
   rescue
-    ErlangError -> ""
+    ErlangError -> :error
+  end
+
+  # Run for the exit status alone, with git's own complaints swallowed: a file this branch
+  # added would otherwise write a fatal error into the host's console on every save.
+  defp git(base_ctx, args) do
+    System.cmd("git", args, cd: base_ctx.root, stderr_to_stdout: true)
+  rescue
+    ErlangError -> :no_git
+  end
+
+  # A record the document already classified keeps what it was told; one the file has only
+  # just gained has nothing to keep and reads as untouched, which is the reading that
+  # claims the least.
+  defp preserve(records, document) do
+    previous = Map.new(document["functions"] || [], &{&1["id"], &1})
+
+    Enum.map(records, fn record ->
+      kept = Map.get(previous, record.id, %{})
+
+      Map.merge(record, %{
+        change: Map.get(kept, "change") || "unchanged",
+        base_source: Map.get(kept, "base_source"),
+        removed: false
+      })
+    end)
   end
 
   defp app_name(nil), do: nil

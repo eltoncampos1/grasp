@@ -5,7 +5,10 @@ defmodule Grasp.Index.BuilderTest do
 
   @fixture Path.expand("../../fixtures/sample_app", __DIR__)
   @grasp_build "_build/grasp"
-  @project_beam "_build/dev/lib/sample_app/ebin/Elixir.SampleApp.Greeter.beam"
+  @untouched [
+    "_build/dev/lib/sample_app/ebin/Elixir.SampleApp.Greeter.beam",
+    "_build/dev/lib/sample_app/.mix/compile.elixir"
+  ]
 
   setup_all do
     out = Path.join(System.tmp_dir!(), "grasp-sample-#{System.unique_integer([:positive])}.json")
@@ -25,7 +28,7 @@ defmodule Grasp.Index.BuilderTest do
 
     assert status == 0, compiled
     File.rm_rf!(Path.join(@fixture, @grasp_build))
-    untouched = File.stat!(Path.join(@fixture, @project_beam), time: :posix).mtime
+    untouched = Map.new(@untouched, &{&1, stat(&1)})
 
     {output, status} =
       System.cmd("mix", ["grasp.index", "--out", out],
@@ -51,7 +54,7 @@ defmodule Grasp.Index.BuilderTest do
              ])
            )
 
-    assert File.stat!(Path.join(@fixture, @project_beam), time: :posix).mtime == untouched
+    assert Map.new(@untouched, &{&1, stat(&1)}) == untouched
   end
 
   test "reports what it wrote", %{output: output} do
@@ -252,6 +255,14 @@ defmodule Grasp.Index.BuilderTest do
     |> File.read!()
     |> then(&Regex.scan(~r/^\s+"([^"]+)":/m, &1, capture: :all_but_first))
     |> List.flatten()
+  end
+
+  # Size as well as mtime: a rebuild inside the same second would leave the mtime alone.
+  defp stat(relative) do
+    %File.Stat{size: size, mtime: mtime} =
+      File.stat!(Path.join(@fixture, relative), time: :posix)
+
+    {size, mtime}
   end
 
   defp call(record, target), do: Enum.find(record["calls"], &(&1["target"] == target))

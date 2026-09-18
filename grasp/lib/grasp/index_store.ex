@@ -50,9 +50,15 @@ defmodule Grasp.IndexStore do
   @spec get() :: Grasp.Index.t() | nil
   def get, do: :persistent_term.get(@key, nil)
 
-  @doc "The index file being watched, whether or not it exists yet."
-  @spec path() :: String.t()
-  def path, do: GenServer.call(__MODULE__, :path)
+  @doc """
+  The index file being watched, whether or not it exists yet.
+
+  `timeout` is worth raising for a caller that cannot afford to fail: loading a
+  multi-megabyte document happens inside the store's own callbacks, and a call made while
+  one is in flight waits for it.
+  """
+  @spec path(timeout()) :: String.t()
+  def path(timeout \\ 5_000), do: GenServer.call(__MODULE__, :path, timeout)
 
   @doc "The reason the last load failed, or `nil` when the last load succeeded."
   @spec last_error() :: term() | nil
@@ -62,9 +68,14 @@ defmodule Grasp.IndexStore do
   @spec load(String.t()) :: :ok | {:error, term()}
   def load(path), do: GenServer.call(__MODULE__, {:load, path})
 
-  @doc "Reloads the watched path now."
-  @spec reload() :: :ok | {:error, term()}
-  def reload, do: GenServer.call(__MODULE__, :reload)
+  @doc """
+  Reloads the watched path now.
+
+  `timeout` covers decoding the document, which is the slow part and happens in the
+  store's callback.
+  """
+  @spec reload(timeout()) :: :ok | {:error, term()}
+  def reload(timeout \\ 5_000), do: GenServer.call(__MODULE__, :reload, timeout)
 
   @doc "Subscribes the caller to `:index_reloaded` messages."
   @spec subscribe() :: :ok | {:error, term()}

@@ -68,26 +68,33 @@ defmodule Mix.Tasks.Grasp.Index do
   end
 
   # A build directory of its own starts as a copy of the one the project already has, so
-  # the first run compiles the project rather than every dependency it carries.
+  # the first run compiles the project rather than every dependency it carries. The copy
+  # lands under a name of its own and is renamed into place, so a run interrupted halfway
+  # leaves no half-copied directory for the next one to mistake for a finished seed.
   defp seed(build_path) do
     source = Mix.Project.build_path()
+    staging = build_path <> ".seeding"
 
     if not File.dir?(build_path) and File.dir?(source) do
       Mix.shell().info(
         "Grasp: seeding #{Path.relative_to_cwd(build_path)} from #{Path.relative_to_cwd(source)}"
       )
 
+      File.rm_rf!(staging)
       File.mkdir_p!(Path.dirname(build_path))
-      File.cp_r!(source, build_path)
+      File.cp_r!(source, staging)
+      File.rename!(staging, build_path)
     end
   end
 
   # `MIX_BUILD_PATH` is read when a Mix session resolves its build path, which this one
-  # already did: the compile has to happen in a session started with it set.
+  # already did: the compile has to happen in a session started with it set. `MIX_ENV` goes
+  # with it, because the child inherits the shell's environment and not the environment the
+  # parent was started in.
   defp delegate(args, build_path) do
     {_output, status} =
       System.cmd("mix", ["grasp.index", "--in-build-path" | args],
-        env: [{"MIX_BUILD_PATH", build_path}],
+        env: [{"MIX_BUILD_PATH", build_path}, {"MIX_ENV", to_string(Mix.env())}],
         into: IO.stream()
       )
 

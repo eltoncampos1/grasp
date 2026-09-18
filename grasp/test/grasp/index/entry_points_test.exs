@@ -3,7 +3,7 @@ defmodule Grasp.Index.EntryPointsTest do
 
   alias Grasp.Index.EntryPoints
 
-  @empty %{entry_points: [], behaviours: %{}}
+  @empty %{entry_points: [], behaviours: %{}, skipped: []}
 
   setup do
     previous = Mix.shell()

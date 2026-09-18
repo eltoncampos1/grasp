@@ -12,11 +12,18 @@ defmodule Grasp.Index.Tracer do
 
   The table outlives a single compile, because `Grasp.Reindexer` installs the tracer once
   and follows every compile the host's code reloader performs. A process registered under
-  `Grasp.Reindexer` is told that events are waiting: each compiler process sends
-  `{:events, count}` at most once every 300 ms, so a compile of a thousand files
-  costs a handful of messages rather than one per call. The count is what that process
-  recorded since its own last message, not the table's size — the reader drains the table
-  and does not need it to be exact.
+  `Grasp.Reindexer` is told that events are waiting, and the throttle that keeps those
+  messages cheap is **per compiler process**, held in that process's own dictionary: the
+  compiler runs a process per file, and each of them sends `{:events, count}` at most once
+  every 300 ms. So a compile of a thousand files costs of the order of one message per
+  file rather than one per call, and a single long-running compiler process costs one
+  message per window. The count is what that process recorded since its own last message,
+  not the table's size — the reader drains the table and does not need it to be exact.
+
+  Every event carries the second it was recorded in, so a reader can tell an event apart
+  from the file it describes: a source saved again after the compile that produced the
+  event has an mtime the event predates, and joining the two would place calls at
+  positions the file no longer has.
 
   Nothing the tracer does may fail a compile: `trace/2` swallows every error, so a bug
   here costs events rather than the host's build.
@@ -37,7 +44,8 @@ defmodule Grasp.Index.Tracer do
           line: pos_integer(),
           column: pos_integer() | nil,
           target: {module(), atom(), non_neg_integer()},
-          kind: kind()
+          kind: kind(),
+          at: integer()
         }
 
   @doc """
@@ -50,6 +58,28 @@ defmodule Grasp.Index.Tracer do
   def start do
     if :ets.whereis(@table) == :undefined do
       :ets.new(@table, [:duplicate_bag, :public, :named_table])
+    end
+
+    :ok
+  end
+
+  @doc """
+  Installs the tracer into this VM's compiler options, if it is not there already.
+
+  The tracer is prepended rather than assigned, so a host that installs a tracer of its own
+  keeps it, and installing twice does not record every call twice. `columns: true` goes in
+  beside it, because a call reported without a column cannot be placed inside the
+  definition that makes it.
+  """
+  @spec install() :: :ok
+  def install do
+    tracers = Code.get_compiler_option(:tracers)
+    if __MODULE__ not in tracers, do: Code.put_compiler_option(:tracers, [__MODULE__ | tracers])
+
+    parser = Code.get_compiler_option(:parser_options)
+
+    if !Keyword.get(parser, :columns) do
+      Code.put_compiler_option(:parser_options, Keyword.put(parser, :columns, true))
     end
 
     :ok
@@ -114,7 +144,8 @@ defmodule Grasp.Index.Tracer do
         line: Keyword.get(meta, :line, env.line),
         column: Keyword.get(meta, :column),
         target: target,
-        kind: kind
+        kind: kind,
+        at: System.os_time(:second)
       }
 
       :ets.insert(@table, {:event, event})
