@@ -71,6 +71,9 @@ cd grasp && mix setup && mix grasp.viewer --index /path/to/project/.grasp/index.
 
 ## Gestures
 
+- Cards stay where you put them; a new card opens beside the card it was opened from, in the
+  first clear space there, and nothing already on the canvas moves to make room for it.
+  `reset layout` in the toolbar lays everything out again.
 - Drag a card by its header to move it, or hold Ctrl and drag from anywhere on it. Ctrl
   and press over a card is the drag gesture, so the context menu is suppressed there;
   a plain right-click still opens it.
@@ -95,7 +98,7 @@ cd grasp && mix setup && mix grasp.viewer --index /path/to/project/.grasp/index.
 - A card's callers menu opens a caller to its left; open several and the card keeps one
   edge from each of them. A caller opened this way, or a callee opened by clicking a call,
   joins the group of the card it was opened from when it is new to the canvas, so it lands
-  in the column beside that card inside the same frame.
+  beside that card inside the same frame.
 - A `.heex` template is a card like any other, its markup highlighted and its `file:line`
   linked into your editor. A component tag inside it — or inside a `~H` body — is a call
   site you click to open the component, and a controller's `render` opens the template it
@@ -134,13 +137,13 @@ cd grasp && mix setup && mix grasp.viewer --index /path/to/project/.grasp/index.
 - Drop a card anywhere inside another group's frame — on a card there, in the space between
   them, on the padding at its edge — to move it to that group; drag a selected card and the
   rest of the selection goes with it. Dropping it anywhere else — the unframed section, the
-  bare canvas, its own frame — moves the card and nothing more. A card that changes group keeps
-  the offset the drag gave it and so lands beside its place in the new frame rather than on
-  it; "reset layout" puts every card back on the grid.
+  bare canvas, its own frame — moves the card and nothing more. A card that changes group stays
+  where the drag left it, so it lands where you dropped it and the frame grows round it;
+  "reset layout" lays every card out again.
 
 ## Sessions
 
-A session is one canvas: the cards on it, how they are grouped, where they were dragged and
+A session is one canvas: the cards on it, how they are grouped, where each one sits and
 which one has the focus. The session named `default` is the canvas at `/`; any other name is
 the canvas at `/s/<name>`, so a review of one pull request and a walk through a subsystem sit
 side by side instead of on top of each other.
@@ -241,7 +244,9 @@ Arranging the cards:
   between them, the columns they are laid out in, what each points at, and which card has
   focus. The ids it returns are what the other card tools address. Every session tool
   answers in this shape.
-- `set_cards(name, cards)` — replace the whole canvas with a graph described in one call.
+- `set_cards(name, cards)` — replace the whole canvas with a graph described in one call and
+  lay it out afresh: every card it makes is new, so each one is placed beside the card it
+  hangs under.
   Each card is `{key, function_id, parent_key?, group?, highlight?}`; a card hangs under an
   earlier one by naming its `key`, and two entries naming the same function are one card
   with an edge from each. `group` is a title: cards sharing one are framed together under

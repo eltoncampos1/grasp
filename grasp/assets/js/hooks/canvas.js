@@ -5,7 +5,20 @@
 // #stage's style attribute, because #stage is rendered by the server and a LiveView patch
 // would wipe an inline transform mid-gesture. Drag is the one exception: a dragged node
 // carries an inline translate so the move is seen at once, and updated() clears it as
-// soon as the server has rendered the offset it was pushed.
+// soon as the server has rendered the position it was pushed.
+//
+// The canvas is a whiteboard: every card sits at a position of its own, in stage pixels from
+// the stage's corner, and nothing moves unless a hand moves it. A card the server has no
+// position for is rendered at the origin and held back from sight until this hook has measured
+// it and said where it goes — the browser is the only thing that knows how large a card came
+// out, so placement is the hook's alone. A pass places every such card beside the card it was
+// opened from and pushes the lot in one `place_cards`; the server fills a position only where
+// there is none, so a card already placed is never moved by a pass.
+//
+// Positions may be negative: a caller opened to the left of a card at the stage's corner lands
+// left of it. Nothing shifts to make room — the stage is not clipped and the pan reaches
+// wherever the cards are, so negative coordinates are shown by panning to them, and `fit()`
+// measures the boxes rather than the stage.
 //
 // Edge paths live inside a phx-update="ignore" <svg>, so the hook owns them and the server
 // never renders one. The server does render that svg's <defs>, because an arrowhead marker
@@ -45,6 +58,14 @@ const CTRL_MENU_GRACE = 300
 // nobody has dragged keeps its header exactly where the layout put it.
 const FRAME_PAD = 16
 const FRAME_TITLE_GAP = 8
+// The gaps a placement pass leaves: GAP_X between a card and the one it was opened from,
+// GAP_Y between a card and whatever it would otherwise have landed on.
+const GAP_X = 48
+const GAP_Y = 16
+// Room round the block the cards cover, which the stage claims as its own size. Nothing is
+// laid out by that size — every card is positioned absolutely — so it is a floor for the
+// layers that stretch to the stage and something for the resize observer to see.
+const STAGE_PAD = 48
 
 const Canvas = {
   mounted() {
@@ -55,6 +76,11 @@ const Canvas = {
     this.signatures = false
     this.frames = []
     this.lastReveal = null
+    this.extent = {width: 0, height: 0}
+    // The cards a pass has already asked the server to place. A card still unplaced after the
+    // server has answered was refused, and asking again would be a pass per answer for ever.
+    this.attempted = new Set()
+    this.warnedUnplaced = false
     // applyView() redraws whenever the scale differs from the one the frames were drawn at,
     // and the draw that ends mount covers the first frame; seeding the scale keeps that first
     // frame from being drawn twice.
@@ -109,14 +135,16 @@ const Canvas = {
       this.lastReveal = `${id}:${key}`
       this.revealCard(id)
     })
+    this.placeCards()
     this.draw()
   },
 
   updated() {
-    // The server has rendered the offsets; drop any inline translate left by a drag.
+    // The server has rendered the positions; drop any inline translate left by a drag.
     this.el
       .querySelectorAll(".node[style*='translate']")
       .forEach((node) => (node.style.translate = ""))
+    this.placeCards()
     this.draw()
   },
 
@@ -145,14 +173,26 @@ const Canvas = {
   // The translate is rounded to whole screen pixels: a fractional composited offset resamples
   // the rasterised card text and blurs it. this.view stays fractional so small deltas accumulate.
   applyView() {
-    const {x, y, scale} = this.view
-    this.style.textContent = `#stage{transform:translate(${Math.round(x)}px,${Math.round(y)}px) scale(${scale});--zoom:${scale}}`
+    const {scale} = this.view
+    this.writeStyle()
     // The scale is published as a custom property so a counter-scaled rule can divide by it
     // and hold a label at one size on screen. Those labels take a different box in stage units
     // at every scale, so a frame drawn round them is only right for the scale it was drawn at;
     // a pan leaves every box where it was and needs no redraw.
     if (this.drawnScale !== scale) this.draw()
     if (this.zoomLevel) this.zoomLevel.textContent = `${Math.round(scale * 100)}%`
+  },
+
+  // The one rule the hook owns on #stage: the view, the zoom the counter-scaled rules divide
+  // by, and the size the stage claims. Every card is positioned absolutely, so the stage has
+  // no size of its own and the layers stretched across it — the frames, the edges — would
+  // have none either; the extent the last draw measured is what gives them one.
+  writeStyle() {
+    const {x, y, scale} = this.view
+    const {width, height} = this.extent
+    this.style.textContent =
+      `#stage{transform:translate(${Math.round(x)}px,${Math.round(y)}px) scale(${scale});` +
+      `--zoom:${scale};min-width:${width}px;min-height:${height}px}`
   },
 
   // Back to 1:1 about the centre of the canvas, so whatever you were looking at stays put.
@@ -334,8 +374,11 @@ const Canvas = {
   // One fit against the layout as it stands.
   fitPass() {
     // The frames are measured alongside the cards: a fit that showed only the cards would cut
-    // the padding and the header off the sections holding them.
-    const boxes = Array.from(this.el.querySelectorAll(".card, .frame"))
+    // the padding and the header off the sections holding them. A card with no position yet
+    // sits at the origin and says nothing about where the canvas is.
+    const boxes = Array.from(
+      this.el.querySelectorAll(".node:not([data-unplaced]) .card, .frame"),
+    )
     if (boxes.length === 0) return
     const box = this.stageBox(boxes)
     if (!(box.width > 0) || !(box.height > 0)) return
@@ -435,17 +478,29 @@ const Canvas = {
   beginCardDrag(e, card, ctrl) {
     e.preventDefault()
     document.body.classList.add("grasp-dragging")
+    const node = card.closest(".node")
+    const {x, y} = this.positionOf(node)
     this.drag = {
       kind: "card",
       ctrl,
       pointerId: e.pointerId,
-      node: card.closest(".node"),
+      node,
       id: card.id.replace("card-", ""),
       startX: e.clientX,
       startY: e.clientY,
-      dx: parseInt(card.dataset.dx || "0", 10),
-      dy: parseInt(card.dataset.dy || "0", 10),
+      x,
+      y,
       moved: false,
+    }
+  },
+
+  // Where the server last put a node, in stage pixels from the stage's corner: the node's own
+  // custom properties are the position, and the rule in app.css reads them as its left and top.
+  // A node with neither is at the origin, which is where an unplaced card is rendered.
+  positionOf(node) {
+    return {
+      x: parseInt(node.style.getPropertyValue("--x"), 10) || 0,
+      y: parseInt(node.style.getPropertyValue("--y"), 10) || 0,
     }
   },
 
@@ -461,18 +516,29 @@ const Canvas = {
       ctrl,
       pointerId: e.pointerId,
       group: Number(flow.dataset.group),
-      nodes: [...flow.querySelectorAll(".node")].map((node) => {
-        const card = node.querySelector(".card")
-        return {
-          node,
-          dx: parseInt(card?.dataset.dx || "0", 10),
-          dy: parseInt(card?.dataset.dy || "0", 10),
-        }
-      }),
+      nodes: this.nodesOfGroup(flow.dataset.group),
       startX: e.clientX,
       startY: e.clientY,
       moved: false,
     }
+  },
+
+  // The cards of a group are anywhere on the stage, so its members are the nodes that name it
+  // rather than a section's own subtree, which holds the header and nothing else.
+  nodesOfGroup(group) {
+    return [...this.el.querySelectorAll(".node")].filter((node) => node.dataset.group === group)
+  },
+
+  // Whether a card is still waiting for the position the hook is about to give it.
+  unplaced(card) {
+    return card.closest(".node")?.hasAttribute("data-unplaced") === true
+  },
+
+  // The group a node belongs to, or null for a node in none. The attribute is always there and
+  // empty for a card in no group, which is not group 0.
+  groupOf(node) {
+    const group = node.dataset.group
+    return group === "" || group === undefined ? null : Number(group)
   },
 
   beginPan(e) {
@@ -489,10 +555,11 @@ const Canvas = {
     }
   },
 
-  // The nodes a drag carries, each with the offset the server last rendered it at: a card drag
-  // holds its one node inline, a group drag a list of them, and a pan none.
+  // The nodes a drag carries: a card drag its one node, a group drag every node of the group,
+  // and a pan none. The translate a drag writes is the displacement alone — a node's position
+  // is already its left and top — so every node of a gesture carries the same one.
   dragNodes(drag) {
-    if (drag.kind === "card") return [drag]
+    if (drag.kind === "card") return [drag.node]
     if (drag.kind === "group") return drag.nodes
     return []
   },
@@ -521,9 +588,9 @@ const Canvas = {
       // rounds the pan: the card then travels in whole pixels and does not shimmer. At a scale
       // other than 1 it keeps whatever subpixel phase its layout gave it — it is not on a grid.
       const s = this.view.scale
-      for (const {node, dx, dy} of this.dragNodes(this.drag)) {
-        const tx = Math.round((dx + mx / s) * s) / s
-        const ty = Math.round((dy + my / s) * s) / s
+      const tx = Math.round(mx) / s
+      const ty = Math.round(my) / s
+      for (const node of this.dragNodes(this.drag)) {
         node.style.translate = `${tx}px ${ty}px`
       }
       this.draw()
@@ -542,7 +609,7 @@ const Canvas = {
   },
 
   // The browser took the pointer for a gesture of its own, so the drag is abandoned rather
-  // than completed: nothing is pushed, the card goes back to the offset the server last
+  // than completed: nothing is pushed, the card goes back to the position the server last
   // rendered, and no click follows a cancel for the suppression to be waiting for.
   pointerCancel(e) {
     if (this.otherPointer(e)) return
@@ -550,7 +617,7 @@ const Canvas = {
     this.suppressClick = false
     const nodes = this.dragNodes(drag)
     if (nodes.length) {
-      nodes.forEach(({node}) => (node.style.translate = ""))
+      nodes.forEach((node) => (node.style.translate = ""))
       this.draw()
     }
   },
@@ -561,24 +628,26 @@ const Canvas = {
     if (!drag.moved) return
     if (drag.kind === "card") {
       const {scale} = this.view
-      const dx = Math.round(drag.dx + (e.clientX - drag.startX) / scale)
-      const dy = Math.round(drag.dy + (e.clientY - drag.startY) / scale)
-      // Dropping on the offset the card already had produces no diff and so no updated()
+      const dx = Math.round((e.clientX - drag.startX) / scale)
+      const dy = Math.round((e.clientY - drag.startY) / scale)
+      // Dropping on the position the card already had produces no diff and so no updated()
       // to clear the fractional translate the drag left behind.
       drag.node.style.translate = `${dx}px ${dy}px`
       const group = this.groupUnder(e, drag)
-      const move = {card: drag.id, dx, dy}
+      // The position is where the card came from plus where it was taken, in whole stage
+      // pixels: the server reads integers and drops a move whose coordinates it cannot.
+      const move = {card: drag.id, x: drag.x + dx, y: drag.y + dy}
       this.pushEvent("move_card", group === null ? move : {...move, group})
     } else if (drag.kind === "group") {
       const {scale} = this.view
       const dx = Math.round((e.clientX - drag.startX) / scale)
       const dy = Math.round((e.clientY - drag.startY) / scale)
-      // Each node is left on the whole-pixel offset the server is about to render, so a group
-      // put back where it already sat produces no diff to clear the drag's fractional
-      // translate and needs none. A group drag decides no membership: the cards move together
-      // and stay in the group they are the members of.
-      for (const {node, dx: x, dy: y} of drag.nodes) {
-        node.style.translate = `${x + dx}px ${y + dy}px`
+      // Each node is left on the whole-pixel displacement the server is about to render as a
+      // position, so a group put back where it already sat produces no diff to clear the
+      // drag's fractional translate and needs none. A group drag decides no membership: the
+      // cards move together and stay in the group they are the members of.
+      for (const node of drag.nodes) {
+        node.style.translate = `${dx}px ${dy}px`
       }
       this.pushEvent("move_group", {group: drag.group, dx, dy})
     }
@@ -595,9 +664,9 @@ const Canvas = {
     const {scale} = this.view
     const x = (e.clientX - s.left) / scale
     const y = (e.clientY - s.top) / scale
-    // NaN for a card coming out of the ungrouped section, and NaN is equal to no group id, so
-    // such a card has no frame of its own to be skipped.
-    const own = Number(drag.node.closest(".flow")?.dataset.group)
+    // null for a card in no group, which is equal to no group id, so such a card has no frame
+    // of its own to be skipped.
+    const own = this.groupOf(drag.node)
     let group = null
     for (const f of this.frames) {
       if (f.group === own) continue
@@ -611,8 +680,32 @@ const Canvas = {
   // is recorded only when there is a layer to draw the frames into, so a draw that finds none
   // leaves the next applyView() to redraw.
   draw() {
+    this.measureExtent()
     if (this.drawFrames()) this.drawnScale = this.view.scale
     this.drawConnectors()
+  },
+
+  // The block the placed cards cover, which the stage claims as its size and the edge layer is
+  // cut to. A card with no position yet is rendered at the origin, so it is left out: it would
+  // stretch the stage to a corner nothing is at. Only the far edges are measured — a card at a
+  // negative coordinate lies outside the stage's own box, which clips nothing and is only ever
+  // panned to.
+  measureExtent() {
+    const s = this.stage.getBoundingClientRect()
+    const {scale} = this.view
+    let right = 0,
+      bottom = 0
+    for (const node of this.el.querySelectorAll(".node:not([data-unplaced])")) {
+      const b = node.getBoundingClientRect()
+      if (!b.width && !b.height) continue
+      right = Math.max(right, (b.right - s.left) / scale)
+      bottom = Math.max(bottom, (b.bottom - s.top) / scale)
+    }
+    this.extent = {
+      width: Math.ceil(right + STAGE_PAD),
+      height: Math.ceil(bottom + STAGE_PAD),
+    }
+    this.writeStyle()
   },
 
   // One rectangle per grouped section, round the cards wherever they have been dragged to,
@@ -628,25 +721,41 @@ const Canvas = {
     const titleGap = FRAME_TITLE_GAP / scale
     this.frames = []
     const divs = []
+    // A group's cards are anywhere on the stage — a section's own subtree holds its header and
+    // nothing else — so the extent of each one is gathered from the nodes that name it. A card
+    // with no position yet is rendered at the origin and would drag the frame there.
+    const extents = new Map()
+    for (const node of this.el.querySelectorAll(".node:not([data-unplaced])")) {
+      const group = node.dataset.group
+      if (!group) continue
+      const card = node.querySelector(".card")
+      // A card the browser gives no box — inside a subtree that is not displayed — says
+      // nothing about where the frame round it goes.
+      const b = card && card.getBoundingClientRect()
+      if (!b || (!b.width && !b.height)) continue
+      const e = extents.get(group) || {
+        left: Infinity,
+        top: Infinity,
+        right: -Infinity,
+        bottom: -Infinity,
+      }
+      e.left = Math.min(e.left, (b.left - s.left) / scale)
+      e.top = Math.min(e.top, (b.top - s.top) / scale)
+      e.right = Math.max(e.right, (b.right - s.left) / scale)
+      e.bottom = Math.max(e.bottom, (b.bottom - s.top) / scale)
+      extents.set(group, e)
+    }
     // Every box is read before the first header is moved. Writing `translate` invalidates the
     // layout, so a loop that measured one section and then moved its header would force a
     // reflow per section on every pointermove of a drag.
     const sections = []
     for (const flow of this.el.querySelectorAll(".flow[data-grouped]")) {
       const title = flow.querySelector(".flow__title")
-      let left = Infinity,
-        top = Infinity,
-        right = -Infinity,
-        bottom = -Infinity
-      for (const card of flow.querySelectorAll(".card")) {
-        const b = card.getBoundingClientRect()
-        // A card the browser gives no box — inside a subtree that is not displayed — says
-        // nothing about where the frame round it goes.
-        if (!b.width && !b.height) continue
-        left = Math.min(left, (b.left - s.left) / scale)
-        top = Math.min(top, (b.top - s.top) / scale)
-        right = Math.max(right, (b.right - s.left) / scale)
-        bottom = Math.max(bottom, (b.bottom - s.top) / scale)
+      const {left, top, right, bottom} = extents.get(flow.dataset.group) || {
+        left: Infinity,
+        top: Infinity,
+        right: -Infinity,
+        bottom: -Infinity,
       }
       sections.push({
         group: Number(flow.dataset.group),
@@ -730,6 +839,9 @@ const Canvas = {
       // A collapse takes the callee off the canvas without touching the call site's own
       // markup, so an edge is as likely to be hanging as attached.
       if (!callee) continue
+      // A card waiting to be placed is drawn at the origin and not shown; an edge to or from
+      // it would be a line to a corner nothing is at.
+      if (this.unplaced(card) || this.unplaced(callee)) continue
       const b = boxOf(callee)
       if (!b.width && !b.height) continue
 
@@ -793,10 +905,158 @@ const Canvas = {
           ` d="${d}" />`,
       )
     }
-    this.svg.setAttribute("width", String(this.stage.scrollWidth))
-    this.svg.setAttribute("height", String(this.stage.scrollHeight))
+    // The stage has no in-flow content to measure, so the layer is cut to the block the cards
+    // cover. A path outside it is still drawn: the layer's overflow is visible, which is what
+    // carries an edge to a card at a negative coordinate.
+    this.svg.setAttribute("width", String(this.extent.width))
+    this.svg.setAttribute("height", String(this.extent.height))
     this.edges.innerHTML = paths.join("")
   },
+
+  // Every card the server has no position for, placed beside the card it was opened from and
+  // pushed in one go. The pass measures, decides and pushes; it moves nothing, because the
+  // render that answers carries the positions and drops `data-unplaced` with them.
+  //
+  // A card is placed against the boxes of the cards that already have a place, its own
+  // included as soon as it has one, so a pass that lays out a whole canvas — the one after
+  // `reset_layout`, where nothing is placed — reads like the one that places a single new
+  // card: depth order puts a caller down before the callee that hangs off it.
+  placeCards() {
+    // A card the server has answered about is a card to forget; what stays behind is a card it
+    // refused, and a pass that asked again on every patch would never stop.
+    for (const id of this.attempted) {
+      const node = document.getElementById(`node-${id}`)
+      if (!node || !node.hasAttribute("data-unplaced")) this.attempted.delete(id)
+    }
+    const waiting = [...this.el.querySelectorAll(".node[data-unplaced]")]
+    if (waiting.length === 0) return
+    const unplaced = waiting.filter((node) => !this.attempted.has(node.dataset.card))
+    if (unplaced.length < waiting.length && !this.warnedUnplaced) {
+      this.warnedUnplaced = true
+      console.warn("grasp: a card the canvas placed is still unplaced; leaving it where it is")
+    }
+    if (unplaced.length === 0) return
+
+    const s = this.stage.getBoundingClientRect()
+    const {scale} = this.view
+    // Every box is read before the first placement is decided, and each node's own rectangle
+    // is kept: a call site inside a card is measured where the card is standing, and the
+    // distance from the card's top is what survives the card being placed somewhere else.
+    const nodes = [...this.el.querySelectorAll(".node")]
+    const measured = new Map()
+    for (const node of nodes) {
+      const b = node.getBoundingClientRect()
+      measured.set(node, {
+        top: (b.top - s.top) / scale,
+        width: b.width / scale,
+        height: b.height / scale,
+      })
+    }
+    // Where each card stands: the position the server rendered, or the one this pass decided.
+    const boxes = new Map()
+    const occupied = []
+    for (const node of nodes) {
+      if (node.hasAttribute("data-unplaced")) continue
+      const m = measured.get(node)
+      const {x, y} = this.positionOf(node)
+      const box = {left: x, top: y, right: x + m.width, bottom: y + m.height, node}
+      boxes.set(node, box)
+      occupied.push(box)
+    }
+    // One read of the call sites for the whole pass: a card's opener is the first card in
+    // document order with a call site naming it, and a card opened as a caller is one holding
+    // a call site that names a card already standing somewhere.
+    const sites = []
+    for (const site of this.el.querySelectorAll("[data-edge-to]")) {
+      const node = site.closest(".node")
+      if (node) sites.push({site, node, to: site.dataset.edgeTo})
+    }
+
+    unplaced.sort(
+      (a, b) =>
+        Number(a.dataset.depth) - Number(b.dataset.depth) ||
+        Number(a.dataset.card) - Number(b.dataset.card),
+    )
+
+    const placements = []
+    for (const node of unplaced) {
+      const m = measured.get(node)
+      const id = node.dataset.card
+      const opener = sites.find((hit) => hit.to === id && boxes.has(hit.node))
+      const calls =
+        !opener &&
+        sites.find(
+          (hit) => hit.node === node && boxes.has(document.getElementById(`node-${hit.to}`)),
+        )
+      let x, y
+      if (opener) {
+        // The callee stands off the opener's right edge, level with the call that opened it:
+        // the edge the hook draws leaves that line and arrives at the callee's port, so the
+        // two meet without a bend. A call site the browser gives no box — scrolled away, or
+        // inside a fold — leaves the card at its own port height.
+        const box = boxes.get(opener.node)
+        const a = opener.site.getBoundingClientRect()
+        const anchored = a.width > 0 || a.height > 0
+        const line = anchored
+          ? (a.top + a.height / 2 - s.top) / scale - measured.get(opener.node).top
+          : PORT_Y
+        x = box.right + GAP_X
+        y = box.top + Math.min(Math.max(line, 0), box.bottom - box.top) - PORT_Y
+      } else if (calls) {
+        // A card opened from its callee is the caller, and a caller reads to the left of what
+        // it calls, its top edge level with it.
+        const box = boxes.get(document.getElementById(`node-${calls.to}`))
+        x = box.left - m.width - GAP_X
+        y = box.top
+      } else {
+        // A root belongs to nothing on the canvas, so it starts a column of its own under the
+        // cards of its group; a group with nothing in it starts at the stage's corner, and the
+        // overlap pass below is what stacks one such group under another.
+        const group = node.dataset.group
+        const peers = occupied.filter((b) => b.node.dataset.group === group)
+        x = peers.length === 0 ? 0 : Math.min(...peers.map((b) => b.left))
+        y = peers.length === 0 ? 0 : Math.max(...peers.map((b) => b.bottom)) + GAP_Y
+      }
+
+      // Nothing is ever laid on top of anything: a card that would land on an occupied box
+      // drops below it, and below whatever that move ran it into next. Each drop is strictly
+      // downwards, so one sweep per occupied box is enough to run out of them.
+      let box = {left: x, top: y, right: x + m.width, bottom: y + m.height, node}
+      for (let sweep = 0; sweep <= occupied.length; sweep++) {
+        let moved = false
+        for (const other of occupied) {
+          if (!overlaps(box, other)) continue
+          box.top = other.bottom + GAP_Y
+          box.bottom = box.top + m.height
+          moved = true
+        }
+        if (!moved) break
+      }
+
+      // The server reads integers and drops a placement it cannot; the box recorded is the one
+      // the server will render, so the card placed next reckons with the same rectangle.
+      const px = Math.round(box.left)
+      const py = Math.round(box.top)
+      box = {left: px, top: py, right: px + m.width, bottom: py + m.height, node}
+      boxes.set(node, box)
+      occupied.push(box)
+      placements.push({id: Number(id), x: px, y: py})
+      this.attempted.add(id)
+    }
+
+    this.pushEvent("place_cards", {cards: placements})
+  },
+}
+
+// Two boxes are clear of one another only with the placement gap between them, so a card never
+// comes to rest against another card's edge.
+function overlaps(a, b) {
+  return (
+    a.left < b.right + GAP_Y &&
+    a.right > b.left - GAP_Y &&
+    a.top < b.bottom + GAP_Y &&
+    a.bottom > b.top - GAP_Y
+  )
 }
 
 export default Canvas
