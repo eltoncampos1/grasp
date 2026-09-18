@@ -219,6 +219,9 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
 .card__view:hover, .card__context:hover { color: var(--accent); }
 .card__close:hover { color: var(--danger); }
 .card__signature { display: none; margin: 0; padding: var(--space-s) var(--space-m); font-weight: 600; white-space: nowrap; }
+/* A drag along the gutter selects lines, not text: the body stops being selectable for as
+   long as the button is down, so the drag leaves no smeared text range behind it. */
+.card .card__body[data-selecting] { user-select: none; }
 .card .card__body { user-select: text; margin: 0; padding: var(--space-xs) 0; overflow-x: auto; line-height: var(--code-leading); background: var(--code-bg); }
 .line { display: block; padding-inline: var(--space-s); white-space: pre; }
 .line--fold { display: block; width: 100%; text-align: start; padding-inline: var(--space-s); white-space: normal; color: var(--fg-muted); background: var(--bg-sunken); font-family: var(--mono); font-size: var(--code-size); }
@@ -249,6 +252,9 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
 .line[data-commented] { background: var(--accent-soft); }
 /* The agent's pointer outranks the diff tint: a highlighted inserted line reads as pointed at. */
 .line[data-highlight="true"], .line[data-op][data-highlight="true"] { background: var(--accent-soft); }
+/* The lines a gutter drag is over. Stronger than every tint above it, so a range drawn across
+   commented, changed or pointed-at lines still reads as one block while it is being drawn. */
+.line[data-selecting] { background: color-mix(in oklch, var(--accent) 24%, transparent); }
 .op { display: inline-block; width: 1ch; margin-inline-end: var(--space-xs); color: var(--fg-faint); }
 .line[data-op="ins"] .op { color: var(--diff-ins-fg); }
 .line[data-op="del"] .op { color: var(--diff-del-fg); }

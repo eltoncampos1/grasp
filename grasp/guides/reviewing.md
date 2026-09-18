@@ -99,12 +99,17 @@ caller or the callee that is out of sight — which takes focus and pans into vi
 
 ## Comments
 
-Click a line number to comment — hover it first for the `+` that marks it clickable.
+Click a line number to comment — hover it first for the `+` that marks it clickable. Drag
+down or up the line numbers to comment on a range of lines instead of one, and Shift+click a
+line number while the composer is open to stretch the range to it, or back to a single line.
 ⌘/Ctrl+Enter saves, Escape cancels. A thread takes replies, and can be resolved, reopened or
 deleted. A resolved thread collapses to one line and expands on click.
 
 In a diff body the line numbers on the base side are clickable the same way, so a thread can
-land on a line the branch deleted.
+land on a line the branch deleted. A range runs down one side: a drag that crosses to the
+other side's numbers stops where it left its own.
+
+A ranged thread tints every line it covers and sits under the last of them.
 
 A thread whose line moved re-anchors wherever its text went. One that matches nowhere sits
 in the card's footer, marked outdated. One whose function has left the index is listed muted

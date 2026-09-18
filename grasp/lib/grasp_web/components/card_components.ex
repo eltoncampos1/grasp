@@ -362,7 +362,12 @@ defmodule GraspWeb.CardComponents do
       <%!-- The lines are rendered one at a time so a thread can sit between two of them.
       Whitespace between the children here is ordinary white-space, which the body does not
       preserve — only the lines themselves are preformatted. --%>
-      <div class="card__body lumis" style={"--gutter: #{@gutter}ch"}>
+      <div
+        id={"body-#{@card.id}"}
+        class="card__body lumis"
+        style={"--gutter: #{@gutter}ch"}
+        phx-hook="Gutter"
+      >
         <%= for line <- @lines do %>
           <%= if line[:fold] do %>
             <button

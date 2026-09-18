@@ -3,8 +3,8 @@
 Call-chain code review for Elixir. Grasp draws each function as a card on a canvas: click a
 call inside a card and the callee opens beside it, joined by an edge, so a call chain reads
 left to right instead of as a series of editor jumps. Indexed against a base branch the same
-canvas reviews a pull request, takes review comments on any line, and can be driven by a
-coding agent over MCP.
+canvas reviews a pull request, takes review comments on any line or range of lines, and can
+be driven by a coding agent over MCP.
 
 ## Why
 
@@ -26,8 +26,8 @@ path from the route to the write on a canvas you can arrange, annotate and come 
 - **Pull-request mode.** Index against a base ref and changed functions lead the sidebar, a
   modified card swaps between its source and its diff, and removed functions open from the
   base.
-- **Review comments.** Click a line number to leave a thread; reply, resolve, and publish the
-  lot to GitHub as review comments.
+- **Review comments.** Click a line number to leave a thread, or drag along the numbers to
+  cover a range; reply, resolve, and publish the lot to GitHub as review comments.
 - **An agent that drives it.** An MCP server with 25 tools: search the index, trace the paths
   into a function, lay the cards out, read and answer the comments. A chat panel over the
   canvas runs that agent for you.

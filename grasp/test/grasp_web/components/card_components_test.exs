@@ -32,7 +32,7 @@ defmodule GraspWeb.CardComponentsTest do
     test "the body is a block of lines rather than a single preformatted run of text" do
       html = render_card(@wrap)
 
-      assert html =~ ~s|<div class="card__body lumis"|
+      assert html =~ ~s|<div id="body-1" class="card__body lumis"|
       refute html =~ "<pre class=\"card__body"
     end
 

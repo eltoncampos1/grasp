@@ -287,11 +287,12 @@ const Canvas = {
       this.suppressClick = false
       return
     }
-    // Shift+click anywhere on a card picks it out instead of focusing it. A control or a call
-    // site keeps what it already does, so Shift+clicking a call still opens the callee; the
-    // capture phase is where the card's own phx-click has to be taken before it fires.
+    // Shift+click anywhere on a card picks it out instead of focusing it. A control, a call
+    // site or a line number keeps what it already does, so Shift+clicking a call still opens
+    // the callee and Shift+clicking a line number still stretches the comment being written;
+    // the capture phase is where the card's own phx-click has to be taken before it fires.
     const card = e.shiftKey && e.target.closest(".card")
-    if (card && !e.target.closest("button, a, input, .call, .also")) {
+    if (card && !e.target.closest("button, a, input, .call, .also, .ln")) {
       e.stopPropagation()
       e.preventDefault()
       this.pushEvent("toggle_select", {card: card.id.replace("card-", "")})

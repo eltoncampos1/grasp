@@ -274,7 +274,7 @@
         return;
       }
       const card = e.shiftKey && e.target.closest(".card");
-      if (card && !e.target.closest("button, a, input, .call, .also")) {
+      if (card && !e.target.closest("button, a, input, .call, .also, .ln")) {
         e.stopPropagation();
         e.preventDefault();
         this.pushEvent("toggle_select", { card: card.id.replace("card-", "") });
@@ -998,12 +998,116 @@
   };
   var composer_default = Composer;
 
+  // js/hooks/gutter.js
+  var Gutter = {
+    mounted() {
+      this.onPointerDown = (e) => this.pointerDown(e);
+      this.onPointerMove = (e) => this.pointerMove(e);
+      this.onPointerUp = (e) => this.pointerUp(e);
+      this.onPointerCancel = () => this.clearSelection();
+      this.onClickCapture = (e) => this.clickCapture(e);
+      this.el.addEventListener("pointerdown", this.onPointerDown);
+      window.addEventListener("pointermove", this.onPointerMove);
+      window.addEventListener("pointerup", this.onPointerUp);
+      window.addEventListener("pointercancel", this.onPointerCancel);
+      this.el.addEventListener("click", this.onClickCapture, true);
+    },
+    destroyed() {
+      this.el.removeEventListener("pointerdown", this.onPointerDown);
+      window.removeEventListener("pointermove", this.onPointerMove);
+      window.removeEventListener("pointerup", this.onPointerUp);
+      window.removeEventListener("pointercancel", this.onPointerCancel);
+      this.el.removeEventListener("click", this.onClickCapture, true);
+    },
+    pointerDown(e) {
+      if (e.button !== 0) return;
+      this.swallowClick = false;
+      if (e.ctrlKey || e.metaKey) return;
+      const ln = e.target.closest?.(".ln");
+      if (!ln) return;
+      const anchor = this.lineOf(ln);
+      if (!anchor) return;
+      e.stopPropagation();
+      this.sel = { ...anchor, pointerId: e.pointerId, shift: e.shiftKey, end: anchor.line };
+      this.el.setAttribute("data-selecting", "");
+      this.paint();
+    },
+    pointerMove(e) {
+      const sel = this.sel;
+      if (!sel || e.pointerId !== void 0 && e.pointerId !== sel.pointerId) return;
+      if (e.buttons === 0) return this.pointerUp(e);
+      const line = this.lineAt(e.clientX, e.clientY);
+      if (line === null || line === sel.end) return;
+      sel.end = line;
+      this.paint();
+    },
+    pointerUp(e) {
+      const sel = this.sel;
+      if (!sel || e.pointerId !== void 0 && e.pointerId !== sel.pointerId) return;
+      this.clearSelection();
+      const params = { card: sel.card, side: sel.side };
+      if (sel.end !== sel.line) {
+        this.push({ ...params, line: Math.min(sel.line, sel.end), end_line: Math.max(sel.line, sel.end) });
+      } else if (sel.shift) {
+        this.push({ ...params, line: sel.line, shift: true });
+      }
+    },
+    push(params) {
+      this.swallowClick = true;
+      this.pushEvent("comment_start", params);
+    },
+    clickCapture(e) {
+      if (!this.swallowClick) return;
+      this.swallowClick = false;
+      e.stopPropagation();
+      e.preventDefault();
+    },
+    // The line under a point, or null wherever a range cannot run: outside this body, over a
+    // fold, or on the other side of a diff — a range lives on one side, since the two sides
+    // number their lines differently.
+    lineAt(x, y) {
+      const at = document.elementFromPoint(x, y);
+      if (!at || !this.el.contains(at)) return null;
+      const ln = at.closest(".line")?.querySelector(".ln");
+      const found = ln && this.lineOf(ln);
+      if (!found || found.side !== this.sel.side) return null;
+      return found.line;
+    },
+    lineOf(ln) {
+      const line = Number(ln.getAttribute("phx-value-line"));
+      if (!Number.isInteger(line)) return null;
+      return { card: ln.getAttribute("phx-value-card"), side: ln.getAttribute("phx-value-side"), line };
+    },
+    // The anchor is tinted from the press onwards, so a range of one line looks like the start
+    // of a range rather than like nothing happening.
+    paint() {
+      const { side, line, end } = this.sel;
+      const [first, last] = [Math.min(line, end), Math.max(line, end)];
+      for (const ln of this.el.querySelectorAll(".ln")) {
+        const row = ln.closest(".line");
+        const found = this.lineOf(ln);
+        if (!row || !found) continue;
+        const inside = found.side === side && found.line >= first && found.line <= last;
+        if (inside) row.setAttribute("data-selecting", "");
+        else row.removeAttribute("data-selecting");
+      }
+    },
+    clearSelection() {
+      this.sel = null;
+      this.el.removeAttribute("data-selecting");
+      for (const row of this.el.querySelectorAll(".line[data-selecting]")) {
+        row.removeAttribute("data-selecting");
+      }
+    }
+  };
+  var gutter_default = Gutter;
+
   // js/app.js
   var { Socket } = window.Phoenix;
   var { LiveSocket } = window.LiveView;
   var csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
   var socketPath = document.documentElement.getAttribute("phx-socket") || "/live";
-  var liveSocket = new LiveSocket(socketPath, Socket, { params: { _csrf_token: csrfToken }, hooks: { Palette: palette_default, Keys: keys_default, Canvas: canvas_default, Chat: chat_default, Composer: composer_default } });
+  var liveSocket = new LiveSocket(socketPath, Socket, { params: { _csrf_token: csrfToken }, hooks: { Palette: palette_default, Keys: keys_default, Canvas: canvas_default, Chat: chat_default, Composer: composer_default, Gutter: gutter_default } });
   liveSocket.connect();
   window.liveSocket = liveSocket;
 })();
