@@ -7,9 +7,8 @@ defmodule GraspWeb.TestOnMount do
   the host router's own context rather than inside the scope the macro opens.
   """
 
-  @doc "Continues the mount, marking the socket so a test can see the hook ran."
+  @doc "Continues the mount unchanged."
   @spec on_mount(atom(), map(), map(), Phoenix.LiveView.Socket.t()) ::
           {:cont, Phoenix.LiveView.Socket.t()}
-  def on_mount(:default, _params, _session, socket),
-    do: {:cont, Phoenix.Component.assign(socket, :test_on_mount?, true)}
+  def on_mount(:default, _params, _session, socket), do: {:cont, socket}
 end

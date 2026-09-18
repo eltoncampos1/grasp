@@ -178,7 +178,9 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
 /* A card is as wide as its widest line, up to a ceiling, so a column of one-line helpers
    does not reserve the width of the longest function on the canvas. */
 .card { cursor: auto; position: relative; width: max-content; min-width: 24rem; max-width: var(--card-max-width); flex: none; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-family: var(--mono); font-size: var(--code-size); }
-.card--focused { border-color: var(--focus); box-shadow: 0 0 0 2px var(--focus), var(--shadow); animation: focus-pulse 700ms ease-out; }
+/* Two classes, so focus outranks the border colour a changed card carries however the two
+   rules end up ordered: a card is focused for a moment and added for a whole review. */
+.card.card--focused { border-color: var(--focus); box-shadow: 0 0 0 2px var(--focus), var(--shadow); animation: focus-pulse 700ms ease-out; }
 /* An outline rather than a border or a shadow: focus has taken both, and a selected card is
    as often the focused one as not. */
 .card--selected { outline: 2px dashed var(--accent); outline-offset: 2px; }
@@ -196,7 +198,9 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
 /* An added function reads as green from the header down, the way a removed one reads as red:
    the badge alone is easy to miss on a canvas of many cards. */
 .card--added .card__header { background: var(--diff-ins-bg); }
-.card--added .card__body { background: color-mix(in srgb, var(--diff-ins-bg) 45%, var(--code-bg)); }
+/* Two classes again: `.card .card__body` below sets the same property at the same weight, and
+   the one that reads as a diff has to win wherever it sits in the file. */
+.card.card--added .card__body { background: color-mix(in srgb, var(--diff-ins-bg) 45%, var(--code-bg)); }
 .card--added { border-color: color-mix(in srgb, var(--diff-ins-fg) 35%, var(--border)); }
 .card__title { margin: 0; font-size: 15px; font-weight: 600; }
 .card__module { color: var(--fg-muted); font-weight: 400; }

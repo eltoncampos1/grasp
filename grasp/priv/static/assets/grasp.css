@@ -543,7 +543,7 @@ body.grasp-dragging .flow__title {
   font-family: var(--mono);
   font-size: var(--code-size);
 }
-.card--focused {
+.card.card--focused {
   border-color: var(--focus);
   box-shadow: 0 0 0 2px var(--focus), var(--shadow);
   animation: focus-pulse 700ms ease-out;
@@ -614,7 +614,7 @@ body.grasp-dragging .flow__title {
 .card--added .card__header {
   background: var(--diff-ins-bg);
 }
-.card--added .card__body {
+.card.card--added .card__body {
   background: color-mix(in srgb, var(--diff-ins-bg) 45%, var(--code-bg));
 }
 .card--added {

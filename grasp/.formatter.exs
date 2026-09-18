@@ -12,6 +12,6 @@ locals_without_parens = [grasp: 1, grasp: 2]
     "{config,lib}/**/*.{heex,ex,exs}",
     "test/test_helper.exs",
     "test/fixtures/regenerate.exs",
-    "test/{grasp,grasp_web,support}/**/*.{heex,ex,exs}"
+    "test/{grasp,grasp_web,mix,support}/**/*.{heex,ex,exs}"
   ]
 ]

@@ -71,6 +71,18 @@ defmodule Grasp.PlugTest do
     assert %Plug.Conn{halted: false} = Grasp.Plug.call(request("/grasp/mcp"), opts)
   end
 
+  test "an `:mcp` outside `:at` is refused, since the plug would never look at it" do
+    message = ~r/:mcp must lie under :at/
+
+    assert_raise ArgumentError, message, fn ->
+      Grasp.Plug.init(at: "/grasp", mcp: "/agent")
+    end
+
+    assert_raise ArgumentError, message, fn ->
+      Grasp.Plug.init(at: "/tools/grasp", mcp: "/tools/mcp")
+    end
+  end
+
   test "`at: \"/\"` guards everything, which is what the standalone server wants" do
     opts = Grasp.Plug.init(at: "/")
 

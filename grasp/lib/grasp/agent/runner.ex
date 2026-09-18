@@ -78,7 +78,9 @@ defmodule Grasp.Agent.Runner do
   def handle_call({:prompt, prompt, opts}, _from, state) do
     {command, argv} =
       Command.build(prompt,
-        command: Application.fetch_env!(:grasp, :agent_command),
+        # A host never evaluates Grasp's own `config/config.exs`, so every `:grasp` key read
+        # outside the standalone viewer carries its default here.
+        command: Application.get_env(:grasp, :agent_command, "claude"),
         session: state.name,
         mcp_url: Keyword.get(opts, :mcp_url) || Command.mcp_url(),
         resume: state.stream.claude_session_id,

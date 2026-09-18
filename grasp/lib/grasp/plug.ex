@@ -43,14 +43,17 @@ defmodule Grasp.Plug do
   @doc """
   Compiles the options.
 
-  * `:at` — the prefix Grasp is mounted at, `"/grasp"` by default. It must be the path
-    `Grasp.Router.grasp/2` was given: the plug guards what the router serves, and a prefix
-    that names less leaves part of the page unguarded. `"/"` guards the whole application,
-    which is what Grasp's own standalone server wants and what a host does not.
+  * `:at` — the prefix Grasp is mounted at, `"/grasp"` by default. It must be the *full* path
+    the router answers Grasp on, enclosing scopes included: a router that writes
+    `scope "/tools" do grasp "/grasp" end` serves Grasp at `/tools/grasp`, so the plug takes
+    `at: "/tools/grasp"`. The plug guards what the router serves, and a prefix that names less
+    leaves part of the page unguarded. `"/"` guards the whole application, which is what
+    Grasp's own standalone server wants and what a host does not.
 
-  * `:mcp` — where the MCP transport answers, `:at` with `mcp` under it by default. A host
-    that sets this sets `Grasp.Router.grasp/2`'s `:mcp_path` to the same value, since that is
-    the address the chat panel hands the agent.
+  * `:mcp` — where the MCP transport answers, `:at` with `mcp` under it by default. It has to
+    lie under `:at`, since that is the only path the plug ever looks at, and `init/1` raises
+    if it does not. A host that sets this sets `Grasp.Router.grasp/2`'s `:mcp_path` to the same
+    value, since that is the address the chat panel hands the agent.
   """
   @impl true
   @spec init(keyword()) :: options()
@@ -59,7 +62,7 @@ defmodule Grasp.Plug do
 
     mcp =
       case Keyword.fetch(opts, :mcp) do
-        {:ok, path} -> split(path)
+        {:ok, path} -> under!(split(path), at, path, opts)
         :error -> at ++ ["mcp"]
       end
 
@@ -89,6 +92,17 @@ defmodule Grasp.Plug do
     case under(path, opts.mcp) do
       nil -> conn
       rest -> conn |> Plug.forward(rest, @transport, opts.transport) |> Plug.Conn.halt()
+    end
+  end
+
+  defp under!(mcp, at, path, opts) do
+    if under?(mcp, at) do
+      mcp
+    else
+      raise ArgumentError,
+            "Grasp.Plug's :mcp must lie under :at, since :at is the only prefix the plug " <>
+              "looks at. Got mcp: #{inspect(path)} under at: " <>
+              "#{inspect(Keyword.get(opts, :at, @default_at))}."
     end
   end
 

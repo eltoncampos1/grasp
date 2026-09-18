@@ -56,10 +56,14 @@ defmodule GraspWeb.Assets do
   @spec hash(String.t()) :: String.t()
   def hash(asset) when is_map_key(@hashes, asset), do: Map.fetch!(@hashes, asset)
 
+  @doc "Passes the router's action through; the file to serve comes from the path."
   @impl true
+  @spec init(term()) :: term()
   def init(action), do: action
 
+  @doc "Serves `grasp.js` or `grasp.css` from the `:asset` path parameter, 404 for any other."
   @impl true
+  @spec call(Plug.Conn.t(), term()) :: Plug.Conn.t()
   def call(%Plug.Conn{} = conn, _action) do
     case fetch_query_params(conn) do
       %Plug.Conn{path_params: %{"asset" => "grasp.js"}} = conn ->

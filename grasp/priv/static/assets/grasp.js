@@ -109,6 +109,7 @@
   var GAP_X = 48;
   var GAP_Y = 16;
   var STAGE_PAD = 48;
+  var attr = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   var Canvas = {
     mounted() {
       this.stage = this.el.querySelector("#stage");
@@ -741,7 +742,7 @@
         };
         this.frames.push(frame);
         divs.push(
-          `<div class="frame" data-group="${frame.group}" style="left:${frame.left}px;top:${frame.top}px;width:${frame.right - frame.left}px;height:${frame.bottom - frame.top}px"></div>`
+          `<div class="frame" data-group="${attr(frame.group)}" style="left:${frame.left}px;top:${frame.top}px;width:${frame.right - frame.left}px;height:${frame.bottom - frame.top}px"></div>`
         );
       }
       this.frameLayer.innerHTML = divs.join("");
@@ -813,7 +814,7 @@
         const color = /^[0-7]$/.test(site.dataset.color || "") ? site.dataset.color : null;
         const from = card.id.replace("card-", "");
         paths.push(
-          `<path class="edge" vector-effect="non-scaling-stroke" data-from="${from}" data-to="${site.dataset.edgeTo}"` + (color === null ? "" : ` data-color="${color}" marker-end="url(#arrow-${color})"`) + ` d="${d}" />`
+          `<path class="edge" vector-effect="non-scaling-stroke" data-from="${attr(from)}" data-to="${attr(site.dataset.edgeTo)}"` + (color === null ? "" : ` data-color="${color}" marker-end="url(#arrow-${color})"`) + ` d="${d}" />`
         );
       }
       this.svg.setAttribute("width", String(this.extent.width));

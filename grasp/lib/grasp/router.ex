@@ -6,8 +6,12 @@ defmodule Grasp.Router do
   of its own to reach: the host owns the port, the session and the live socket, and Grasp
   contributes routes. `grasp/2` is the whole contribution — the review page and the two
   static files it loads, under one prefix. `Grasp.Plug`, in the host's endpoint, is the other
-  half: it guards that prefix and serves the MCP endpoint agents connect to. The two are
-  given the same prefix, and neither works properly without the other.
+  half: it guards that prefix and serves the MCP endpoint agents connect to. Neither works
+  properly without the other, and they must name the same prefix — but they name it
+  differently. The macro's `path` is relative to the scope it is written in, as every route is,
+  and is resolved against it with `Phoenix.Router.scoped_path/2`; the plug has no scope to
+  resolve against, so its `:at` is the full path that resolution arrives at. A router that
+  writes `scope "/tools" do grasp "/grasp" end` takes `plug Grasp.Plug, at: "/tools/grasp"`.
 
   The prefix is resolved at compile time and travels three ways, because three different
   readers need it: the route's `:private` carries it to the plug pipeline (the root layout
@@ -32,6 +36,10 @@ defmodule Grasp.Router do
   asked to add a loopback check to the pipeline its own pages run through:
 
       plug Grasp.Plug, at: "/grasp"
+
+  The plug's `:at` is the full path, enclosing scopes included, because it has no scope to
+  resolve `path` against: inside `scope "/tools"`, `grasp "/grasp"` pairs with
+  `at: "/tools/grasp"`.
 
   The MCP endpoint is that plug rather than a route here, because a browser pipeline declares
   `plug :accepts, ["html"]`, an MCP client asks for `application/json, text/event-stream`, and

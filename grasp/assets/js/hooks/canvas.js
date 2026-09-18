@@ -68,6 +68,17 @@ const GAP_Y = 16
 // an automatic one would be cut short by the room left at the node's own position.
 const STAGE_PAD = 48
 
+// The edge layer is built as one string of markup, so anything interpolated into an attribute
+// is escaped first. A function id is the server's, not a visitor's, but it is still data: a
+// module named with a quoted atom can hold a quote, and one quote ends the attribute and puts
+// whatever follows it into the markup as though it were mine.
+const attr = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+
 const Canvas = {
   mounted() {
     this.stage = this.el.querySelector("#stage")
@@ -863,7 +874,7 @@ const Canvas = {
       }
       this.frames.push(frame)
       divs.push(
-        `<div class="frame" data-group="${frame.group}" style="left:${frame.left}px;top:${frame.top}px;` +
+        `<div class="frame" data-group="${attr(frame.group)}" style="left:${frame.left}px;top:${frame.top}px;` +
           `width:${frame.right - frame.left}px;height:${frame.bottom - frame.top}px"></div>`,
       )
     }
@@ -967,7 +978,7 @@ const Canvas = {
       // its stroke 2 screen pixels instead of thinning to under half a one at MIN_SCALE.
       const from = card.id.replace("card-", "")
       paths.push(
-        `<path class="edge" vector-effect="non-scaling-stroke" data-from="${from}" data-to="${site.dataset.edgeTo}"` +
+        `<path class="edge" vector-effect="non-scaling-stroke" data-from="${attr(from)}" data-to="${attr(site.dataset.edgeTo)}"` +
           (color === null ? "" : ` data-color="${color}" marker-end="url(#arrow-${color})"`) +
           ` d="${d}" />`,
       )
