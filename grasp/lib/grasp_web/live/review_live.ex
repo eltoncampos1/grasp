@@ -840,8 +840,7 @@ defmodule GraspWeb.ReviewLive do
   defp base_label(_index), do: nil
 
   # Every visible card, flattened out of the sections: the columns are the order a card with
-  # no position is placed in, which the node carries as its depth, and no longer a box the
-  # card is drawn inside.
+  # no position is placed in, which the node carries as its depth.
   defp nodes(sections) do
     Enum.flat_map(sections, fn section ->
       section.columns

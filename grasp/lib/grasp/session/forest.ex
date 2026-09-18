@@ -524,7 +524,7 @@ defmodule Grasp.Session.Forest do
   coordinate that is not an integer would be written to the session file as something
   `load/2` refuses, which would cost the reviewer the whole arrangement at the next start.
   """
-  @spec place(t(), [{id(), integer(), integer()}]) :: t()
+  @spec place(t(), [{id(), term(), term()}]) :: t()
   def place(%__MODULE__{} = forest, placements) when is_list(placements) do
     cards =
       Enum.reduce(placements, forest.cards, fn

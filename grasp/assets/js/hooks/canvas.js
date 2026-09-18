@@ -62,9 +62,10 @@ const FRAME_TITLE_GAP = 8
 // GAP_Y between a card and whatever it would otherwise have landed on.
 const GAP_X = 48
 const GAP_Y = 16
-// Room round the block the cards cover, which the stage claims as its own size. Nothing is
-// laid out by that size — every card is positioned absolutely — so it is a floor for the
-// layers that stretch to the stage and something for the resize observer to see.
+// Room round the block the cards cover, which the stage claims as its own size: a floor for
+// the layers stretched across it and something for the resize observer to see. It is also the
+// containing block the nodes are positioned in, which is why a node takes an intrinsic width —
+// an automatic one would be cut short by the room left at the node's own position.
 const STAGE_PAD = 48
 
 const Canvas = {
@@ -84,6 +85,7 @@ const Canvas = {
     // placed against it rather than on top of it.
     this.attempted = new Map()
     this.passes = 0
+    this.pendingReveal = null
     // applyView() redraws whenever the scale differs from the one the frames were drawn at,
     // and the draw that ends mount covers the first frame; seeding the scale keeps that first
     // frame from being drawn twice.
@@ -135,6 +137,15 @@ const Canvas = {
     this.handleEvent("focus", ({id}) => {
       const key = document.getElementById(`card-${id}`)?.dataset.highlightKey || ""
       if (`${id}:${key}` === this.lastReveal) return
+      // A card waiting to be placed is drawn at the stage's corner, and the focus on a card
+      // just opened arrives before the render that puts it anywhere. Panning to it now would
+      // pan to a corner it is about to leave, so the reveal waits for the position and
+      // nothing counts as revealed until it happens.
+      const node = document.getElementById(`node-${id}`)
+      if (!node || node.hasAttribute("data-unplaced")) {
+        this.pendingReveal = id
+        return
+      }
       this.lastReveal = `${id}:${key}`
       this.revealCard(id)
     })
@@ -149,6 +160,22 @@ const Canvas = {
       .forEach((node) => (node.style.translate = ""))
     this.placeCards()
     this.draw()
+    this.revealPending()
+  },
+
+  // The reveal a focus put off because its card had nowhere to be panned to. The render that
+  // carries the position is the first moment there is: a card closed before it arrives is a
+  // reveal to drop.
+  revealPending() {
+    const id = this.pendingReveal
+    if (id === null) return
+    const node = document.getElementById(`node-${id}`)
+    if (node && node.hasAttribute("data-unplaced")) return
+    this.pendingReveal = null
+    if (!node) return
+    const key = document.getElementById(`card-${id}`)?.dataset.highlightKey || ""
+    this.lastReveal = `${id}:${key}`
+    this.revealCard(id)
   },
 
   destroyed() {
@@ -700,6 +727,10 @@ const Canvas = {
   // stretch the stage to a corner nothing is at. Only the far edges are measured — a card at a
   // negative coordinate lies outside the stage's own box, which clips nothing and is only ever
   // panned to.
+  //
+  // The node's rectangle is the card's: a node has no padding, border or margin and takes the
+  // card's intrinsic width, so the extent here, the frames drawn from the cards and the boxes
+  // a placement is decided against are all the same rectangles.
   measureExtent() {
     const s = this.stage.getBoundingClientRect()
     const {scale} = this.view
@@ -1097,10 +1128,10 @@ const Canvas = {
   },
 }
 
-// A node's group as a number to sort by. Group ids count from 1, so the cards in no group are
-// a section of their own ahead of them rather than a member of the first.
+// A node's group as a number to sort by, in the order the sections are rendered in: the cards
+// in no group are the last section, after every group.
 function sortGroup(node) {
-  return node.dataset.group === "" ? -1 : Number(node.dataset.group)
+  return node.dataset.group === "" ? Number.MAX_SAFE_INTEGER : Number(node.dataset.group)
 }
 
 // Two boxes are clear of one another only with the placement gap between them, so a card never

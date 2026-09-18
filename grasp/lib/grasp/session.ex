@@ -155,7 +155,7 @@ defmodule Grasp.Session do
   it is, so a placement computed before a drag cannot undo it. An entry whose coordinates
   are not both integers is skipped.
   """
-  @spec place(name(), [{Forest.id(), integer(), integer()}]) :: Forest.t()
+  @spec place(name(), [{Forest.id(), term(), term()}]) :: Forest.t()
   def place(name, placements) when is_list(placements),
     do: mutate(name, &Forest.place(&1, placements))
 

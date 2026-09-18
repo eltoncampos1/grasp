@@ -140,9 +140,15 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
 .frames { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .frame { position: absolute; border: calc(1px / var(--zoom, 1)) solid var(--border); border-radius: var(--radius); background: color-mix(in srgb, var(--bg-raised) 60%, transparent); }
 /* A section is its group's header and nothing else: the cards are on the stage at positions
-   of their own, and the canvas hook puts each header over the frame drawn round its group. */
-.flows { position: absolute; inset-block-start: 0; inset-inline-start: 0; z-index: 2; }
-.flow { position: absolute; inset-block-start: 0; inset-inline-start: 0; }
+   of their own, and the canvas hook puts each header over the frame drawn round its group.
+   The layer holding the headers covers the stage and lets every pointer through, so a header
+   waiting to be translated over its frame cannot take a click meant for the card under it;
+   the header itself takes its own, being the handle the group is dragged and renamed by. A
+   section is as wide as its header asks for: the layer it sits in has no width of its own to
+   wrap the title against. */
+.flows { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.flow { position: absolute; inset-block-start: 0; inset-inline-start: 0; width: max-content; }
+.flow__title { pointer-events: auto; }
 /* A frame's header is counter-scaled by --zoom, which the canvas hook writes on #stage beside
    the transform, so the name of a group reads at one size however far out the canvas is
    zoomed: it is what tells one frame from another when the cards inside them are too small
@@ -161,7 +167,10 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
    and a card nothing has placed yet is held back until the hook has measured it and said
    where it goes — drawn, so it can be measured, but not seen. */
 .nodes { position: relative; z-index: 1; }
-.node { position: absolute; left: var(--x, 0px); top: var(--y, 0px); }
+/* An intrinsic width, because the stage's own width is measured from the cards: an automatic
+   width would be cut short by whatever room is left inside the stage at the node's position,
+   and the narrower card would then measure a narrower stage, a little less each draw. */
+.node { position: absolute; left: var(--x, 0px); top: var(--y, 0px); width: max-content; }
 .node[data-unplaced] { visibility: hidden; }
 
 /* A card is as wide as its widest line, up to a ceiling, so a column of one-line helpers
