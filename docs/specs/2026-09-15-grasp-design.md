@@ -317,11 +317,11 @@ poll) and broadcasts the reload.
 
 `Grasp.Session` is a GenServer per named session, found through a Registry. State:
 
-- `cards`: map of card id to `%{function_id, highlight, view, collapsed, offset}` where
+- `cards`: map of card id to `%{function_id, highlight, view, collapsed, position}` where
   `highlight` is `nil`, `%{call: target_id}` or `%{lines: a..b}`, `view` is `:source` or
-  `:diff`, and `offset` is `{dx, dy}` in stage pixels from the card's automatic position
-  (`{0, 0}` when untouched). One card per function: a function already on screen is never
-  opened twice.
+  `:diff`, and `position` is `{x, y}` in stage pixels — the node's top-left corner — or
+  `nil` for a card that has not been placed yet (see [Layout](#layout)). One card per
+  function: a function already on screen is never opened twice.
 - `edges`: directed caller → callee, each `%{from, to, target, color}` where `target` is
   the caller's own spelling of the call — which identifies the call site inside its body —
   and `color` indexes an eight-entry palette handed out in creation order, so a call site
@@ -344,7 +344,7 @@ Every mutation broadcasts on `session:<name>` and schedules a write of
 `<project.root>/.grasp/sessions/<name>.json`, coalesced: the first mutation after a write starts a
 150 ms timer that later mutations do not push out, so a drag's stream of moves lands on
 disk about every 150 ms and the last of them within 150 ms of its end; stopping the session
-writes what is pending. The file is `{"version": 1, "cards", "edges", "groups", "focus", "next_id",
+writes what is pending. The file is `{"version": 2, "cards", "edges", "groups", "focus", "next_id",
 "next_color", "next_group"}` — the whole struct, so ids and colours survive a restart and
 an agent holding a card id keeps a valid one. A session loads from its file when it
 starts: a card whose function is no longer in the index is dropped with its edges, and a
@@ -386,9 +386,25 @@ a tab showing it is sent to the default session.
 
 ### Layout
 
-A two-dimensional canvas that pans and zooms. The automatic layout is columns: a flex row
-of columns, each a vertical stack of cards, so the placement stays pure CSS once the server
-has said which column a card belongs to. `Forest.layout/1` computes that. A card nothing
+A two-dimensional canvas that pans and zooms, and a whiteboard: every card has an absolute
+position on the stage, in stage pixels, and nothing moves a placed card but the reader (a
+drag, a group drag) or a reset. Opening a card therefore never shifts the cards already
+there. A card arrives with no position; the LiveView renders it hidden and the canvas hook,
+which alone knows the rendered sizes, places it on the next patch and pushes `place_cards`
+with the result, which the session stores (`Forest.place/2`, filling only positions still
+empty, so a stale placement never undoes a drag). Placement is beside the opener: a callee
+goes to the right of the placed card whose call site opened it (`GAP_X` 48 px), level with
+that call site; a caller opened to the left goes left of its target, top-aligned; a card
+with no placed neighbour is a root and goes under the lowest placed card of its group, at
+its group's left edge, so groups stack downwards. A candidate that would overlap a placed
+card is nudged down past it (`GAP_Y` 16 px), and cards placed in one pass respect one
+another. The pass orders unplaced cards by their depth in the call graph — the column
+algorithm below survives as that ordering and as the keyboard's notion of neighbours — so an
+agent's `set_cards`, which leaves every position empty, comes out callers-left of callees
+in one pass, and "Reset layout" (`Forest.reset_layout/1`) empties every position to lay the
+whole canvas out again.
+
+The depth ordering is columns: `Forest.layout/1` computes it. A card nothing
 on screen calls is a source and sits in column 0; every other card sits one column right of
 the caller that reaches it from furthest right, found by a depth-first walk from the
 sources. The walk refuses to re-enter a card already on its own stack, so a recursive or
@@ -399,14 +415,14 @@ every later column is ordered by the mean row of its callers in the column immed
 left, so edges cross as little as possible. A card whose callers all sit further left has
 no mean and sorts last, by id.
 
-Cards are laid out one section at a time, a section being a group's cards or, last, the
+Depths are computed one section at a time, a section being a group's cards or, last, the
 cards in no group: `Forest.sections/1` runs the column algorithm over one section's cards
 at a time, seeing only the edges between them, so a member reached only from another
-section heads a column of its own and column indices count from the section's own left
-edge. Sections read in group-id order and stack down the stage, each with an `ungroup` button in
-its header that dissolves the group and leaves the cards. A group keeps its section while a collapse hides every member, so
-the frame does not blink out of the page; the section for the cards in no group appears
-only when a visible card is in none.
+section heads a column of its own and depths count from the section's own left edge. Each
+section keeps an element for its header (title, count, an `ungroup` button that dissolves
+the group and leaves the cards), which the hook translates to its frame; the cards
+themselves render in one flat container, positioned absolutely. A group keeps its section
+while a collapse hides every member, so the frame does not blink out of the page.
 
 A group is a frame round cards; its title is a label on that frame and may be absent. The
 forest makes one either way: `new_group/3` frames the cards in hand under a title or under
@@ -451,19 +467,17 @@ another group's frame: on release the drag hook tests the pointer, in stage coor
 against the frame rectangles it drew last (below), skipping the frame of the group the card
 is already in, and sends the innermost hit — the last in section order — along with the
 move. Dragging a selected card carries the rest of the selection into that frame, the others
-keeping the offsets they had, since only the card under the pointer moved. A drop anywhere
+keeping the positions they had, since only the card under the pointer moved. A drop anywhere
 else — the groupless section, the bare canvas, the frame the card is already in — is a move
 and nothing more, so a card never changes group by being put down near one; a grouped card
 dragged out onto bare canvas stays in its group, and the frame follows it. A card that does
-change group keeps the offset the drag gave it, which was measured against where it sat in
-its old section, so it is drawn displaced by that much from its place in the new one until
-the layout is reset.
+change group keeps the position the drag gave it: the frame of its new group grows to take
+it in where it landed.
 
 A frame is drawn round where its cards are, not round where the layout put them. The
-section element still lays a group's columns out and holds its header, but it has no border
-of its own: the canvas hook owns a `phx-update="ignore"` layer under the cards and, on every
+section element holds a group's header, but it has no border of its own: the canvas hook owns a `phx-update="ignore"` layer under the cards and, on every
 patch, resize and drag move, draws one rectangle per grouped section — the union of its
-visible cards' boxes as they are on screen, offsets and the drag in progress included, padded
+visible cards' boxes as they are on screen, the drag in progress included, padded
 by 16 stage pixels on the sides and below and by the header's height above — and translates
 the section's header to the rectangle's top-left corner, so a card dragged out of the frame
 takes the frame with it instead of leaking past its edge. The rectangles are what the drop
@@ -523,16 +537,16 @@ sized as `--frame-title-size / --zoom` (18px for the title, 13px for the rest) i
 so it measures the same on screen whether the canvas is at 25% or 250%. The hook redraws the
 frames whenever the scale changes, since the header's box in stage units changes with it.
 
-Each card carries a persistent offset from its automatic position, set by dragging its
-header or by Ctrl-dragging anywhere on it. The drag shows an inline translate at once and
-pushes `move_card` on release; the offset is stored on the card (`Forest.move/3`) and
-re-rendered as `--dx`/`--dy` on the node. A drag moves that one card: with a card reachable
-from several callers there is no subtree to carry along. "Reset layout"
-(`Forest.reset_offsets/1`) clears every offset at once. Dragging a frame's title — with or
-without Ctrl; a press that does not move is the rename click — moves the group as one: the hook
-pushes `move_group` with the deltas, and `Forest.shift_group/3`
-adds them to every member's offset, so the cards keep their places relative to one another
-and the frame travels unchanged.
+A card is moved by dragging its header or by Ctrl-dragging anywhere on it. The drag shows an
+inline translate at once and pushes `move_card` with the card's new absolute position on
+release; the position is stored on the card (`Forest.move/3`) and re-rendered as `--x`/`--y`
+on the node. A drag moves that one card: with a card reachable from several callers there is
+no subtree to carry along. "Reset layout" (`Forest.reset_layout/1`) empties every position,
+and the hook lays the canvas out again on the next patch. Dragging a frame's title — with or
+without Ctrl; a press that does not move is the rename click — moves the group as one: the
+hook pushes `move_group` with the deltas, and `Forest.shift_group/3` adds them to every
+placed member's position, so the cards keep their places relative to one another and the
+frame travels unchanged.
 
 Edges are an SVG overlay, not CSS: the hook walks the open call sites, measures each one
 and the callee's card, and draws a cubic path between them, so a line follows a card that
@@ -829,6 +843,17 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   ones that write outside the project; there is no sandbox beyond what Claude Code applies.
   The mode is off unless the reader turns it on, and per viewer session.
 
+### Known gaps (milestone 6.2)
+
+- **Cards can come to overlap.** Placement avoids overlap only at the moment a card is
+  placed; a card that later grows (diff view, all lines, a thread) or a card dragged onto
+  another stays where it is. Reset layout untangles them.
+- **A session saved before positions loads laid out afresh.** A version 1 file carries
+  offsets from an automatic layout that no longer exists; it loads with every position
+  empty and is placed again.
+- **Placement is a heuristic.** Beside the opener, nudged down: a long chain opened out of
+  order can zigzag, and nothing packs a canvas.
+
 ### Known gaps (milestone 6.1)
 
 - **Interpolated calls in templates stay hidden.** The compiler reports a call written in
@@ -1108,6 +1133,8 @@ conversation.
    sessions listed by `list_sessions`. Tours (the former milestone 7) were dropped.
    - Milestone 6.1 makes HEEx code the graph knows: component tags are clickable calls,
      `embed_templates` files are records, `render` reaches its template.
+   - Milestone 6.2 turns the canvas into a whiteboard: absolute positions, the hook places
+     a new card beside its opener, nothing else moves; session files move to version 2.
 7. README for strangers, CI, editor links, `mix grasp.serve` polish.
 
 ## Verification
