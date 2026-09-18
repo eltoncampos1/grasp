@@ -500,14 +500,26 @@ defmodule GraspWeb.ReviewLive do
   def handle_event("palette_open", %{"id" => id} = params, socket) when is_binary(id),
     do: open_from_palette(socket, id, child?(params))
 
-  def handle_event("comment_start", %{"card" => card, "side" => side, "line" => line}, socket)
+  # A range arrives as its two ends in whichever order they were gestured in, and Shift asks
+  # for the open composer to stretch to the line just clicked rather than for a new one: the
+  # anchor it stretches from is the line it was opened at, so shift-clicking above the
+  # composer runs the range upwards.
+  def handle_event(
+        "comment_start",
+        %{"card" => card, "side" => side, "line" => line} = params,
+        socket
+      )
       when side in ~w(new old) do
-    case {int(card), int(line)} do
-      {card_id, number} when is_integer(card_id) and is_integer(number) and number > 0 ->
+    case {int(card), int(line), int(params["end_line"])} do
+      {card_id, number, end_line}
+      when is_integer(card_id) and is_integer(number) and number > 0 ->
+        anchor = shift_anchor(socket.assigns.composing, card_id, side, params["shift"])
+        range = Enum.filter([number, end_line, anchor], &(is_integer(&1) and &1 > 0))
+
         {:noreply,
          socket
          |> close_overlays()
-         |> assign(composing: %{card: card_id, side: side, line: number, reply_to: nil})}
+         |> assign(composing: composing(card_id, side, range))}
 
       _garbage ->
         {:noreply, socket}
@@ -520,7 +532,14 @@ defmodule GraspWeb.ReviewLive do
     with card_id when is_integer(card_id) <- int(card),
          thread_id when is_integer(thread_id) <- int(id),
          {:ok, thread} <- Grasp.Comments.fetch(thread_id) do
-      composing = %{card: card_id, side: thread.side, line: thread.line, reply_to: thread.id}
+      composing = %{
+        card: card_id,
+        side: thread.side,
+        line: thread.line,
+        end_line: thread.end_line,
+        reply_to: thread.id
+      }
+
       {:noreply, socket |> close_overlays() |> assign(composing: composing)}
     else
       _unknown_thread -> {:noreply, socket}
@@ -643,6 +662,30 @@ defmodule GraspWeb.ReviewLive do
   # test asserting on the very next render, depend on.
   defp refresh_comments(socket), do: assign(socket, comments: Grasp.Comments.by_function())
 
+  # The composer a Shift click stretches: one open on the same card and side for a new
+  # thread. Its first line is the far end of the range the click asks for, so the range runs
+  # from where the composer was opened to wherever the reader has just clicked.
+  defp shift_anchor(%{card: card_id, side: side, line: line, reply_to: nil}, card_id, side, shift)
+       when shift in [true, "true"],
+       do: line
+
+  defp shift_anchor(_composing, _card_id, _side, _shift), do: nil
+
+  # A composer writes a range as its two ends, and a range of one line as no end at all, so
+  # the thread it opens is spelled the one way the store accepts.
+  defp composing(card_id, side, range) do
+    first = Enum.min(range)
+    last = Enum.max(range)
+
+    %{
+      card: card_id,
+      side: side,
+      line: first,
+      end_line: if(last > first, do: last),
+      reply_to: nil
+    }
+  end
+
   defp forget_reply_box(socket, thread_id) do
     case socket.assigns.composing do
       %{reply_to: ^thread_id} -> assign(socket, composing: nil)
@@ -659,8 +702,16 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
+  # How far the comment reaches is the view's own state rather than the form's: the range was
+  # gestured on the gutter, and the box the words were typed in never showed it as a field.
   defp open_thread(socket, body, params) do
     side = params["side"]
+
+    end_line =
+      case socket.assigns.composing do
+        %{end_line: end_line} -> end_line
+        _closed -> nil
+      end
 
     with true <- side in ~w(new old),
          line when is_integer(line) <- int(params["line"]),
@@ -671,6 +722,7 @@ defmodule GraspWeb.ReviewLive do
         function_id: function_id,
         side: side,
         line: line,
+        end_line: end_line,
         body: body,
         author: "human",
         snippet: Grasp.Comments.snippet(record, side, line)

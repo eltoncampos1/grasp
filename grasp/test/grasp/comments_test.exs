@@ -40,6 +40,29 @@ defmodule Grasp.CommentsTest do
     assert Comments.list(function_id: function_id) == [thread]
   end
 
+  test "add/1 opens a thread over a range of lines", %{function_id: function_id} do
+    assert {:ok, thread} = add(function_id, %{line: 6, end_line: 8})
+
+    assert thread.line == 6
+    assert thread.end_line == 8
+    assert Comments.range(thread) == 6..8
+    assert {:ok, ^thread} = Comments.fetch(thread.id)
+  end
+
+  test "a thread on one line covers that line alone", %{function_id: function_id} do
+    assert {:ok, thread} = add(function_id, %{line: 6})
+
+    assert thread.end_line == nil
+    assert Comments.range(thread) == 6..6
+  end
+
+  test "a range that does not run forwards is refused", %{function_id: function_id} do
+    assert add(function_id, %{line: 6, end_line: 6}) == {:error, :invalid_end_line}
+    assert add(function_id, %{line: 6, end_line: 5}) == {:error, :invalid_end_line}
+    assert add(function_id, %{line: 6, end_line: "8"}) == {:error, :invalid_end_line}
+    assert Comments.list(function_id: function_id) == []
+  end
+
   test "a thread is written to the store's file", %{function_id: function_id} do
     {:ok, thread} = add(function_id, %{})
 
@@ -149,6 +172,7 @@ defmodule Grasp.CommentsTest do
         function_id: "SampleApp.Greeter.greet/2",
         side: "new",
         line: 8,
+        end_line: 11,
         snippet: "def greet(name, loud? \\\\ false) do",
         body: "why a default here?",
         author: "human",
@@ -173,6 +197,7 @@ defmodule Grasp.CommentsTest do
         function_id: "SampleApp.Formatter.shout/1",
         side: "old",
         line: 1,
+        end_line: nil,
         snippet: nil,
         body: "the base read better",
         author: "agent",
@@ -203,6 +228,15 @@ defmodule Grasp.CommentsTest do
 
     assert {:ok, {[thread], 20, 2}} = Comments.decode(document)
     assert thread.id == 7
+  end
+
+  test "decode/1 drops an entry whose range does not run forwards" do
+    comment =
+      ~s({"id": 7, "function_id": "A.b/0", "side": "new", "line": 9, "end_line": 9,) <>
+        ~s( "body": "x", "author": "human", "created_at": "2026-09-17T09:00:00Z"})
+
+    assert Comments.decode(~s({"version": 1, "next_id": 8, "comments": [#{comment}]})) ==
+             {:ok, {[], 8, 1}}
   end
 
   test "decode/1 refuses a document it cannot read" do

@@ -805,6 +805,9 @@ body.grasp-dragging .flow__title {
 .line[data-op=del] {
   background: var(--diff-del-bg);
 }
+.line[data-commented] {
+  background: var(--accent-soft);
+}
 .line[data-highlight=true],
 .line[data-op][data-highlight=true] {
   background: var(--accent-soft);
@@ -936,6 +939,11 @@ body.grasp-dragging .flow__title {
 .composer {
   display: block;
   padding: var(--space-s) var(--space-m);
+}
+.composer__lines {
+  margin: 0 0 var(--space-xs);
+  color: var(--fg-muted);
+  font-size: 12px;
 }
 .composer textarea {
   font: inherit;

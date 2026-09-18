@@ -15,6 +15,11 @@ defmodule Grasp.Comments do
   The snippet is captured when the comment is written — `snippet/3` reads it off the
   record — because afterwards the line it describes may be gone.
 
+  A thread may cover a range: `end_line` is the last line of it, `nil` for a thread on one
+  line. The snippet stays the first line's text, so placing a ranged thread is the same
+  question as placing any other — where its first line has gone — and the rest of the range
+  is counted out from there by whoever draws it.
+
   Threads and replies draw their ids from a single counter that only ever grows, so an id
   freed by a delete is never handed out again and a client holding a stale id cannot
   address someone else's comment.
@@ -62,6 +67,7 @@ defmodule Grasp.Comments do
           function_id: String.t(),
           side: side(),
           line: pos_integer(),
+          end_line: pos_integer() | nil,
           snippet: String.t() | nil,
           body: String.t(),
           author: author(),
@@ -115,15 +121,18 @@ defmodule Grasp.Comments do
   def fetch(id) when is_integer(id), do: GenServer.call(__MODULE__, {:fetch, id})
 
   @doc """
-  Opens a thread from `%{function_id, side, line, body, author, snippet}`.
+  Opens a thread from `%{function_id, side, line, body, author, snippet, end_line}`.
 
   `side` is `"new"` or `"old"`, `author` is `"human"` or `"agent"`, `body` is stored
   trimmed and may not be blank, and `snippet` (optional) is the text of the line as it
-  reads when the comment is written. `store` writes to a store other than the
-  application's.
+  reads when the comment is written. `end_line` (optional) makes the thread cover a range
+  of the same side, and has to be a line after `line`; anything else is
+  `{:error, :invalid_end_line}`. Whether the range fits the function is a question about
+  the record the comment is written against, and is answered by the caller holding it.
+  `store` writes to a store other than the application's.
   """
-  @spec add(map()) :: {:ok, thread()} | {:error, :invalid}
-  @spec add(map(), store()) :: {:ok, thread()} | {:error, :invalid}
+  @spec add(map()) :: {:ok, thread()} | {:error, :invalid | :invalid_end_line}
+  @spec add(map(), store()) :: {:ok, thread()} | {:error, :invalid | :invalid_end_line}
   def add(attrs, store \\ __MODULE__) when is_map(attrs),
     do: GenServer.call(store, {:add, attrs})
 
@@ -183,6 +192,15 @@ defmodule Grasp.Comments do
         Enum.find_value(lines, fn {number, text} -> number == line && String.trim(text) end)
     end
   end
+
+  @doc """
+  The lines `thread` covers, as they were numbered when it was written.
+
+  A thread on one line is the range of that line alone, so a caller draws every thread the
+  same way whether or not it was written over a range.
+  """
+  @spec range(thread()) :: Range.t()
+  def range(thread), do: thread.line..(thread.end_line || thread.line)//1
 
   @doc false
   @spec encode([thread()], pos_integer()) :: String.t()
@@ -258,6 +276,9 @@ defmodule Grasp.Comments do
 
       :error ->
         {:reply, {:error, :invalid}, state}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
     end
   end
 
@@ -439,6 +460,7 @@ defmodule Grasp.Comments do
     with {:ok, function_id} <- binary_field(attrs, :function_id),
          {:ok, side} <- member_field(attrs, :side, @sides),
          {:ok, line} <- line_field(attrs),
+         {:ok, end_line} <- end_line_field(attrs, line),
          {:ok, author} <- member_field(attrs, :author, @authors),
          {:ok, body} <- body_field(attrs) do
       {:ok,
@@ -447,6 +469,7 @@ defmodule Grasp.Comments do
          function_id: function_id,
          side: side,
          line: line,
+         end_line: end_line,
          snippet: Map.get(attrs, :snippet),
          body: body,
          author: author,
@@ -491,6 +514,17 @@ defmodule Grasp.Comments do
     end
   end
 
+  # A range that stops where it starts is a thread on one line, so it is refused rather than
+  # stored as a range of one: two spellings of the same thread would read differently
+  # everywhere the range is drawn.
+  defp end_line_field(attrs, line) do
+    case Map.get(attrs, :end_line) do
+      nil -> {:ok, nil}
+      end_line when is_integer(end_line) and end_line > line -> {:ok, end_line}
+      _invalid -> {:error, :invalid_end_line}
+    end
+  end
+
   defp body_field(attrs) do
     case Map.get(attrs, :body) do
       body when is_binary(body) ->
@@ -512,6 +546,7 @@ defmodule Grasp.Comments do
       "function_id" => thread.function_id,
       "side" => thread.side,
       "line" => thread.line,
+      "end_line" => thread.end_line,
       "snippet" => thread.snippet,
       "body" => thread.body,
       "author" => thread.author,
@@ -577,6 +612,7 @@ defmodule Grasp.Comments do
     snippet = Map.get(comment, "snippet")
 
     with true <- is_nil(snippet) or is_binary(snippet),
+         {:ok, end_line} <- end_line_field(%{end_line: Map.get(comment, "end_line")}, line),
          {:ok, github} <- decode_github(Map.get(comment, "github")) do
       {replies, dropped} = decode_replies(Map.get(comment, "replies", []))
 
@@ -586,6 +622,7 @@ defmodule Grasp.Comments do
          function_id: function_id,
          side: side,
          line: line,
+         end_line: end_line,
          snippet: snippet,
          body: body,
          author: author,

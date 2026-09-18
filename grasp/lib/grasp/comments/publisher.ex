@@ -13,7 +13,9 @@ defmodule Grasp.Comments.Publisher do
   only on a line the diff covers, so the diff's hunks are read first and a thread whose line
   falls outside them — or one written on the base side, which has no line on the head commit
   — is posted as a file comment instead, opening with the function and line it was written
-  on so nothing about it is lost. That is a degradation rather than a failure: a remark
+  on so nothing about it is lost. A thread written over a range goes up as a multi-line
+  comment when the diff covers both of its ends, and on the file when it covers only one:
+  half a range is a comment about code its author did not mark. That is a degradation rather than a failure: a remark
   posted on the file is still a remark the author reads, and refusing to post it would leave
   the review half published.
 
@@ -150,13 +152,15 @@ defmodule Grasp.Comments.Publisher do
     path = record["file"]
     kind = kind(thread, path, ranges)
 
-    comment = %{
-      body: body(thread, record, kind),
-      path: path,
-      commit_id: pull_request.head_sha,
-      kind: kind,
-      line: thread.line
-    }
+    comment =
+      %{
+        body: body(thread, record, kind),
+        path: path,
+        commit_id: pull_request.head_sha,
+        kind: kind,
+        line: thread.end_line || thread.line
+      }
+      |> start_line(thread, kind)
 
     case GitHub.create_review_comment(root, pull_request.number, comment) do
       {:ok, posted} ->
@@ -169,11 +173,25 @@ defmodule Grasp.Comments.Publisher do
     end
   end
 
+  # A range GitHub would only half accept is posted on the file whole: a comment truncated to
+  # the lines the diff happens to show would claim to be about code its author never marked.
   defp kind(%{side: "new"} = thread, path, ranges) do
-    if Enum.any?(Map.get(ranges, path, []), &(thread.line in &1)), do: :line, else: :file
+    commentable = Map.get(ranges, path, [])
+    ends = [thread.line, thread.end_line || thread.line]
+
+    if Enum.all?(ends, fn line -> Enum.any?(commentable, &(line in &1)) end),
+      do: :line,
+      else: :file
   end
 
   defp kind(_thread, _path, _ranges), do: :file
+
+  # GitHub's `start_line` is the first line of a multi-line comment, so it is only sent for a
+  # thread that was written over a range and landed on its lines.
+  defp start_line(comment, %{end_line: end_line} = thread, :line) when is_integer(end_line),
+    do: Map.put(comment, :start_line, thread.line)
+
+  defp start_line(comment, _thread, _kind), do: comment
 
   defp body(thread, _record, :line), do: prefixed(thread.author, thread.body)
 
@@ -183,10 +201,16 @@ defmodule Grasp.Comments.Publisher do
     |> Enum.join("\n\n")
   end
 
-  defp location(%{side: "old"} = thread, record),
+  defp location(%{side: "old", end_line: nil} = thread, record),
     do: "`#{record["id"]}` · deleted line #{thread.line}"
 
-  defp location(thread, record), do: "`#{record["id"]}` · L#{thread.line}"
+  defp location(%{side: "old"} = thread, record),
+    do: "`#{record["id"]}` · deleted lines #{thread.line}–#{thread.end_line}"
+
+  defp location(%{end_line: nil} = thread, record), do: "`#{record["id"]}` · L#{thread.line}"
+
+  defp location(thread, record),
+    do: "`#{record["id"]}` · L#{thread.line}–L#{thread.end_line}"
 
   defp snippet(%{snippet: nil}), do: nil
   defp snippet(thread), do: "> #{thread.snippet}"

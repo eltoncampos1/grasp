@@ -73,6 +73,36 @@ defmodule Grasp.Comments.PublisherTest do
       assert github.url == url
     end
 
+    test "posts a range the diff covers whole as a multi-line comment", %{index: index, log: log} do
+      body = unique_body()
+      thread = open(%{function_id: @greet, line: 6, end_line: 8, body: body})
+
+      assert {:ok, report} = Publisher.publish(index)
+      assert %{kind: :line} = entry(report.published, thread.id)
+
+      call = api_call(log, body)
+      assert call =~ "start_line=6"
+      assert call =~ "line=8"
+      assert call =~ "start_side=RIGHT"
+      assert call =~ "side=RIGHT"
+    end
+
+    test "posts a range reaching past the diff on the file, naming both its ends", %{
+      index: index,
+      log: log
+    } do
+      body = unique_body()
+      thread = open(%{function_id: @greet, line: 6, end_line: 10, body: body})
+
+      assert {:ok, report} = Publisher.publish(index)
+      assert %{kind: :file} = entry(report.published, thread.id)
+
+      call = api_call(log, body)
+      assert call =~ "subject_type=file"
+      refute call =~ "start_line="
+      assert call =~ "body=`#{@greet}` · L6–L10"
+    end
+
     test "skips a thread it has already published", %{index: index} do
       thread = open(%{function_id: @greet, line: 7})
 

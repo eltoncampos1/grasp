@@ -36,6 +36,77 @@ defmodule GraspWeb.CommentsLiveTest do
     assert before?(html, body, ~s(data-line="7"))
   end
 
+  test "a range of lines takes one comment, drawn under its last line", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+    body = unique("these three lines are one thought")
+
+    render_click(view, "comment_start", %{
+      "card" => "1",
+      "side" => "new",
+      "line" => "6",
+      "end_line" => "8"
+    })
+
+    assert has_element?(view, "#card-1 .composer__lines", "Lines 6–8")
+    assert has_element?(view, "#card-1 form.composer input[name='line'][value='6']")
+
+    view |> form("#card-1 form.composer", %{"body" => body}) |> render_submit()
+
+    id = thread_id(body)
+    assert %{line: 6, end_line: 8} = Comments.fetch(id) |> then(fn {:ok, thread} -> thread end)
+
+    html = card(view)
+    assert html =~ ~s|data-line="6" data-commented="true"|
+    assert html =~ ~s|data-line="7" data-commented="true"|
+    assert html =~ ~s|data-line="8" data-commented="true"|
+
+    assert before?(html, ~s(data-line="8"), body)
+    assert before?(html, body, ~s(data-line="9"))
+
+    assert has_element?(
+             view,
+             "#entries .entry--comment[phx-value-id='#{id}'] .entry__where",
+             "greet/2 · L6–L8"
+           )
+  end
+
+  test "Shift stretches the open composer to the line clicked", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+
+    view |> element("#card-1 .line[data-line='9'] .ln") |> render_click()
+    assert has_element?(view, "#card-1 .composer__lines", "Line 9")
+
+    render_click(view, "comment_start", %{
+      "card" => "1",
+      "side" => "new",
+      "line" => "11",
+      "shift" => true
+    })
+
+    assert has_element?(view, "#card-1 .composer__lines", "Lines 9–11")
+    assert composing(view) == %{card: 1, side: "new", line: 9, end_line: 11, reply_to: nil}
+
+    # The anchor is where the composer was opened, so a Shift click above it runs the range
+    # the other way rather than off the composer's far end.
+    render_click(view, "comment_start", %{
+      "card" => "1",
+      "side" => "new",
+      "line" => "7",
+      "shift" => true
+    })
+
+    assert has_element?(view, "#card-1 .composer__lines", "Lines 7–9")
+
+    render_click(view, "comment_start", %{
+      "card" => "1",
+      "side" => "new",
+      "line" => "7",
+      "shift" => true
+    })
+
+    assert has_element?(view, "#card-1 .composer__lines", "Line 7")
+  end
+
   test "a thread is replied to, resolved, expanded and taken apart again", %{
     view: view,
     name: name

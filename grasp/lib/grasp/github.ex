@@ -76,10 +76,13 @@ defmodule Grasp.GitHub do
 
   The comment names its `body`, the `path` it hangs off, the `commit_id` it is written
   against, and a `kind`: a `:line` comment sits on the new side at `line`, and a `:file`
-  comment sits on the file as a whole and carries no line. A `:line` comment with no line,
-  and any other kind, is an error rather than a raise, so a caller that built the comment
-  from a thread reads about it the same way it reads about a rejection. GitHub rejects a
-  line the pull request's diff does not touch, which is what `Grasp.GitHub.Diff` is for.
+  comment sits on the file as a whole and carries no line. A `:line` comment may also name
+  a `start_line` before its `line`, which makes it a multi-line comment covering the two
+  and everything between. A `:line` comment with no line, a `start_line` that is not before
+  its line, and any other kind, are errors rather than raises, so a caller that built the
+  comment from a thread reads about it the same way it reads about a rejection. GitHub
+  rejects a line the pull request's diff does not touch, which is what `Grasp.GitHub.Diff`
+  is for.
   """
   @spec create_review_comment(Path.t(), pos_integer(), map()) ::
           {:ok, posted()} | {:error, String.t()}
@@ -102,7 +105,8 @@ defmodule Grasp.GitHub do
       "commit_id=#{commit_id}"
     ]
 
-    with {:ok, placement} <- placement(kind, Map.get(comment, :line)),
+    with {:ok, placement} <-
+           placement(kind, Map.get(comment, :line), Map.get(comment, :start_line)),
          {:ok, output} <- run(args ++ placement, root) do
       decode_posted(output)
     end
@@ -126,15 +130,35 @@ defmodule Grasp.GitHub do
     with {:ok, output} <- run(args, root), do: decode_posted(output)
   end
 
-  # `-F` sends the line as a JSON number; GitHub rejects the string `-f` would send.
-  defp placement(:line, line) when is_integer(line) and line > 0,
+  # `-F` sends the line as a JSON number; GitHub rejects the string `-f` would send. A
+  # multi-line comment names its last line as `line` and its first as `start_line`, which is
+  # the way round GitHub reads them.
+  defp placement(:line, line, nil) when is_integer(line) and line > 0,
     do: {:ok, ["-F", "line=#{line}", "-f", "side=RIGHT"]}
 
-  defp placement(:line, _line), do: {:error, "a line comment needs a line"}
+  defp placement(:line, line, start_line)
+       when is_integer(line) and is_integer(start_line) and start_line > 0 and start_line < line,
+       do:
+         {:ok,
+          [
+            "-F",
+            "line=#{line}",
+            "-f",
+            "side=RIGHT",
+            "-F",
+            "start_line=#{start_line}",
+            "-f",
+            "start_side=RIGHT"
+          ]}
 
-  defp placement(:file, _line), do: {:ok, ["-f", "subject_type=file"]}
+  defp placement(:line, line, _start_line) when is_integer(line) and line > 0,
+    do: {:error, "a multi-line comment needs a start line before its line"}
 
-  defp placement(kind, _line), do: {:error, "unknown comment kind: #{inspect(kind)}"}
+  defp placement(:line, _line, _start_line), do: {:error, "a line comment needs a line"}
+
+  defp placement(:file, _line, _start_line), do: {:ok, ["-f", "subject_type=file"]}
+
+  defp placement(kind, _line, _start_line), do: {:error, "unknown comment kind: #{inspect(kind)}"}
 
   defp failure(output, status) do
     case String.trim(output) do

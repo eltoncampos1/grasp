@@ -231,7 +231,7 @@ defmodule GraspWeb.Sidebar do
               phx-value-id={row.id}
               title={row.function_id}
             >
-              <span class="entry__where">{row.name} · L{row.line}</span>
+              <span class="entry__where">{row.name} · {row.lines}</span>
               <span class="entry__excerpt">{row.excerpt}</span>
             </button>
           </div>
@@ -380,7 +380,7 @@ defmodule GraspWeb.Sidebar do
         id: thread.id,
         function_id: thread.function_id,
         name: name_of(thread.function_id),
-        line: thread.line,
+        lines: lines_label(thread),
         excerpt: excerpt(thread.body),
         orphan?: not indexed?(index, thread.function_id)
       }
@@ -388,6 +388,11 @@ defmodule GraspWeb.Sidebar do
     |> Enum.group_by(&module_of(&1.function_id))
     |> Enum.sort_by(fn {module, _rows} -> module end)
   end
+
+  # A row names the lines the thread was written on, one or a range of them, so the sidebar
+  # reads the same way the thread does on its card.
+  defp lines_label(%{end_line: nil} = thread), do: "L#{thread.line}"
+  defp lines_label(thread), do: "L#{thread.line}–L#{thread.end_line}"
 
   defp indexed?(%Index{} = index, function_id),
     do: match?({:ok, _record}, Index.fetch_function(index, function_id))

@@ -17,7 +17,9 @@ defmodule GraspWeb.CommentComponents do
   The composer's text is the browser's alone. The textarea is `phx-update="ignore"` so a
   patch arriving mid-sentence cannot rewrite what is being typed, and its id names the
   anchor it was opened at — card, side, line and the thread it replies to — so a draft
-  belongs to the one place it was written and never reappears under another line.
+  belongs to the one place it was written and never reappears under another line. A new
+  thread's box names the lines it will cover, and the range's last line is left out of that
+  id: stretching the selection is the same box, and keeps the half-written sentence in it.
   """
 
   use GraspWeb, :html
@@ -134,10 +136,12 @@ defmodule GraspWeb.CommentComponents do
     id =
       "composer-#{assigns.card_id}-#{composing.side}-#{composing.line}-#{composing.reply_to || "new"}"
 
-    assigns = assign(assigns, id: id, reply?: composing.reply_to != nil)
+    assigns =
+      assign(assigns, id: id, reply?: composing.reply_to != nil, lines: heading(composing))
 
     ~H"""
     <form id={@id} class="composer" phx-submit="comment_save" phx-hook="Composer">
+      <p :if={not @reply?} class="composer__lines">{@lines}</p>
       <input type="hidden" name="card" value={@card_id} />
       <input type="hidden" name="side" value={@composing.side} />
       <input type="hidden" name="line" value={@composing.line} />
@@ -159,8 +163,17 @@ defmodule GraspWeb.CommentComponents do
   # Why a thread sits in the card's footer instead of under a line. A thread the view simply
   # draws no line for — a comment on the base side, in a card reading as source — is still
   # current, and is named for the side it was written on rather than reported as stale.
-  defp aside_label(:hidden, thread), do: "Old · L#{thread.line}"
-  defp aside_label(:outdated, thread), do: "Outdated · L#{thread.line}"
+  defp aside_label(:hidden, thread), do: "Old · #{lines_label(thread)}"
+  defp aside_label(:outdated, thread), do: "Outdated · #{lines_label(thread)}"
+
+  # A thread names the lines it was written on, whether that is one line or a range of them.
+  defp lines_label(%{end_line: nil} = thread), do: "L#{thread.line}"
+  defp lines_label(thread), do: "L#{thread.line}–L#{thread.end_line}"
+
+  # What the box says it is about, so the range a drag selected is readable once the pointer
+  # is gone and the tint is the only other trace of it.
+  defp heading(%{end_line: nil} = composing), do: "Line #{composing.line}"
+  defp heading(composing), do: "Lines #{composing.line}–#{composing.end_line}"
 
   # The two writers a thread can hold, named as the reviewer would say them rather than as
   # the store records them.

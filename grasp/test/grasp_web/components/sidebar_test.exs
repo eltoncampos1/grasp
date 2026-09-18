@@ -218,6 +218,7 @@ defmodule GraspWeb.SidebarTest do
         function_id: @greet,
         side: "new",
         line: 9,
+        end_line: nil,
         snippet: nil,
         body: "the default argument hides an arity",
         author: "human",

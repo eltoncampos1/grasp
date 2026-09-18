@@ -66,6 +66,52 @@ defmodule Grasp.MCP.CommentToolsTest do
       assert thread["snippet"] == "def shout(text), do: text"
     end
 
+    test "writes a thread over a range of lines and lists it with both ends" do
+      body = unique_body()
+      thread = add(%{function_id: @greet, line: 6, end_line: 8, body: body})
+
+      assert thread["line"] == 6
+      assert thread["end_line"] == 8
+      assert thread["status"] == "anchored"
+      assert thread["anchored_line"] == 6
+
+      found = find(listed(%{function_id: @greet}), thread["id"])
+      assert found["end_line"] == 8
+    end
+
+    test "a thread on one line is listed with no end line" do
+      thread = add(%{function_id: @greet, line: 9, body: unique_body()})
+
+      assert thread["end_line"] == nil
+      assert find(listed(%{function_id: @greet}), thread["id"])["end_line"] == nil
+    end
+
+    test "an end line the range does not run to is an error" do
+      response =
+        run(Tools.AddComment, %{
+          function_id: @greet,
+          line: 9,
+          end_line: 9,
+          body: unique_body()
+        })
+
+      assert response.isError
+      assert message(response) == "end_line 9 must come after line 9"
+    end
+
+    test "an end line outside the function is an error naming the range" do
+      response =
+        run(Tools.AddComment, %{
+          function_id: @greet,
+          line: 9,
+          end_line: 99,
+          body: unique_body()
+        })
+
+      assert response.isError
+      assert message(response) == "line 99 is outside #{@greet} (lines 6..11)"
+    end
+
     test "a line outside the function is an error naming the range" do
       response = run(Tools.AddComment, %{function_id: @greet, line: 99, body: unique_body()})
 

@@ -169,6 +169,34 @@ defmodule GraspWeb.CardComponentsTest do
       assert html =~ ~s|<button class="line line--fold"|
     end
 
+    test "a thread holds every line of its range open through a fold" do
+      thread = %{
+        id: 1,
+        function_id: "SampleApp.Long.long/1",
+        side: "new",
+        line: 20,
+        end_line: 23,
+        snippet: "a19 = x",
+        body: "this run of assignments says nothing",
+        author: "human",
+        created_at: "2026-09-17T00:00:00Z",
+        resolved: false,
+        github: nil,
+        replies: []
+      }
+
+      html = render_long_card(comments: %{"SampleApp.Long.long/1" => [thread]})
+
+      for n <- 19..22, do: assert(html =~ ">a#{n}</span>")
+      assert html =~ ~s|<button class="line line--fold"|
+
+      # The thread hangs off the last line of its range, and every line of it is tinted.
+      assert html =~ ~s|data-line="23" data-commented="true"|
+      assert html =~ ~s|data-line="20" data-commented="true"|
+      refute html =~ ~s|data-line="24" data-commented|
+      assert before?(html, ~s|data-line="23"|, ~s|id="thread-1"|)
+    end
+
     test "every line is drawn once the card is told to show them all" do
       html = render_long_card(context: :full)
 
@@ -222,8 +250,18 @@ defmodule GraspWeb.CardComponentsTest do
       column: 0,
       open_calls: %{},
       editor: "vscode",
-      expanded_folds: Keyword.get(opts, :expanded_folds)
+      expanded_folds: Keyword.get(opts, :expanded_folds),
+      comments: Keyword.get(opts, :comments, %{})
     )
+  end
+
+  # Where two strings fall in the rendered card, which is how a thread is shown to hang off
+  # the line above it.
+  defp before?(html, first, second) do
+    case {:binary.match(html, first), :binary.match(html, second)} do
+      {{at, _length}, {then, _then_length}} -> at < then
+      _missing -> false
+    end
   end
 
   defp render_card(function_id) do

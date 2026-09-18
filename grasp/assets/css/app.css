@@ -244,6 +244,9 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
 .call[data-highlight="true"] { box-shadow: 0 0 0 2px var(--accent); border-radius: 2px; }
 .line[data-op="ins"] { background: var(--diff-ins-bg); }
 .line[data-op="del"] { background: var(--diff-del-bg); }
+/* A line an open thread covers, so a comment written over a range reads as one block of
+   code rather than as a remark hanging off its last line. */
+.line[data-commented] { background: var(--accent-soft); }
 /* The agent's pointer outranks the diff tint: a highlighted inserted line reads as pointed at. */
 .line[data-highlight="true"], .line[data-op][data-highlight="true"] { background: var(--accent-soft); }
 .op { display: inline-block; width: 1ch; margin-inline-end: var(--space-xs); color: var(--fg-faint); }
@@ -277,6 +280,7 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
 .thread__github { color: var(--fg-muted); font-size: 12px; text-decoration: none; }
 .thread__github:hover { color: var(--accent); text-decoration: underline; }
 .composer { display: block; padding: var(--space-s) var(--space-m); }
+.composer__lines { margin: 0 0 var(--space-xs); color: var(--fg-muted); font-size: 12px; }
 .composer textarea { font: inherit; font-family: var(--sans); width: 100%; padding: var(--space-s); color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); resize: vertical; }
 .composer button { margin: var(--space-xs) var(--space-s) 0 0; padding: 1px var(--space-s); color: var(--fg-muted); border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px; }
 .composer button[type="submit"] { color: var(--accent); }

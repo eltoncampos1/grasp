@@ -71,7 +71,8 @@ defmodule Grasp.Highlight do
           card_id: pos_integer(),
           open_calls: open_calls(),
           external?: (String.t() -> boolean()),
-          highlight: nil | %{optional(String.t()) => String.t() | [integer()]}
+          highlight: nil | %{optional(String.t()) => String.t() | [integer()]},
+          commented: MapSet.t({:new | :old, pos_integer()})
         ]
 
   @typedoc """
@@ -107,7 +108,9 @@ defmodule Grasp.Highlight do
   The lines `render/2` joins, each as a `t:line/0`.
 
   Every line of the current source is one entry, numbered from the span's first line, so a
-  caller placing markup between lines has the numbers it needs to address them.
+  caller placing markup between lines has the numbers it needs to address them. A line the
+  `:commented` option names carries `data-commented`, which is how a card tints the lines a
+  comment thread covers.
   """
   @spec lines(map(), opts()) :: [line()]
   def lines(record, opts) do
@@ -115,6 +118,7 @@ defmodule Grasp.Highlight do
     source = record["source"]
     first_line = record["span"]["start_line"]
     highlight = Keyword.get(opts, :highlight)
+    commented = Keyword.get(opts, :commented, MapSet.new())
     body = body_builder(record, opts)
 
     # Lines are driven by the source, not by the tokens: a blank line carries no piece, and
@@ -123,7 +127,7 @@ defmodule Grasp.Highlight do
 
     for line <- first_line..last_line do
       html =
-        ~s(<span class="line" data-line="#{line}"#{highlighted_line(highlight, line)}>#{gutter(card_id, :new, line, line)}#{body.(line)}</span>)
+        ~s(<span class="line" data-line="#{line}"#{highlighted_line(highlight, line)}#{commented_line(commented, :new, line)}>#{gutter(card_id, :new, line, line)}#{body.(line)}</span>)
 
       %{side: :new, line: line, op: :eq, html: html}
     end
@@ -166,6 +170,7 @@ defmodule Grasp.Highlight do
   defp diff(record, base_source, opts) do
     card_id = Keyword.fetch!(opts, :card_id)
     highlight = Keyword.get(opts, :highlight)
+    commented = Keyword.get(opts, :commented, MapSet.new())
     body = body_builder(record, opts)
 
     base_by_line =
@@ -182,13 +187,13 @@ defmodule Grasp.Highlight do
           text = base_by_line |> Map.get(base, []) |> Enum.map_join(&token_html/1)
 
           html =
-            ~s(<span class="line" data-op="del" data-base-line="#{base}">#{gutter(card_id, :old, base, "")}<span class="op">−</span>#{text}</span>)
+            ~s(<span class="line" data-op="del" data-base-line="#{base}"#{commented_line(commented, :old, base)}>#{gutter(card_id, :old, base, "")}<span class="op">−</span>#{text}</span>)
 
           {[%{side: :old, line: base, op: :del, html: html} | acc], current, base + 1}
 
         {op, _text}, {acc, current, base} ->
           html =
-            ~s(<span class="line" data-op="#{op}" data-line="#{current}"#{highlighted_line(highlight, current)}>#{gutter(card_id, :new, current, current)}<span class="op">#{mark(op)}</span>#{body.(current)}</span>)
+            ~s(<span class="line" data-op="#{op}" data-line="#{current}"#{highlighted_line(highlight, current)}#{commented_line(commented, :new, current)}>#{gutter(card_id, :new, current, current)}<span class="op">#{mark(op)}</span>#{body.(current)}</span>)
 
           {[%{side: :new, line: current, op: op, html: html} | acc], current + 1,
            if(op == :eq, do: base + 1, else: base)}
@@ -465,6 +470,12 @@ defmodule Grasp.Highlight do
     do: ~s( data-highlight="true")
 
   defp highlighted_line(_highlight, _line), do: ""
+
+  # A line covered by an open comment thread, so the range a thread was written over reads as
+  # one block rather than as a remark hanging off its last line alone.
+  defp commented_line(commented, side, line) do
+    if MapSet.member?(commented, {side, line}), do: ~s( data-commented="true"), else: ""
+  end
 
   defp wrap_calls(pieces, ranges, card_id, open, external?, highlighted_call) do
     pieces

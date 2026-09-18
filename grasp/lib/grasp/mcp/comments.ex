@@ -26,7 +26,10 @@ defmodule Grasp.MCP.Comments do
   has left the index), `"status"` — `"anchored"`, `"outdated"` for a line that is no longer
   there, `"orphan"` for a function that is gone — `"anchored_line"`, the line the thread
   now sits on, `nil` unless it is anchored, and `"github_url"`, where the thread reads on
-  the pull request, `nil` while it has not been published.
+  the pull request, `nil` while it has not been published. `"end_line"` is the last line of
+  a thread written over a range and `nil` for one written on a single line; it is counted
+  from `"line"` rather than from `"anchored_line"`, so a moved range is `"anchored_line"`
+  through `"anchored_line" + "end_line" - "line"`.
   """
   @spec thread_map(Comments.thread(), Grasp.Index.t()) :: map()
   def thread_map(thread, %Grasp.Index{} = index) do
@@ -44,6 +47,7 @@ defmodule Grasp.MCP.Comments do
       "file" => record && record["file"],
       "side" => thread.side,
       "line" => thread.line,
+      "end_line" => thread.end_line,
       "anchored_line" => anchored_line,
       "status" => status,
       "snippet" => thread.snippet,

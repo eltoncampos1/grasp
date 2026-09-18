@@ -1,13 +1,18 @@
 defmodule Grasp.MCP.Tools.AddComment do
   @moduledoc """
-  Write a review comment on one line of a function, as the agent. The thread appears in the
-  reviewer's gutter beside that line, next to the human's own comments, and is kept with the
-  project rather than with the canvas — closing the card does not lose it.
+  Write a review comment on a line, or a range of lines, of a function, as the agent. The
+  thread appears in the reviewer's gutter beside that code, next to the human's own comments,
+  and is kept with the project rather than with the canvas — closing the card does not lose
+  it.
 
   Use it to leave a finding where the code is, rather than in prose the reviewer has to map
   back onto the file: one thread per finding, on the line it is about. The line is numbered
   as `get_function` shows the source, so read the function first and write on a line it
   actually has; a line outside the function is an error naming the range.
+
+  `end_line` covers several lines at once, for a finding that is about a whole clause or
+  block rather than about one line of it. It belongs to the same side as `line` and has to
+  come after it, and the thread then reads on the pull request as a multi-line comment.
 
   `side` is `new` for the branch's code and `old` for the base version of a function the
   branch modified, which is how a comment lands on a line the branch deleted.
@@ -34,6 +39,10 @@ defmodule Grasp.MCP.Tools.AddComment do
           "function's first line, the `old` side from 1"
     )
 
+    field(:end_line, :integer,
+      description: "The last line of a range, numbered as `line` is; omit for one line"
+    )
+
     field(:body, :string, required: true, description: "What the comment says")
 
     field(:side, :string,
@@ -46,11 +55,14 @@ defmodule Grasp.MCP.Tools.AddComment do
 
   @impl true
   def execute(%{function_id: function_id, line: line, body: body} = params, frame) do
+    end_line = Map.get(params, :end_line)
+
     with {:ok, index} <- Tools.index(),
          {:ok, side} <- side(Map.get(params, :side, "new")),
          {:ok, record} <- Tools.fetch_function(index, function_id),
          :ok <- Shape.check_line(record, side, line),
-         {:ok, thread} <- add(record, side, line, body) do
+         :ok <- check_end_line(record, side, line, end_line),
+         {:ok, thread} <- add(record, side, line, end_line, body) do
       Tools.reply(frame, Shape.thread_map(thread, index))
     else
       {:error, reason} -> Tools.error(frame, reason)
@@ -60,13 +72,25 @@ defmodule Grasp.MCP.Tools.AddComment do
   defp side(side) when side in @sides, do: {:ok, side}
   defp side(side), do: {:error, ~s(side must be "new" or "old", not "#{side}")}
 
+  # Both ends of a range are lines of the function, so the far end is checked the same way
+  # the near one is and the agent reads the same sentence about either.
+  defp check_end_line(_record, _side, _line, nil), do: :ok
+
+  defp check_end_line(record, side, line, end_line) when end_line > line,
+    do: Shape.check_line(record, side, end_line)
+
+  defp check_end_line(_record, _side, line, end_line),
+    do: {:error, "end_line #{end_line} must come after line #{line}"}
+
   # The snippet is read off the record now, since it is the text the comment is about and
-  # the line it sits on may be edited before anyone reads the thread.
-  defp add(record, side, line, body) do
+  # the line it sits on may be edited before anyone reads the thread. A range records its
+  # first line, which is the line the thread is anchored by.
+  defp add(record, side, line, end_line, body) do
     attrs = %{
       function_id: record["id"],
       side: side,
       line: line,
+      end_line: end_line,
       body: body,
       author: "agent",
       snippet: Comments.snippet(record, side, line)
@@ -75,6 +99,7 @@ defmodule Grasp.MCP.Tools.AddComment do
     case Comments.add(attrs) do
       {:ok, thread} -> {:ok, thread}
       {:error, :invalid} -> {:error, "body must not be blank"}
+      {:error, :invalid_end_line} -> {:error, "end_line #{end_line} must come after line #{line}"}
     end
   end
 end

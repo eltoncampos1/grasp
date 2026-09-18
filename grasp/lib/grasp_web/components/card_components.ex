@@ -143,46 +143,84 @@ defmodule GraspWeb.CardComponents do
       highlight: card.highlight
     ]
 
+    # A thread names a line, not a rendered one: the code under it moves, so where each one
+    # belongs is decided against the record about to be drawn. Anything the anchor can no
+    # longer find keeps its place in the footer instead of being dropped. A thread written
+    # over a range keeps its length rather than its numbers: the anchor re-places its first
+    # line and the rest is counted out from there, up to the record's own last line.
+    {anchored, lost} =
+      comments
+      |> Map.get(record["id"], [])
+      |> Enum.map(&{&1, Anchor.place(&1, record)})
+      |> Enum.split_with(fn {_thread, placement} -> is_tuple(placement) end)
+
+    anchored =
+      Enum.map(anchored, fn {thread, {side, line}} ->
+        span = (thread.end_line || thread.line) - thread.line
+        last = last_line(record, side)
+        %{thread: thread, side: side, range: line..min(line + span, last)//1}
+      end)
+
+    # Only an open thread tints its lines: a resolved one is a settled argument, and the card
+    # says so by collapsing it rather than by colouring the code again.
+    commented =
+      for %{thread: thread, side: side, range: range} <- anchored,
+          not thread.resolved,
+          number <- range,
+          into: MapSet.new(),
+          do: {side, number}
+
+    highlight_opts = Keyword.put(highlight_opts, :commented, commented)
+
     lines =
       if view == :diff,
         do: Grasp.Highlight.diff_lines(record, highlight_opts),
         else: Grasp.Highlight.lines(record, highlight_opts)
 
-    # A thread names a line, not a rendered one: the code under it moves, so where each one
-    # belongs is decided against the record about to be drawn. Anything the anchor can no
-    # longer find keeps its place in the footer instead of being dropped.
-    placements =
-      comments
-      |> Map.get(record["id"], [])
-      |> Enum.group_by(&Anchor.place(&1, record))
-
     # A placement the view does not draw would otherwise take the thread off the card
     # altogether — a comment on a deleted line is anchored on the base side, which the source
     # view has no line for — so it joins the footer until the view that draws it is back.
-    {placed, hidden} =
-      placements
-      |> Map.drop([:outdated, :orphan])
-      |> Map.split(Enum.map(lines, &{&1.side, &1.line}))
+    # A thread hangs off the last line of its range the view actually draws, so the code it
+    # is about reads before the conversation about it.
+    drawn = MapSet.new(lines, &{&1.side, &1.line})
+
+    anchored =
+      Enum.map(anchored, fn placement ->
+        at =
+          placement.range
+          |> Enum.reverse()
+          |> Enum.find(&MapSet.member?(drawn, {placement.side, &1}))
+
+        Map.put(placement, :at, at)
+      end)
+
+    {shown, hidden} = Enum.split_with(anchored, &(&1.at != nil))
+
+    placed = Enum.group_by(shown, &{&1.side, &1.at}, & &1.thread)
 
     aside =
-      placements
-      |> Map.get(:outdated, [])
-      |> Enum.map(&{:outdated, &1})
-      |> Enum.concat(
-        Enum.flat_map(hidden, fn {_anchor, threads} -> Enum.map(threads, &{:hidden, &1}) end)
-      )
+      lost
+      |> Enum.map(fn {thread, _placement} -> {:outdated, thread} end)
+      |> Enum.concat(Enum.map(hidden, &{:hidden, &1.thread}))
       |> Enum.sort_by(fn {_why, thread} -> thread.id end)
 
     expanded_folds = assigns.expanded_folds || MapSet.new()
     card_id = card.id
     opened = for {^card_id, from} <- expanded_folds, into: MapSet.new(), do: from
 
-    # Folding runs after the threads are placed, so a comment holds its line open: the
+    # Folding runs after the threads are placed, so a comment holds its lines open: the
     # placements are decided against every line the record has, and only then is what is
-    # left of an unchanged stretch collapsed.
+    # left of an unchanged stretch collapsed. A thread holds its whole range open, since a
+    # range half folded away is a comment about code the reader cannot see.
+    keep =
+      for %{side: side, range: range} <- shown,
+          number <- range,
+          into: MapSet.new(),
+          do: {side, number}
+
     lines =
       if context == :hunks do
-        Hunks.fold(lines, keep: MapSet.new(Map.keys(placed)), expanded: opened)
+        Hunks.fold(lines, keep: keep, expanded: opened)
       else
         lines
       end
@@ -389,6 +427,16 @@ defmodule GraspWeb.CardComponents do
        do: to_string(line_side) == side
 
   defp composing_at?(_composing, _card_id, _side, _number), do: false
+
+  # The last line the record has on a side, which is where a range re-placed lower down the
+  # function stops: a comment is about code the function holds, so it never reaches past its
+  # end. A side the record does not have anchors nothing, so any number will do for it.
+  defp last_line(record, side) do
+    case Anchor.lines(record, Atom.to_string(side)) do
+      nil -> 0
+      lines -> lines |> List.last() |> elem(0)
+    end
+  end
 
   # Columns the gutter reserves: enough for the highest number the body prints — the span's
   # last line, which is also the highest the diff view prints, since a deleted line prints
