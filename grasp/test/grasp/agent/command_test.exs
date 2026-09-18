@@ -138,7 +138,7 @@ defmodule Grasp.Agent.CommandTest do
     assert prompt =~ "list_changes"
 
     assert prompt =~
-             "mix grasp.index --base origin/<base> --out #{Path.join(home, ".grasp/index.json")}"
+             "mix grasp.index --base origin/<base> --out #{IndexStore.path()}"
 
     assert prompt =~ Path.join(home, ".grasp/comments.json")
     refute prompt =~ "gh pr checkout"
