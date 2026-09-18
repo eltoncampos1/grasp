@@ -1,6 +1,6 @@
 # Rebuilds test/fixtures/index.json from a freshly indexed sample app.
 #
-#     cd grasp_index/test/fixtures/sample_app && mix grasp.index --out /tmp/index.json
+#     cd grasp/test/fixtures/sample_app && mix grasp.index --out /tmp/index.json
 #     cd grasp && mix run test/fixtures/regenerate.exs /tmp/index.json
 #
 # The fixture is a real index document with a hand-made pull request painted on top: the

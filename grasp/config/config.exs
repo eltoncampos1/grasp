@@ -8,6 +8,7 @@ config :grasp, GraspWeb.Endpoint,
   live_view: [signing_salt: "grasp-live-view-salt"]
 
 config :grasp,
+  standalone: false,
   index_path: nil,
   comments_path: nil,
   sessions_dir: nil,
@@ -15,14 +16,6 @@ config :grasp,
   agent_command: "claude",
   agent_model: nil,
   gh_command: "gh"
-
-config :esbuild,
-  version: "0.25.4",
-  grasp: [
-    args: ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets),
-    cd: Path.expand("../assets", __DIR__),
-    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
-  ]
 
 config :phoenix, :json_library, Jason
 

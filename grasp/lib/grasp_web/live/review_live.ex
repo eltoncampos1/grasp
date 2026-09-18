@@ -879,7 +879,7 @@ defmodule GraspWeb.ReviewLive do
         Could not load {@index_path}: {inspect(@index_error)}
       </p>
       <p :if={!@index_error} class="empty">
-        No index loaded. Start with <code>mix grasp.serve</code> in the project you are reviewing.
+        No index at {@index_path} — run <code>mix grasp.index</code>
       </p>
     </main>
     """

@@ -96,6 +96,24 @@ defmodule Grasp.IndexStoreTest do
     assert :ets.info(:grasp_highlight_cache, :size) == 0
   end
 
+  test "a project with no index yet starts empty and watches where the file will be written" do
+    path = Path.join(System.tmp_dir!(), "grasp-absent-#{System.unique_integer([:positive])}.json")
+
+    assert {:ok, state} = IndexStore.init(path: path)
+    assert state.path == path
+    assert state.mtime == nil
+    assert state.last_error == nil
+  end
+
+  test "the watched path defaults to the index the build task writes under the project root" do
+    previous = Application.get_env(:grasp, :index_path)
+    Application.put_env(:grasp, :index_path, nil)
+    on_exit(fn -> Application.put_env(:grasp, :index_path, previous) end)
+
+    assert {:ok, state} = IndexStore.init([])
+    assert state.path == Path.join(File.cwd!(), ".grasp/index.json")
+  end
+
   defp tmp_copy(transform) do
     path = Path.join(System.tmp_dir!(), "grasp-store-#{System.unique_integer([:positive])}.json")
     doc = @fixture |> File.read!() |> Jason.decode!() |> transform.()

@@ -1,5 +1,8 @@
 import Config
 
+# The suite exercises the endpoint and the routes it serves, so it runs the standalone form.
+config :grasp, standalone: true
+
 config :grasp, GraspWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4041],
   server: false,

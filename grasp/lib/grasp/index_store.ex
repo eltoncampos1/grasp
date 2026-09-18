@@ -14,6 +14,10 @@ defmodule Grasp.IndexStore do
   next poll waits for the file to change instead of re-reading and re-logging an
   unreadable index every two seconds.
 
+  A project that has never run `mix grasp.index` has no file at all, which is a beginning
+  rather than a failure: the store watches the path it would be written to, holds no index
+  and no error, and the poll picks the file up the moment it appears.
+
   The mtime is read *before* the file, so a rewrite landing between the two leaves the
   stored mtime older than the file's and the next poll picks the new content up; reading
   it after would pair the old index with the new mtime and never reload.
@@ -31,7 +35,12 @@ defmodule Grasp.IndexStore do
   @topic "index"
   @poll_ms 2_000
 
-  @doc "Starts the store; `:path` defaults to the `:grasp, :index_path` config."
+  @doc """
+  Starts the store.
+
+  `:path` defaults to the `:grasp, :index_path` config, and that to `.grasp/index.json`
+  under the directory the host was started from.
+  """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -41,8 +50,8 @@ defmodule Grasp.IndexStore do
   @spec get() :: Grasp.Index.t() | nil
   def get, do: :persistent_term.get(@key, nil)
 
-  @doc "The path currently watched, or `nil`."
-  @spec path() :: String.t() | nil
+  @doc "The index file being watched, whether or not it exists yet."
+  @spec path() :: String.t()
   def path, do: GenServer.call(__MODULE__, :path)
 
   @doc "The reason the last load failed, or `nil` when the last load succeeded."
@@ -63,15 +72,18 @@ defmodule Grasp.IndexStore do
 
   @impl true
   def init(opts) do
-    path = Keyword.get(opts, :path, Application.get_env(:grasp, :index_path))
+    path = Path.expand(Keyword.get(opts, :path) || configured_path())
     :ok = Grasp.Highlight.ensure_cache()
-    state = %{path: nil, mtime: nil, last_error: nil}
+    state = %{path: path, mtime: nil, last_error: nil}
 
     state =
-      case path && do_load(path, state) do
-        {:ok, state} -> state
-        {:error, _reason, state} -> state
-        nil -> state
+      if File.regular?(path) do
+        case do_load(path, state) do
+          {:ok, state} -> state
+          {:error, _reason, state} -> state
+        end
+      else
+        state
       end
 
     schedule_poll()
@@ -85,15 +97,9 @@ defmodule Grasp.IndexStore do
 
   def handle_call({:load, path}, _from, state), do: load_path(path, state)
 
-  def handle_call(:reload, _from, %{path: nil} = state), do: {:reply, {:error, :no_path}, state}
   def handle_call(:reload, _from, state), do: load_path(state.path, state)
 
   @impl true
-  def handle_info(:poll, %{path: nil} = state) do
-    schedule_poll()
-    {:noreply, state}
-  end
-
   def handle_info(:poll, state) do
     state =
       case File.stat(state.path, time: :posix) do
@@ -153,4 +159,8 @@ defmodule Grasp.IndexStore do
   end
 
   defp schedule_poll, do: Process.send_after(self(), :poll, @poll_ms)
+
+  defp configured_path do
+    Application.get_env(:grasp, :index_path) || Path.join(File.cwd!(), ".grasp/index.json")
+  end
 end

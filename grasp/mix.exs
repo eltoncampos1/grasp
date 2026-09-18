@@ -1,16 +1,25 @@
 defmodule Grasp.MixProject do
   use Mix.Project
 
+  @version "0.1.0"
+  @source_url "https://github.com/gfrancischelli/grasp"
+
   def project do
     [
       app: :grasp,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
+      test_load_filters: [&(String.ends_with?(&1, "_test.exs") and not fixture?(&1))],
+      test_ignore_filters: [&fixture?/1],
       start_permanent: Mix.env() == :prod,
       listeners: [Phoenix.CodeReloader],
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+      description: "Grasp: call-chain code review for Elixir, mounted in your app",
+      package: package(),
+      name: "Grasp",
+      docs: [main: "readme", extras: ["README.md"], source_url: @source_url]
     ]
   end
 
@@ -19,8 +28,10 @@ defmodule Grasp.MixProject do
   end
 
   def cli do
-    [preferred_envs: [test: :test]]
+    [preferred_envs: [test: :test, "test.all": :test]]
   end
+
+  defp fixture?(path), do: String.starts_with?(path, "test/fixtures/")
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
@@ -29,14 +40,14 @@ defmodule Grasp.MixProject do
     [
       {:phoenix, "~> 1.8"},
       {:phoenix_html, "~> 4.3"},
-      {:phoenix_live_view, "~> 1.2"},
-      {:bandit, "~> 1.12"},
+      {:phoenix_live_view, "~> 1.1"},
+      {:bandit, "~> 1.12", optional: true},
       {:jason, "~> 1.4"},
       {:lumis, "~> 0.8"},
-      {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:lazy_html, ">= 0.1.0"},
-      {:grasp_index, path: "../grasp_index"},
-      {:anubis_mcp, "~> 2.0"}
+      {:anubis_mcp, "~> 2.0"},
+      {:sourceror, "~> 1.10"},
+      {:esbuild, "~> 0.10", only: :dev, runtime: false}
     ]
   end
 
@@ -44,7 +55,16 @@ defmodule Grasp.MixProject do
     [
       setup: ["deps.get", "assets.build"],
       "assets.build": ["esbuild grasp"],
-      "assets.deploy": ["esbuild grasp --minify"]
+      "assets.deploy": ["esbuild grasp --minify"],
+      "test.all": ["test --include integration"]
+    ]
+  end
+
+  defp package do
+    [
+      licenses: ["Apache-2.0"],
+      links: %{"GitHub" => @source_url},
+      files: ~w(lib priv/static mix.exs README.md LICENSE)
     ]
   end
 end

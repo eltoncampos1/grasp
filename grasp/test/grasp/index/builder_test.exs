@@ -2,7 +2,10 @@ defmodule Grasp.Index.BuilderTest do
   use ExUnit.Case, async: false
 
   @moduletag :integration
-  @moduletag timeout: 300_000
+
+  # The fixture depends on Grasp, so a cold run compiles Grasp's whole dependency set
+  # before it indexes anything.
+  @moduletag timeout: 900_000
 
   @fixture Path.expand("../../fixtures/sample_app", __DIR__)
 
@@ -10,7 +13,7 @@ defmodule Grasp.Index.BuilderTest do
     out = Path.join(System.tmp_dir!(), "grasp-sample-#{System.unique_integer([:positive])}.json")
     env = [{"MIX_ENV", "dev"}]
 
-    unless File.dir?(Path.join(@fixture, "deps/phoenix")) do
+    unless Enum.all?(locked_deps(), &File.dir?(Path.join([@fixture, "deps", &1]))) do
       {_, 0} = System.cmd("mix", ["deps.get"], cd: @fixture, env: env, stderr_to_stdout: true)
     end
 
@@ -213,6 +216,17 @@ defmodule Grasp.Index.BuilderTest do
     assert "Oban.Worker" in mods["SampleApp.Workers.Mailer"]
     assert "GenServer" in mods["SampleApp.Counter"]
     assert mods["SampleApp.Formatter"] == []
+  end
+
+  # The fixture keeps its dependencies between runs, so they are fetched only when the lock
+  # names one the deps directory does not hold — which is also what a dependency added to
+  # Grasp looks like from here.
+  defp locked_deps do
+    @fixture
+    |> Path.join("mix.lock")
+    |> File.read!()
+    |> then(&Regex.scan(~r/^\s+"([^"]+)":/m, &1, capture: :all_but_first))
+    |> List.flatten()
   end
 
   defp call(record, target), do: Enum.find(record["calls"], &(&1["target"] == target))

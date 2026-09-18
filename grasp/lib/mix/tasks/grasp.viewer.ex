@@ -1,14 +1,14 @@
 defmodule Mix.Tasks.Grasp.Viewer do
-  @shortdoc "Serves the Grasp viewer for an index file; `mix grasp.serve` in the reviewed project runs it"
+  @shortdoc "Serves the Grasp viewer standalone, for an index file"
 
   @moduledoc """
-  Starts the Grasp viewer, the task `mix grasp.serve` runs in the reviewed project.
+  Serves Grasp from an endpoint of its own, for working on Grasp itself.
 
       mix grasp.viewer --index PATH [--port 4040] [--editor vscode]
                        [--agent-command claude] [--agent-model MODEL]
 
-  Run it from this repository's `grasp/` directory. From the project under review,
-  `mix grasp.serve` — the launcher in `grasp_index` — finds a checkout and runs this.
+  Run it from this repository's `grasp/` directory. A project that wants to review its own
+  code mounts Grasp in its router instead and reaches it on its own dev server.
 
   The index is the file `mix grasp.index` wrote in the target project. The viewer binds
   to 127.0.0.1 and reloads the index whenever the file changes. Review comments live
@@ -86,6 +86,8 @@ defmodule Mix.Tasks.Grasp.Viewer do
     if agent_command, do: System.put_env("GRASP_AGENT_COMMAND", agent_command)
     if agent_model, do: System.put_env("GRASP_AGENT_MODEL", agent_model)
 
+    # The viewer serves its own endpoint; mounted in a host application Grasp serves none.
+    Application.put_env(:grasp, :standalone, true, persistent: true)
     Application.put_env(:phoenix, :serve_endpoints, true, persistent: true)
     Mix.shell().info("Grasp viewer: http://127.0.0.1:#{opts[:port] || 4040}  (index: #{index})")
     Mix.Task.run("run", ["--no-halt"])

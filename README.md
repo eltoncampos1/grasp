@@ -27,43 +27,49 @@ a text editor and a unified diff.
 
 ## Layout
 
-- `grasp_index/` — the indexer. Added to a target project as a dev dependency;
-  `mix grasp.index` writes a JSON index of every function, its resolved calls, and the
-  project's entry points, and `mix grasp.serve` runs the viewer against it.
-- `grasp/` — the viewer. A Phoenix LiveView app that serves the index as a card canvas.
+- `grasp/` — the whole of Grasp: the indexer (`mix grasp.index`, `Grasp.Index.*`), the
+  LiveView canvas and the MCP server. One Mix project, one Hex package, added to the
+  project you review as a development dependency.
 
 See `docs/specs/2026-09-15-grasp-design.md` for the design.
 
 ## Quick start
 
-In the project you want to review:
+Grasp mounts inside the application it reviews, the way LiveDashboard does. In that
+project's `mix.exs`:
 
 ```elixir
-# mix.exs
-{:grasp_index, path: "/path/to/grasp/grasp_index", only: :dev, runtime: false}
+{:grasp, "~> 0.1", only: :dev}
+```
+
+Then `mix deps.get`, and in the router:
+
+```elixir
+import Grasp.Router
+
+scope "/" do
+  pipe_through :browser
+  grasp "/grasp"
+end
 ```
 
 ```
-mix deps.get && mix grasp.index
-mix grasp.serve --editor vscode
+mix grasp.index --base main
+mix phx.server
 ```
 
-Open http://127.0.0.1:4040, pick an entry point (or a module) in the sidebar or press
-⌘K, and click any call inside a card to open the callee next to it. The canvas is written
-to `.grasp/sessions/` beside the index, so the cards are where you left them when you come
-back.
+Open `/grasp` on your own dev server, pick an entry point (or a module) in the sidebar or
+press ⌘K, and click any call inside a card to open the callee next to it. The canvas is
+written to `.grasp/sessions/` beside the index, so the cards are where you left them when
+you come back.
 
-`mix grasp.serve` runs the viewer from a checkout of this repository, since the viewer is
-never a dependency of the project it reviews. Point it at a checkout you already have with
-`--viewer PATH` or `GRASP_VIEWER`; with neither, it looks in `~/.grasp/viewer` and clones
-the repository there the first time, then fetches the viewer's dependencies and builds its
-assets. That first run takes a few minutes and later ones start straight away. The path
-dependency above is already a checkout, so `GRASP_VIEWER=/path/to/grasp` points the
-launcher at the one you have and nothing is cloned.
+`mix grasp.index` writes `.grasp/index.json`, which Grasp watches: run it again and the
+canvas redraws over the new code.
 
 ### Working on Grasp itself
 
-The viewer has its own task, run from this repository against any project's index:
+Grasp also serves an endpoint of its own, run from this repository against any project's
+index:
 
 ```
 cd grasp && mix setup && mix grasp.viewer --index /path/to/project/.grasp/index.json --editor vscode
@@ -206,12 +212,12 @@ In the viewer:
 
 ## MCP
 
-The viewer serves an MCP endpoint at `/mcp` on the same port as the page, over Streamable
-HTTP. An agent connected to it reads the index and arranges the cards the human is looking
-at. Register it with Claude Code:
+Grasp serves an MCP endpoint at `/grasp/mcp`, on the same port as the page, over
+Streamable HTTP. An agent connected to it reads the index and arranges the cards the human
+is looking at. Register it with Claude Code:
 
 ```
-claude mcp add --transport http grasp http://127.0.0.1:4040/mcp
+claude mcp add --transport http grasp http://127.0.0.1:4000/grasp/mcp
 ```
 
 Only requests addressed to loopback are served: the endpoint checks the `Host` it was
@@ -336,7 +342,7 @@ project root — which is what makes "address all the comments and update the di
 afterwards" a thing you can ask for. It works a comment at a time: reads what the
 thread points at, makes the change, replies with what it did and resolves the thread; then
 it runs `mix format` on what it touched, rebuilds the index with the same `mix grasp.index`
-flags the viewer is watching — which needs `grasp_index` set up as a dev dependency of the
+flags the viewer is watching — which needs Grasp set up as a dev dependency of the
 reviewed project, as in Quick start above, or there is no `mix grasp.index` task to run —
 and lays the cards out again over the code as it now reads. The switch takes effect on the
 next prompt, and survives New conversation. Nothing is sandboxed: edit mode is the agent
@@ -378,13 +384,14 @@ viewer stops.
 The CLI has to be installed and signed in already — the panel runs whatever `claude` your
 `PATH` resolves to. Two settings change that:
 
-- `--agent-command PATH` or `GRASP_AGENT_COMMAND` — the executable to run instead of
-  `claude`.
-- `--agent-model NAME` or `GRASP_AGENT_MODEL` — the model that CLI runs with. Omit it to
-  leave the CLI on its own default.
+- `agent_command` — the executable to run instead of `claude`. `mix grasp.viewer` takes
+  the same setting as `--agent-command PATH` or `GRASP_AGENT_COMMAND`.
+- `agent_model` — the model that CLI runs with, `--agent-model NAME` or
+  `GRASP_AGENT_MODEL` for the standalone viewer. Omit it to leave the CLI on its own
+  default.
 
-```
-mix grasp.serve --agent-command /opt/homebrew/bin/claude --agent-model opus
+```elixir
+config :grasp, agent_command: "/opt/homebrew/bin/claude", agent_model: "opus"
 ```
 
 ## License
