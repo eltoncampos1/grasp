@@ -4,12 +4,14 @@
 //
 // The press is stopped where it is seen, so the canvas hook below never reads it: a plain
 // press inside a card is already no gesture of the canvas's, but a Ctrl-press on a card is
-// how a card is dragged, and that one has to go on reaching it — so a press carrying Ctrl or
-// Meta is left alone here and no range begins.
+// how a card is dragged, and that one has to go on reaching it — so a press carrying Ctrl
+// begins no range here. A Meta-press begins none either: ⌘ is nobody's gesture on a card, and
+// on macOS it is what a browser reads as "open in a new tab".
 //
 // The selection is the browser's own transient state: `data-selecting` on the body and on the
-// lines under the pointer, set and cleared inside one gesture. The server renders neither, so
-// a patch landing mid-drag costs at most the tint on a line, which the next move redraws.
+// lines under the pointer. The server renders neither, and a patch landing mid-drag merges
+// the attributes it did render, taking both off again — so `updated()` puts them back rather
+// than waiting for a move that may never come.
 //
 // The pointer is not captured. Capturing it retargets the click that closes the gesture to
 // the capture element, which would take the plain click on a line number away from its own
@@ -20,13 +22,26 @@ const Gutter = {
     this.onPointerDown = (e) => this.pointerDown(e)
     this.onPointerMove = (e) => this.pointerMove(e)
     this.onPointerUp = (e) => this.pointerUp(e)
-    this.onPointerCancel = () => this.clearSelection()
+    this.onPointerCancel = (e) => this.pointerCancel(e)
+    this.onAbandon = () => this.clearSelection()
     this.onClickCapture = (e) => this.clickCapture(e)
     this.el.addEventListener("pointerdown", this.onPointerDown)
     window.addEventListener("pointermove", this.onPointerMove)
     window.addEventListener("pointerup", this.onPointerUp)
     window.addEventListener("pointercancel", this.onPointerCancel)
+    // A gesture that ends while the page is in the background delivers neither a release nor
+    // a cancel, and the tints would be waiting on the card when the reader came back.
+    window.addEventListener("blur", this.onAbandon)
+    document.addEventListener("visibilitychange", this.onAbandon)
     this.el.addEventListener("click", this.onClickCapture, true)
+  },
+
+  // The lines are rendered by the server, so a patch arriving mid-drag has just dropped the
+  // marks this gesture put on them.
+  updated() {
+    if (!this.sel) return
+    this.el.setAttribute("data-selecting", "")
+    this.paint()
   },
 
   destroyed() {
@@ -34,21 +49,18 @@ const Gutter = {
     window.removeEventListener("pointermove", this.onPointerMove)
     window.removeEventListener("pointerup", this.onPointerUp)
     window.removeEventListener("pointercancel", this.onPointerCancel)
+    window.removeEventListener("blur", this.onAbandon)
+    document.removeEventListener("visibilitychange", this.onAbandon)
     this.el.removeEventListener("click", this.onClickCapture, true)
   },
 
   pointerDown(e) {
-    if (e.button !== 0) return
-    // A gesture that ended outside this body never got its trailing click, and a suppression
-    // left standing would eat this one.
-    this.swallowClick = false
-    if (e.ctrlKey || e.metaKey) return
+    if (e.button !== 0 || e.ctrlKey || e.metaKey) return
     const ln = e.target.closest?.(".ln")
-    if (!ln) return
-    const anchor = this.lineOf(ln)
+    const anchor = ln && this.lineOf(ln)
     if (!anchor) return
     e.stopPropagation()
-    this.sel = {...anchor, pointerId: e.pointerId, shift: e.shiftKey, end: anchor.line}
+    this.sel = {...anchor, pointerId: e.pointerId, end: anchor.line}
     // Set before the compatibility mousedown that follows this event, whose default action
     // would start a text range that smears down the card as the pointer travels.
     this.el.setAttribute("data-selecting", "")
@@ -58,9 +70,9 @@ const Gutter = {
   pointerMove(e) {
     const sel = this.sel
     if (!sel || (e.pointerId !== undefined && e.pointerId !== sel.pointerId)) return
-    // The button came up while the pointer was outside the window, so the pointerup that
-    // would have ended this gesture was never delivered; this move is the first news of it.
-    if (e.buttons === 0) return this.pointerUp(e)
+    // The button came up while the pointer was outside the window: this move is the first
+    // news of a gesture that ended where its end could not be read, so it ends in nothing.
+    if (e.buttons === 0) return this.clearSelection()
     const line = this.lineAt(e.clientX, e.clientY)
     if (line === null || line === sel.end) return
     sel.end = line
@@ -71,25 +83,38 @@ const Gutter = {
     const sel = this.sel
     if (!sel || (e.pointerId !== undefined && e.pointerId !== sel.pointerId)) return
     this.clearSelection()
-    const params = {card: sel.card, side: sel.side}
-    if (sel.end !== sel.line) {
-      this.push({...params, line: Math.min(sel.line, sel.end), end_line: Math.max(sel.line, sel.end)})
-    } else if (sel.shift) {
-      this.push({...params, line: sel.line, shift: true})
+    const where = {card: sel.card, side: sel.side}
+    if (e.shiftKey) {
+      // Shift asks the open composer to stretch, and the composer is the one that knows the
+      // line it was opened at, so what goes up is the line this gesture ended on and the
+      // server puts the two in order.
+      this.push({...where, line: sel.end, shift: true})
+    } else if (sel.end !== sel.line) {
+      this.push({...where, line: Math.min(sel.line, sel.end), end_line: Math.max(sel.line, sel.end)})
     }
     // A press that neither moved nor held Shift is an ordinary click on the line number, and
     // the `phx-click` it carries opens the one-line composer on its own.
   },
 
+  pointerCancel(e) {
+    if (!this.sel || (e.pointerId !== undefined && e.pointerId !== this.sel.pointerId)) return
+    this.clearSelection()
+  },
+
   push(params) {
     // The gesture has already said what it means, so the click the release brings with it is
-    // the tail of this drag rather than a new event.
+    // the tail of this drag rather than a new event. That click is dispatched before this
+    // turn of the event loop is over; anything arriving later is a click of its own.
     this.swallowClick = true
+    setTimeout(() => (this.swallowClick = false), 0)
     this.pushEvent("comment_start", params)
   },
 
   clickCapture(e) {
-    if (!this.swallowClick) return
+    // Enter or Space on a focused control — the fold button, a thread's buttons, the
+    // composer's own — arrives as a click with no pointer gesture behind it, which `detail`
+    // reports as 0. Only a click a pointer made can be the tail of a drag.
+    if (!this.swallowClick || e.detail === 0) return
     this.swallowClick = false
     e.stopPropagation()
     e.preventDefault()
@@ -108,8 +133,9 @@ const Gutter = {
   },
 
   lineOf(ln) {
-    const line = Number(ln.getAttribute("phx-value-line"))
-    if (!Number.isInteger(line)) return null
+    const number = ln.getAttribute("phx-value-line")
+    const line = Number(number)
+    if (!number || !Number.isInteger(line) || line < 1) return null
     return {card: ln.getAttribute("phx-value-card"), side: ln.getAttribute("phx-value-side"), line}
   },
 

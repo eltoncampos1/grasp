@@ -252,9 +252,10 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
 .line[data-commented] { background: var(--accent-soft); }
 /* The agent's pointer outranks the diff tint: a highlighted inserted line reads as pointed at. */
 .line[data-highlight="true"], .line[data-op][data-highlight="true"] { background: var(--accent-soft); }
-/* The lines a gutter drag is over. Stronger than every tint above it, so a range drawn across
-   commented, changed or pointed-at lines still reads as one block while it is being drawn. */
-.line[data-selecting] { background: color-mix(in oklch, var(--accent) 24%, transparent); }
+/* The lines a gutter drag is over. Two selectors, because the pointer rule above carries the
+   diff attribute as well: a range drawn across commented, changed or pointed-at lines has to
+   read as one block while it is being drawn. */
+.line[data-op][data-selecting], .line[data-selecting] { background: color-mix(in oklch, var(--accent) 24%, transparent); }
 .op { display: inline-block; width: 1ch; margin-inline-end: var(--space-xs); color: var(--fg-faint); }
 .line[data-op="ins"] .op { color: var(--diff-ins-fg); }
 .line[data-op="del"] .op { color: var(--diff-del-fg); }

@@ -274,7 +274,7 @@
         return;
       }
       const card = e.shiftKey && e.target.closest(".card");
-      if (card && !e.target.closest("button, a, input, .call, .also, .ln")) {
+      if (card && !e.target.closest("button, a, input, .call, .also, .card__body")) {
         e.stopPropagation();
         e.preventDefault();
         this.pushEvent("toggle_select", { card: card.id.replace("card-", "") });
@@ -1004,38 +1004,47 @@
       this.onPointerDown = (e) => this.pointerDown(e);
       this.onPointerMove = (e) => this.pointerMove(e);
       this.onPointerUp = (e) => this.pointerUp(e);
-      this.onPointerCancel = () => this.clearSelection();
+      this.onPointerCancel = (e) => this.pointerCancel(e);
+      this.onAbandon = () => this.clearSelection();
       this.onClickCapture = (e) => this.clickCapture(e);
       this.el.addEventListener("pointerdown", this.onPointerDown);
       window.addEventListener("pointermove", this.onPointerMove);
       window.addEventListener("pointerup", this.onPointerUp);
       window.addEventListener("pointercancel", this.onPointerCancel);
+      window.addEventListener("blur", this.onAbandon);
+      document.addEventListener("visibilitychange", this.onAbandon);
       this.el.addEventListener("click", this.onClickCapture, true);
+    },
+    // The lines are rendered by the server, so a patch arriving mid-drag has just dropped the
+    // marks this gesture put on them.
+    updated() {
+      if (!this.sel) return;
+      this.el.setAttribute("data-selecting", "");
+      this.paint();
     },
     destroyed() {
       this.el.removeEventListener("pointerdown", this.onPointerDown);
       window.removeEventListener("pointermove", this.onPointerMove);
       window.removeEventListener("pointerup", this.onPointerUp);
       window.removeEventListener("pointercancel", this.onPointerCancel);
+      window.removeEventListener("blur", this.onAbandon);
+      document.removeEventListener("visibilitychange", this.onAbandon);
       this.el.removeEventListener("click", this.onClickCapture, true);
     },
     pointerDown(e) {
-      if (e.button !== 0) return;
-      this.swallowClick = false;
-      if (e.ctrlKey || e.metaKey) return;
+      if (e.button !== 0 || e.ctrlKey || e.metaKey) return;
       const ln = e.target.closest?.(".ln");
-      if (!ln) return;
-      const anchor = this.lineOf(ln);
+      const anchor = ln && this.lineOf(ln);
       if (!anchor) return;
       e.stopPropagation();
-      this.sel = { ...anchor, pointerId: e.pointerId, shift: e.shiftKey, end: anchor.line };
+      this.sel = { ...anchor, pointerId: e.pointerId, end: anchor.line };
       this.el.setAttribute("data-selecting", "");
       this.paint();
     },
     pointerMove(e) {
       const sel = this.sel;
       if (!sel || e.pointerId !== void 0 && e.pointerId !== sel.pointerId) return;
-      if (e.buttons === 0) return this.pointerUp(e);
+      if (e.buttons === 0) return this.clearSelection();
       const line = this.lineAt(e.clientX, e.clientY);
       if (line === null || line === sel.end) return;
       sel.end = line;
@@ -1045,19 +1054,24 @@
       const sel = this.sel;
       if (!sel || e.pointerId !== void 0 && e.pointerId !== sel.pointerId) return;
       this.clearSelection();
-      const params = { card: sel.card, side: sel.side };
-      if (sel.end !== sel.line) {
-        this.push({ ...params, line: Math.min(sel.line, sel.end), end_line: Math.max(sel.line, sel.end) });
-      } else if (sel.shift) {
-        this.push({ ...params, line: sel.line, shift: true });
+      const where = { card: sel.card, side: sel.side };
+      if (e.shiftKey) {
+        this.push({ ...where, line: sel.end, shift: true });
+      } else if (sel.end !== sel.line) {
+        this.push({ ...where, line: Math.min(sel.line, sel.end), end_line: Math.max(sel.line, sel.end) });
       }
+    },
+    pointerCancel(e) {
+      if (!this.sel || e.pointerId !== void 0 && e.pointerId !== this.sel.pointerId) return;
+      this.clearSelection();
     },
     push(params) {
       this.swallowClick = true;
+      setTimeout(() => this.swallowClick = false, 0);
       this.pushEvent("comment_start", params);
     },
     clickCapture(e) {
-      if (!this.swallowClick) return;
+      if (!this.swallowClick || e.detail === 0) return;
       this.swallowClick = false;
       e.stopPropagation();
       e.preventDefault();
@@ -1074,8 +1088,9 @@
       return found.line;
     },
     lineOf(ln) {
-      const line = Number(ln.getAttribute("phx-value-line"));
-      if (!Number.isInteger(line)) return null;
+      const number = ln.getAttribute("phx-value-line");
+      const line = Number(number);
+      if (!number || !Number.isInteger(line) || line < 1) return null;
       return { card: ln.getAttribute("phx-value-card"), side: ln.getAttribute("phx-value-side"), line };
     },
     // The anchor is tinted from the press onwards, so a range of one line looks like the start

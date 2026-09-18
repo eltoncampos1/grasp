@@ -815,6 +815,7 @@ body.grasp-dragging .flow__title {
 .line[data-op][data-highlight=true] {
   background: var(--accent-soft);
 }
+.line[data-op][data-selecting],
 .line[data-selecting] {
   background: color-mix(in oklch, var(--accent) 24%, transparent);
 }

@@ -31,11 +31,13 @@ away and leaves the cards where they were. A title is a label rather than a requ
 frame may stand with none, and its heading then reads "Untitled group". Cards in no group
 make a last, unframed section under the framed ones.
 
-- **Shift+click** a card to pick it out; Shift+click again to put it back. Selected cards
-  wear a dashed outline. A plain click says which card you mean instead, so it lets the
-  selection go — as do opening a card from the sidebar or the palette, and Escape. A card
-  that closes leaves the selection with it. The selection is this tab's own: another tab
-  reading the same session sees the frames you make, not the cards you are picking.
+- **Shift+click** a card to pick it out; Shift+click again to put it back. Its code is the
+  comment gutter's, so Shift there stretches the range being written rather than picking the
+  card out. Selected cards wear a dashed outline. A plain click says which card you mean
+  instead, so it lets the selection go — as do opening a card from the sidebar or the
+  palette, and Escape. A card that closes leaves the selection with it. The selection is this
+  tab's own: another tab reading the same session sees the frames you make, not the cards you
+  are picking.
 - **⌘G** frames the selected cards, or the focused card when nothing is selected. **⇧⌘G**
   takes the selected cards back out of whatever frames they are in, leaving them selected,
   so they can go straight into another one.
@@ -109,7 +111,8 @@ In a diff body the line numbers on the base side are clickable the same way, so 
 land on a line the branch deleted. A range runs down one side: a drag that crosses to the
 other side's numbers stops where it left its own.
 
-A ranged thread tints every line it covers and sits under the last of them.
+A ranged thread tints every line it covers and sits under the last of them. A drag released
+below a fold covers the lines the fold hides, and the thread it opens unfolds them.
 
 A thread whose line moved re-anchors wherever its text went. One that matches nowhere sits
 in the card's footer, marked outdated. One whose function has left the index is listed muted
