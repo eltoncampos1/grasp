@@ -23,7 +23,9 @@ defmodule Grasp.Reindexer do
     * **The batch is held until the update lands.** A drained event table cannot be drained
       again, so the batch stays in the process's state until an update has written it, and
       a flush that fails — an error, an exception, a store call that timed out — leaves it
-      there for the next one to pick up.
+      there for the next one to pick up. It is held up to a bound: an index file that never
+      decodes would otherwise grow the batch with every compile, so beyond twenty thousand
+      events the oldest go and a line says so once.
     * **An event older than its file is dropped.** The events were recorded by a compile
       that has finished; a save that landed after it leaves the file with an mtime the
       event predates, and joining the two would place calls on lines that have moved.
@@ -52,6 +54,10 @@ defmodule Grasp.Reindexer do
 
   @flush_ms 300
   @max_files 50
+  # A batch the reindexer cannot place — an index file that will not decode, a write that
+  # keeps failing — is held for the next flush, and every compile adds to it. This is where
+  # that stops growing.
+  @max_pending 20_000
   # The store decodes a multi-megabyte document inside its own callback, and a call made
   # while one is in flight waits for it. Waiting is right here; timing out would throw away
   # an update that had already been written.
@@ -61,9 +67,9 @@ defmodule Grasp.Reindexer do
   Starts the reindexer and installs the tracer.
 
   `:index_path` overrides the document to update, which otherwise follows
-  `Grasp.IndexStore.path/1`; `:flush_ms` overrides the quiet window. The process is always
-  registered under its own module name, because that is the name the tracer looks it up
-  under.
+  `Grasp.IndexStore.path/1`; `:flush_ms` overrides the quiet window and `:max_pending` the
+  number of events a batch that cannot land may hold. The process is always registered
+  under its own module name, because that is the name the tracer looks it up under.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -83,9 +89,11 @@ defmodule Grasp.Reindexer do
      %{
        index_path: Keyword.get(opts, :index_path),
        flush_ms: Keyword.get(opts, :flush_ms, @flush_ms),
+       max_pending: Keyword.get(opts, :max_pending, @max_pending),
        timer: nil,
        generation: 0,
        pending: [],
+       capped: false,
        paused: nil
      }}
   end
@@ -104,11 +112,11 @@ defmodule Grasp.Reindexer do
   end
 
   def handle_info({:flush, generation}, %{generation: generation} = state) do
-    state = %{state | timer: nil, pending: state.pending ++ Tracer.take_events()}
+    state = %{state | timer: nil} |> keep(Tracer.take_events())
 
     try do
       case flush(state) do
-        {:ok, state} -> {:noreply, %{state | pending: []}}
+        {:ok, state} -> {:noreply, %{state | pending: [], capped: false}}
         {:error, reason} -> {:noreply, warn(state, reason)}
       end
     rescue
@@ -123,6 +131,29 @@ defmodule Grasp.Reindexer do
   def handle_info({:flush, _superseded}, state), do: {:noreply, state}
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  # The newest events are the ones worth keeping: they describe the files as they stand,
+  # and the oldest of an over-long batch describe versions that have been saved over.
+  defp keep(state, events) do
+    pending = state.pending ++ events
+    over = length(pending) - state.max_pending
+
+    cond do
+      over <= 0 ->
+        %{state | pending: pending}
+
+      state.capped ->
+        %{state | pending: Enum.drop(pending, over)}
+
+      true ->
+        Logger.warning(
+          "grasp: more than #{state.max_pending} traced calls are waiting on an index " <>
+            "update that is not landing; the oldest are being dropped"
+        )
+
+        %{state | pending: Enum.drop(pending, over), capped: true}
+    end
+  end
 
   defp flush(%{pending: []} = state), do: {:ok, state}
 
@@ -185,11 +216,15 @@ defmodule Grasp.Reindexer do
     Path.expand(root) == Path.expand(home)
   end
 
+  # The batch goes with the pause rather than waiting: it describes this project, and the
+  # document on the table describes another, so there is nothing here it could be written
+  # into and nothing later that would want it.
   defp pause(state, root) do
     if state.paused != root do
       Logger.info(
         "grasp: the loaded index describes #{root}; live reindexing is paused until an " <>
-          "index of this project is loaded again"
+          "index of this project is loaded again, and what has compiled since is being " <>
+          "discarded — run `mix grasp.index` to catch the canvas up"
       )
     end
 

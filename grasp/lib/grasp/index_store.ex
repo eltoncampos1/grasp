@@ -39,7 +39,9 @@ defmodule Grasp.IndexStore do
   Starts the store.
 
   `:path` defaults to the `:grasp, :index_path` config, and that to `.grasp/index.json`
-  under the directory the host was started from.
+  under `Grasp.Application.home/0` — the directory Grasp was started in, which is also
+  where `Grasp.Comments` keeps its file and what `Grasp.Reindexer` compares a document's
+  project root against, so all three agree on which checkout is the reader's own.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -57,6 +59,7 @@ defmodule Grasp.IndexStore do
   multi-megabyte document happens inside the store's own callbacks, and a call made while
   one is in flight waits for it.
   """
+  @spec path() :: String.t()
   @spec path(timeout()) :: String.t()
   def path(timeout \\ 5_000), do: GenServer.call(__MODULE__, :path, timeout)
 
@@ -74,6 +77,7 @@ defmodule Grasp.IndexStore do
   `timeout` covers decoding the document, which is the slow part and happens in the
   store's callback.
   """
+  @spec reload() :: :ok | {:error, term()}
   @spec reload(timeout()) :: :ok | {:error, term()}
   def reload(timeout \\ 5_000), do: GenServer.call(__MODULE__, :reload, timeout)
 
@@ -174,7 +178,12 @@ defmodule Grasp.IndexStore do
 
   defp schedule_poll, do: Process.send_after(self(), :poll, @poll_ms)
 
+  # Home rather than the working directory: an index written for a worktree still belongs
+  # to the reader's own checkout, and that is the directory the comments file, the sessions
+  # and the reindexer's own idea of "this project" are all anchored to. Before Grasp has
+  # started there is no home, and the working directory is the same thing.
   defp configured_path do
-    Application.get_env(:grasp, :index_path) || Path.join(File.cwd!(), ".grasp/index.json")
+    Application.get_env(:grasp, :index_path) ||
+      Path.join(Grasp.Application.home() || File.cwd!(), ".grasp/index.json")
   end
 end

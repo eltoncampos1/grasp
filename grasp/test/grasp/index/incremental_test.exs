@@ -44,6 +44,23 @@ defmodule Grasp.Index.IncrementalTest do
   end
   '''
 
+  @formatter "lib/sample_app/formatter.ex"
+
+  @formatter_with_whisper """
+  defmodule SampleApp.Formatter do
+    @moduledoc "Formats text."
+
+    @doc "Wraps."
+    def wrap(name), do: "[" <> name <> "]"
+
+    @doc "Shouts."
+    def shout(text), do: String.upcase(text)
+
+    @doc "Whispers, as the base commit remembers it."
+    def whisper(text), do: String.downcase(text)
+  end
+  """
+
   setup %{tmp_dir: tmp_dir} do
     document = @fixture |> File.read!() |> Jason.decode!()
     %{document: put_in(document, ["project", "root"], tmp_dir), root: tmp_dir}
@@ -109,7 +126,7 @@ defmodule Grasp.Index.IncrementalTest do
       assert by_id(Enum.reject(updated["functions"], &(&1["file"] == @greeter))) == before
     end
 
-    test "orders records and modules the way a full build writes them",
+    test "orders records and modules by file and by where in the file they start",
          %{document: document, root: root, events: events} do
       {:ok, updated} = update(document, root, [@greeter], events)
 
@@ -149,6 +166,26 @@ defmodule Grasp.Index.IncrementalTest do
 
       assert updated["entry_points"] == []
       refute updated["entry_points"] == document["entry_points"]
+    end
+
+    test "keeps the records of a file that will not parse",
+         %{document: document, root: root, events: events} do
+      write(root, @greeter, "defmodule SampleApp.Greeter do\n  def oops(\n")
+
+      {result, log} = with_log(fn -> update(document, root, [@greeter], events) end)
+      {:ok, updated} = result
+
+      assert log =~ "could not be read"
+      assert log =~ "left as"
+
+      assert fetch(updated, "SampleApp.Greeter.greet/2") ==
+               fetch(document, "SampleApp.Greeter.greet/2")
+
+      assert fetch(updated, "SampleApp.Greeter.greet_all/1")
+      refute fetch(updated, "SampleApp.Greeter.greet_none/0")
+
+      assert Enum.find(updated["modules"], &(&1["name"] == "SampleApp.Greeter")) ==
+               Enum.find(document["modules"], &(&1["name"] == "SampleApp.Greeter"))
     end
 
     test "drops the records of a file that is no longer there",
@@ -257,6 +294,21 @@ defmodule Grasp.Index.IncrementalTest do
     end
   end
 
+  describe "update/5 over a template whose module will not parse" do
+    test "keeps the template record too", %{document: document, root: root} do
+      write(root, @html, "defmodule SampleAppWeb.GreetHTML do\n  def oops(\n")
+      write(root, @template, "<p>rewritten</p>\n")
+
+      {result, _log} = with_log(fn -> update(document, root, [@template], []) end)
+      {:ok, updated} = result
+
+      assert fetch(updated, "SampleAppWeb.GreetHTML.show/1") ==
+               fetch(document, "SampleAppWeb.GreetHTML.show/1")
+
+      assert fetch(updated, "SampleAppWeb.GreetHTML.badge/1")
+    end
+  end
+
   describe "update/5 against a base commit" do
     test "marks the file it rebuilt against what the base holds", %{
       document: document,
@@ -289,6 +341,21 @@ defmodule Grasp.Index.IncrementalTest do
       assert fetch(updated, "SampleApp.Greeter.greet/2")["change"] == "unchanged"
       assert fetch(updated, "SampleApp.Greeter.greet_none/0")["change"] == "unchanged"
       assert fetch(updated, "SampleApp.Greeter.greet_none/0")["base_source"] == nil
+    end
+
+    test "a function the base removed and this file defines again is not removed",
+         %{document: document, root: root} do
+      write(root, @formatter, @formatter_with_whisper)
+      base = %{root: root, base_sha: String.duplicate("a", 40), paths: ["lib"]}
+
+      {result, _log} = with_log(fn -> update(document, root, [@formatter], [], base) end)
+      {:ok, updated} = result
+      whisper = fetch(updated, "SampleApp.Formatter.whisper/1")
+
+      assert whisper["removed"] == false
+      assert whisper["change"] == "unchanged"
+      assert whisper["base_source"] == nil
+      assert Enum.count(updated["functions"], &(&1["id"] == "SampleApp.Formatter.whisper/1")) == 1
     end
   end
 

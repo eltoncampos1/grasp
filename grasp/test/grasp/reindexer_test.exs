@@ -142,6 +142,23 @@ defmodule Grasp.ReindexerTest do
     assert fetch(index_path, "#{inspect(first)}.run/1")
   end
 
+  test "a batch that never lands stops growing", %{index_path: index_path, root: root} do
+    stop_supervised!(Grasp.Reindexer)
+    start_supervised!({Grasp.Reindexer, index_path: index_path, max_pending: 2})
+    File.write!(index_path, "{ this is not an index")
+
+    log =
+      capture_log(fn ->
+        compile(root, "lib/sample_app/probe_one.ex", "Enum.count(list) + Enum.sum(list)")
+        Process.sleep(600)
+        compile(root, "lib/sample_app/probe_two.ex", "Enum.max(list) + Enum.min(list)")
+        Process.sleep(600)
+      end)
+
+    assert length(String.split(log, "traced calls are waiting")) == 2
+    assert length(:sys.get_state(Process.whereis(Grasp.Reindexer)).pending) == 2
+  end
+
   test "a document with no project root is reported, not raised", %{
     index_path: index_path,
     root: root

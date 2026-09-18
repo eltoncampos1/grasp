@@ -32,6 +32,10 @@ defmodule Mix.Tasks.Grasp.Index do
     * `--build-path` - the build directory to compile in. Defaults to `_build/grasp`.
       Naming the project's own build directory runs the build in this session instead of
       a subprocess.
+
+  `--in-build-path` is internal: it is how the subprocess is told that it is the one that
+  compiles, and passing it by hand builds in whatever build directory the current session
+  resolved.
   """
 
   use Mix.Task

@@ -42,8 +42,11 @@ defmodule Grasp.Index.Builder do
   @type extracted :: %{
           definitions: [Extract.definition()],
           modules: [Extract.module_info()],
-          embeds: [Extract.embed()]
+          embeds: [Extract.embed()],
+          failures: [failure()]
         }
+
+  @type failure :: %{file: String.t(), reason: term()}
 
   @type detected :: %{
           entry_points: [EntryPoints.entry()],
@@ -68,6 +71,7 @@ defmodule Grasp.Index.Builder do
     base = resolve_base(root, paths, Keyword.get(opts, :base))
     events = trace_compile(root, paths)
     extracted = extract(root, source_files(root, paths))
+    report_failures(extracted.failures)
 
     definitions =
       extracted.definitions ++
@@ -117,28 +121,30 @@ defmodule Grasp.Index.Builder do
   Reads and parses each project-relative file under `root` into definitions, modules and
   the template patterns those modules embed.
 
-  A file that cannot be read or parsed is reported and skipped: one unparseable source
-  costs its own definitions and nothing else.
+  A file that cannot be read or parsed contributes nothing and comes back under
+  `:failures`, with the reason. Reporting it is the caller's business: a full build has a
+  terminal to say so on, and an update that runs after every save has a log and a reason of
+  its own to care — a file it could not read is a file whose records it must leave alone.
   """
   @spec extract(String.t(), [String.t()]) :: extracted()
   def extract(root, files) do
     files
-    |> Enum.reduce({[], [], []}, fn relative, {definitions, modules, embeds} ->
+    |> Enum.reduce({[], [], [], []}, fn relative, {definitions, modules, embeds, failures} ->
       case extract_file(Path.join(root, relative), relative) do
         {:ok, extracted} ->
           {[extracted.definitions | definitions], [extracted.modules | modules],
-           [extracted.embeds | embeds]}
+           [extracted.embeds | embeds], failures}
 
         {:error, reason} ->
-          Mix.shell().error("grasp: skipping #{relative}: #{inspect(reason)}")
-          {definitions, modules, embeds}
+          {definitions, modules, embeds, [%{file: relative, reason: reason} | failures]}
       end
     end)
-    |> then(fn {definitions, modules, embeds} ->
+    |> then(fn {definitions, modules, embeds, failures} ->
       %{
         definitions: definitions |> Enum.reverse() |> List.flatten(),
         modules: modules |> Enum.reverse() |> List.flatten(),
-        embeds: embeds |> Enum.reverse() |> List.flatten()
+        embeds: embeds |> Enum.reverse() |> List.flatten(),
+        failures: Enum.reverse(failures)
       }
     end)
   end
@@ -259,6 +265,14 @@ defmodule Grasp.Index.Builder do
       "target" => entry.target,
       "meta" => entry.meta
     }
+
+  defp report_failures(failures) do
+    for %{file: file, reason: reason} <- failures do
+      Mix.shell().error("grasp: skipping #{file}: #{inspect(reason)}")
+    end
+
+    :ok
+  end
 
   defp report_skipped([]), do: :ok
 

@@ -61,6 +61,10 @@ defmodule Grasp.Index.Incremental do
     * A template file added on its own, with no change to the module whose
       `embed_templates` matches it, is not seen: the widening starts from the template
       records the document already holds, and a template nothing has indexed yet has none.
+    * A file that will not parse keeps the records the last build gave it, and the templates
+      it embeds keep theirs. A save caught half-written is the common case, and emptying a
+      file from the canvas until the next compile would be worse than showing it as it last
+      stood.
     * Which files are compiled at all is fixed at the document's `elixirc_paths`.
 
   `mix grasp.index` is the answer to each of those: it is the full build, and it stays.
@@ -91,15 +95,20 @@ defmodule Grasp.Index.Incremental do
   def update(document, root, changed_files, events, base_ctx) do
     project = document["project"] || %{}
     paths = project["elixirc_paths"] || ["lib"]
-    changed = widen(document, changed_files)
+    {changed, owners} = widen(document, changed_files)
 
     sources = changed |> Enum.filter(&source?(root, &1)) |> Enum.sort()
     extracted = Builder.extract(root, sources)
+    report_failures(extracted.failures)
 
     templates = Templates.definitions(root, extracted.embeds, extracted.definitions)
 
     definitions = extracted.definitions ++ templates
-    rebuilt = MapSet.union(changed, MapSet.new(templates, & &1.file))
+
+    rebuilt =
+      changed
+      |> MapSet.difference(unreadable(extracted.failures, owners))
+      |> MapSet.union(MapSet.new(templates, & &1.file))
 
     kept = Enum.reject(document["functions"] || [], &MapSet.member?(rebuilt, &1["file"]))
 
@@ -147,8 +156,10 @@ defmodule Grasp.Index.Incremental do
     end
   end
 
-  # Records land where a full build would have put them rather than at the end, so the
-  # document an update writes diffs against one a full build writes.
+  # An order of the document's own — by file, then by where in the file the record starts —
+  # so an update puts a rebuilt record back where it was instead of appending it, and two
+  # updates of the same project produce the same document. It is not the order a full build
+  # writes, which is every `.ex` record, then the templates, then the removed records.
   defp sort_functions(functions),
     do: Enum.sort_by(functions, &{&1["file"], &1["span"]["start_line"], &1["id"]})
 
@@ -172,14 +183,21 @@ defmodule Grasp.Index.Incremental do
     changed = MapSet.new(changed_files)
     module_files = Map.new(document["modules"] || [], &{&1["name"], &1["file"]})
 
-    Enum.reduce(document["functions"] || [], changed, fn record, acc ->
+    Enum.reduce(document["functions"] || [], {changed, %{}}, fn record, {acc, owners} ->
       embedding = Map.get(module_files, record["module"])
 
       cond do
-        record["kind"] != "template" or is_nil(embedding) -> acc
-        MapSet.member?(changed, record["file"]) -> MapSet.put(acc, embedding)
-        MapSet.member?(changed, embedding) -> MapSet.put(acc, record["file"])
-        true -> acc
+        record["kind"] != "template" or is_nil(embedding) ->
+          {acc, owners}
+
+        MapSet.member?(changed, record["file"]) ->
+          {MapSet.put(acc, embedding), Map.put(owners, record["file"], embedding)}
+
+        MapSet.member?(changed, embedding) ->
+          {MapSet.put(acc, record["file"]), Map.put(owners, record["file"], embedding)}
+
+        true ->
+          {acc, owners}
       end
     end)
   end
@@ -190,6 +208,32 @@ defmodule Grasp.Index.Incremental do
   defp events_for(events, definitions) do
     files = MapSet.new(definitions, & &1.file)
     Enum.filter(events, &MapSet.member?(files, &1.file))
+  end
+
+  defp report_failures([]), do: :ok
+
+  defp report_failures(failures) do
+    for %{file: file, reason: reason} <- failures do
+      Logger.warning(
+        "grasp: #{file} could not be read (#{inspect(reason)}); its records are left as " <>
+          "the last build wrote them"
+      )
+    end
+
+    :ok
+  end
+
+  # A file that would not parse keeps the records it has: dropping them would empty it from
+  # the canvas the moment a save left it half-written, and the next save that compiles is
+  # what rebuilds it. A template goes with the module that embeds it, because its definition
+  # comes from that module's embeds and there are none to be had.
+  defp unreadable(failures, owners) do
+    failed = MapSet.new(failures, & &1.file)
+
+    for {template, owner} <- owners,
+        MapSet.member?(failed, owner),
+        into: failed,
+        do: template
   end
 
   defp report_skipped([]), do: :ok
@@ -266,18 +310,21 @@ defmodule Grasp.Index.Incremental do
 
   # A record the document already classified keeps what it was told; one the file has only
   # just gained has nothing to keep and reads as untouched, which is the reading that
-  # claims the least.
+  # claims the least. `"removed"` is never carried over: these records are definitions the
+  # project holds, and the removed record the id once had described a function it did not.
   defp preserve(records, document) do
     previous = Map.new(document["functions"] || [], &{&1["id"], &1})
 
     Enum.map(records, fn record ->
       kept = Map.get(previous, record.id, %{})
 
-      Map.merge(record, %{
-        change: Map.get(kept, "change") || "unchanged",
-        base_source: Map.get(kept, "base_source"),
-        removed: false
-      })
+      {change, base_source} =
+        case Map.get(kept, "change") do
+          change when change in [nil, "removed"] -> {"unchanged", nil}
+          change -> {change, Map.get(kept, "base_source")}
+        end
+
+      Map.merge(record, %{change: change, base_source: base_source, removed: false})
     end)
   end
 

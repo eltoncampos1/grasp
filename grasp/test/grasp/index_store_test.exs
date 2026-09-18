@@ -107,15 +107,21 @@ defmodule Grasp.IndexStoreTest do
   end
 
   @tag :tmp_dir
-  test "the watched path defaults to the index the build task writes under the project root",
+  test "the watched path defaults to the index the build task writes under Grasp's home",
        %{tmp_dir: tmp_dir} do
     previous = Application.get_env(:grasp, :index_path)
+    home = Grasp.Application.home()
     Application.put_env(:grasp, :index_path, nil)
-    on_exit(fn -> Application.put_env(:grasp, :index_path, previous) end)
+    Application.put_env(:grasp, :home, tmp_dir)
 
-    # A directory of its own, so the assertion does not turn on whether the repository
-    # happens to hold an index of itself.
-    {:ok, state} = File.cd!(tmp_dir, fn -> IndexStore.init([]) end)
+    on_exit(fn ->
+      Application.put_env(:grasp, :index_path, previous)
+      Application.put_env(:grasp, :home, home)
+    end)
+
+    # Home rather than the working directory, so a viewer whose index names a worktree
+    # still watches the file in the checkout Grasp was started in.
+    {:ok, state} = IndexStore.init([])
 
     assert state.path == Path.join(tmp_dir, ".grasp/index.json")
     assert state.mtime == nil
