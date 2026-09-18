@@ -62,6 +62,36 @@ defmodule Grasp.Index.TracerTest do
     assert :ets.whereis(:grasp_index_tracer_events) == :undefined
   end
 
+  test "start/0 keeps a table that is already there" do
+    Grasp.Index.Tracer.start()
+    table = :ets.whereis(:grasp_index_tracer_events)
+    Grasp.Index.Tracer.start()
+
+    assert :ets.whereis(:grasp_index_tracer_events) == table
+    Grasp.Index.Tracer.stop()
+  end
+
+  test "take_events/0 drains the table and is safe without one" do
+    Grasp.Index.Tracer.stop()
+    assert Grasp.Index.Tracer.take_events() == []
+
+    events = Compile.trace(@source, "lib/sample.ex")
+    assert events != []
+
+    Grasp.Index.Tracer.start()
+    :ets.insert(:grasp_index_tracer_events, {:event, hd(events)})
+
+    assert Grasp.Index.Tracer.take_events() == [hd(events)]
+    assert Grasp.Index.Tracer.events() == []
+    Grasp.Index.Tracer.stop()
+  end
+
+  test "trace/2 swallows an event it cannot read rather than failing a compile" do
+    Grasp.Index.Tracer.start()
+    assert Grasp.Index.Tracer.trace({:remote_function, [], Enum, :map, 2}, :not_an_env) == :ok
+    Grasp.Index.Tracer.stop()
+  end
+
   defp find(events, target), do: Enum.find(events, &(&1.target == target))
   defp find_all(events, target), do: Enum.filter(events, &(&1.target == target))
 end

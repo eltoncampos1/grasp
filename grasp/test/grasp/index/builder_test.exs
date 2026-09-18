@@ -4,6 +4,8 @@ defmodule Grasp.Index.BuilderTest do
   @moduletag :integration
 
   @fixture Path.expand("../../fixtures/sample_app", __DIR__)
+  @grasp_build "_build/grasp"
+  @project_beam "_build/dev/lib/sample_app/ebin/Elixir.SampleApp.Greeter.beam"
 
   setup_all do
     out = Path.join(System.tmp_dir!(), "grasp-sample-#{System.unique_integer([:positive])}.json")
@@ -16,6 +18,15 @@ defmodule Grasp.Index.BuilderTest do
       assert status == 0, fetched
     end
 
+    # The project's own build has to be there for the task to seed from it, and its beams
+    # are what the run must leave alone.
+    {compiled, status} =
+      System.cmd("mix", ["compile"], cd: @fixture, env: env, stderr_to_stdout: true)
+
+    assert status == 0, compiled
+    File.rm_rf!(Path.join(@fixture, @grasp_build))
+    untouched = File.stat!(Path.join(@fixture, @project_beam), time: :posix).mtime
+
     {output, status} =
       System.cmd("mix", ["grasp.index", "--out", out],
         cd: @fixture,
@@ -25,7 +36,22 @@ defmodule Grasp.Index.BuilderTest do
 
     assert status == 0, output
     {:ok, index} = Grasp.Index.load(out)
-    %{index: index, output: output}
+    %{index: index, output: output, untouched: untouched}
+  end
+
+  test "compiles in a build directory of its own, seeded from the project's",
+       %{output: output, untouched: untouched} do
+    assert output =~ "Grasp: seeding #{@grasp_build} from _build/dev"
+
+    assert File.regular?(
+             Path.join([
+               @fixture,
+               @grasp_build,
+               "lib/sample_app/ebin/Elixir.SampleApp.Greeter.beam"
+             ])
+           )
+
+    assert File.stat!(Path.join(@fixture, @project_beam), time: :posix).mtime == untouched
   end
 
   test "reports what it wrote", %{output: output} do

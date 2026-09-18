@@ -19,7 +19,9 @@ defmodule Grasp.Application do
 
   The endpoint belongs to the standalone viewer, `mix grasp.viewer`. A host mounts Grasp
   in its own router instead, so `config :grasp, standalone: false` — the default — leaves
-  the host's endpoint the only one serving.
+  the host's endpoint the only one serving. `Grasp.Reindexer` is the mirror image: it
+  follows the compiles a host's code reloader performs, and standalone Grasp has no host
+  compiling anything.
   """
 
   use Application
@@ -46,6 +48,8 @@ defmodule Grasp.Application do
   endpoint.
 
   Without Mix there is nothing to review, so the list is empty and a warning says so.
+  Standalone adds the viewer's endpoint; mounted in a host, `Grasp.Reindexer` takes its
+  place and rides the host's code reloader.
   """
   @spec children(boolean(), boolean()) :: [
           Supervisor.child_spec() | {module(), term()} | module()
@@ -70,7 +74,7 @@ defmodule Grasp.Application do
       {Grasp.MCP.Server, transport: {:streamable_http, start: true}}
     ]
 
-    if standalone?, do: core ++ [GraspWeb.Endpoint], else: core
+    if standalone?, do: core ++ [GraspWeb.Endpoint], else: core ++ [{Grasp.Reindexer, []}]
   end
 
   # The flag is read once, at start; a configuration reload that flipped it afterwards would

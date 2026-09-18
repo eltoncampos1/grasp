@@ -78,17 +78,33 @@ defmodule Grasp.Index.Join do
           hidden_calls: [hidden_call()]
         }
 
-  @doc "Builds the `\"Module.name/arity\"` id; `module` may be an atom or its `inspect/1` form."
-  @spec function_id(module() | String.t(), atom(), non_neg_integer()) :: String.t()
+  @doc """
+  Builds the `\"Module.name/arity\"` id.
+
+  `module` may be an atom or its `inspect/1` form and `name` an atom or its text, so an id
+  can be rebuilt from a record read back out of an index document without turning its
+  strings into atoms.
+  """
+  @spec function_id(module() | String.t(), atom() | String.t(), non_neg_integer()) :: String.t()
   def function_id(module, name, arity) when is_atom(module),
     do: function_id(inspect(module), name, arity)
 
   def function_id(module, name, arity) when is_binary(module), do: "#{module}.#{name}/#{arity}"
 
-  @doc "Turns definitions and tracer events into function records with resolved calls."
-  @spec join([Extract.definition()], [Tracer.event()]) :: [function_record()]
-  def join(definitions, events) do
-    {canonical, indexed} = reachable(definitions)
+  @doc """
+  Turns definitions and tracer events into function records with resolved calls.
+
+  `known_ids` are function ids the index holds beyond `definitions`. A hidden call is kept
+  only when its target is a function the index holds, and a controller's `render` is
+  rewritten only against a template the index holds, so a caller joining one file at a time
+  — `Grasp.Index.Incremental` — passes the ids of the records it is not rebuilding; without
+  them every call reaching out of that file would read as a call into nothing.
+  """
+  @spec join([Extract.definition()], [Tracer.event()], MapSet.t(String.t())) :: [
+          function_record()
+        ]
+  def join(definitions, events, known_ids \\ MapSet.new()) do
+    {canonical, indexed} = reachable(definitions, known_ids)
 
     events_by_definition =
       events
@@ -106,8 +122,8 @@ defmodule Grasp.Index.Join do
 
   # Every arity a definition answers to, paired with the definition it resolves to and
   # collected into the set of ids the index holds, in one pass over the definitions.
-  defp reachable(definitions) do
-    Enum.reduce(definitions, {%{}, MapSet.new()}, fn definition, acc ->
+  defp reachable(definitions, known_ids) do
+    Enum.reduce(definitions, {%{}, known_ids}, fn definition, acc ->
       key = {definition.module, definition.name, definition.arity}
 
       Enum.reduce(definition.arities, acc, fn arity, {canonical, indexed} ->

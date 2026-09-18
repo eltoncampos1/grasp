@@ -64,6 +64,17 @@ defmodule Grasp.Index.EntryPoints do
     end
   end
 
+  @doc """
+  Whether `app`'s modules can be introspected in this VM.
+
+  `detect/2` reports no entry points and no behaviours when they cannot be, which reads
+  exactly like a project that has neither. A caller rewriting part of an index —
+  `Grasp.Index.Incremental` — asks first, so it keeps what the document already holds
+  instead of emptying it.
+  """
+  @spec available?(atom() | nil) :: boolean()
+  def available?(app), do: match?({:ok, _modules}, app_modules(app))
+
   @doc false
   @spec live_route_target(module(), MapSet.t(String.t())) :: String.t() | nil
   def live_route_target(view, indexed) do

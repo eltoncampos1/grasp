@@ -14,13 +14,25 @@ Add it to the project you want to review:
 ## Indexing
 
 ```
-mix grasp.index [--out .grasp/index.json] [--base main]
+mix grasp.index [--out .grasp/index.json] [--base main] [--build-path _build/grasp]
 ```
 
 The task forces a full recompile with a compiler tracer attached, so every call the
 compiler resolves is recorded with the position of the call in your source, then joins
 those calls with the function definitions Sourceror finds and writes one JSON document.
 The canvas and the MCP server read that document; `Grasp.Index` is the reader they use.
+
+The first index is a full build, and that is the only one you have to ask for. Once Grasp
+is running in your dev server it installs the same tracer into the VM's compiler options,
+so every compile your code reloader performs after a save reports its calls too: a third of
+a second after the last one, Grasp re-extracts the files the compile touched, rebuilds
+their records, rewrites the index and the canvas follows. Run `mix grasp.index` again when
+something outside a save changes — a branch switch, a new `--base`, a dependency.
+
+The forced recompile happens in a build directory of Grasp's own, `_build/grasp`, seeded by
+copying the project's current build the first time it is missing, so it neither waits on
+the dev server's build lock nor invalidates the beams the server is running. `--build-path`
+names another one; naming the project's own runs the build in place.
 
 `--base REF` classifies every function against the merge base of `REF` and `HEAD` — added,
 modified, unchanged or removed — and carries the base version of each modified function's

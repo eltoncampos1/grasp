@@ -3,6 +3,9 @@ defmodule Grasp.TestSupport.Compile do
   Compiles a source string with `Grasp.Index.Tracer` attached and returns the events,
   restoring the global compiler options afterwards and purging the compiled modules so
   tests can reuse module names.
+
+  The event table is emptied first, so events are the ones this compile produced even when
+  something else in the VM left a table behind.
   """
 
   @doc "Trace-compiles `source` as if it lived at `file`; returns the tracer events."
@@ -10,6 +13,7 @@ defmodule Grasp.TestSupport.Compile do
   def trace(source, file) do
     previous_tracers = Code.get_compiler_option(:tracers)
     previous_parser = Code.get_compiler_option(:parser_options)
+    Grasp.Index.Tracer.stop()
     Grasp.Index.Tracer.start()
     Code.put_compiler_option(:tracers, [Grasp.Index.Tracer | previous_tracers])
     Code.put_compiler_option(:parser_options, Keyword.put(previous_parser, :columns, true))

@@ -4,7 +4,7 @@ defmodule Mix.Tasks.Grasp.Index do
   @moduledoc """
   Builds the Grasp index for the current Mix project.
 
-      mix grasp.index [--out PATH] [--base REF]
+      mix grasp.index [--out PATH] [--base REF] [--build-path PATH]
 
   Forces a full recompile with a compiler tracer attached, so every call the compiler
   resolves is recorded with its position, then writes the JSON document the Grasp viewer
@@ -14,17 +14,30 @@ defmodule Mix.Tasks.Grasp.Index do
   aborts the task with the compiler's own error. A single file that cannot be read or
   parsed is reported and skipped; only its definitions are missing from the index.
 
+  ## The build directory
+
+  The forced recompile happens in a build directory of Grasp's own, `_build/grasp`, seeded
+  by copying the project's current build the first time it is missing. A dev server holds
+  the build lock on its own directory and reads the beams it compiled; a full rebuild
+  underneath it would either block or invalidate them. Because a build path is fixed when
+  a Mix session starts, the task re-executes itself as a subprocess with `MIX_BUILD_PATH`
+  set, and only that subprocess compiles.
+
   ## Options
 
     * `--out` - where to write the index. Defaults to `.grasp/index.json`.
     * `--base` - a git ref to compare against. Each function is marked added, modified,
       unchanged or removed against the merge base of `REF` and `HEAD`, and the functions
       that commit defines and this one no longer does are written as removed records.
+    * `--build-path` - the build directory to compile in. Defaults to `_build/grasp`.
+      Naming the project's own build directory runs the build in this session instead of
+      a subprocess.
   """
 
   use Mix.Task
 
-  @switches [out: :string, base: :string]
+  @switches [out: :string, base: :string, build_path: :string, in_build_path: :boolean]
+  @default_build_path "_build/grasp"
 
   @impl Mix.Task
   def run(args) do
@@ -34,13 +47,51 @@ defmodule Mix.Tasks.Grasp.Index do
       Mix.raise("grasp.index: unknown options #{inspect(Enum.map(invalid, &elem(&1, 0)))}")
     end
 
-    {:ok, summary} = Grasp.Index.Builder.run(opts)
+    build_path = Path.expand(Keyword.get(opts, :build_path, @default_build_path))
+
+    if opts[:in_build_path] == true or build_path == Mix.Project.build_path() do
+      build(opts)
+    else
+      seed(build_path)
+      delegate(args, build_path)
+    end
+  end
+
+  defp build(opts) do
+    {:ok, summary} = Grasp.Index.Builder.run(Keyword.take(opts, [:out, :base]))
 
     Mix.shell().info(
       "Grasp index written to #{summary.path} " <>
         "(#{summary.functions} functions, #{summary.calls} calls, #{summary.hidden_calls} hidden)" <>
         changed_against(opts[:base], summary)
     )
+  end
+
+  # A build directory of its own starts as a copy of the one the project already has, so
+  # the first run compiles the project rather than every dependency it carries.
+  defp seed(build_path) do
+    source = Mix.Project.build_path()
+
+    if not File.dir?(build_path) and File.dir?(source) do
+      Mix.shell().info(
+        "Grasp: seeding #{Path.relative_to_cwd(build_path)} from #{Path.relative_to_cwd(source)}"
+      )
+
+      File.mkdir_p!(Path.dirname(build_path))
+      File.cp_r!(source, build_path)
+    end
+  end
+
+  # `MIX_BUILD_PATH` is read when a Mix session resolves its build path, which this one
+  # already did: the compile has to happen in a session started with it set.
+  defp delegate(args, build_path) do
+    {_output, status} =
+      System.cmd("mix", ["grasp.index", "--in-build-path" | args],
+        env: [{"MIX_BUILD_PATH", build_path}],
+        into: IO.stream()
+      )
+
+    if status != 0, do: exit({:shutdown, status})
   end
 
   defp changed_against(nil, _summary), do: ""

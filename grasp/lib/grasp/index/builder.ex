@@ -22,6 +22,11 @@ defmodule Grasp.Index.Builder do
   reader can see what a deleted function was, but they are not definitions this project
   holds: entry-point detection and the set of ids a call can resolve to see only the
   functions the compile produced.
+
+  `run/1` is the full build, and every stage it walks — `source_files/2`, `extract/2`,
+  `Grasp.Index.Join.join/3`, `entry_points/2`, `classify/3`, `document/5` — is a function
+  of its own, because `Grasp.Index.Incremental` runs the same stages over the handful of
+  files a save touched and has to produce records of exactly the same shape.
   """
 
   alias Grasp.Index.{BaseRef, Changes, EntryPoints, Extract, Join, Templates, Tracer}
@@ -32,6 +37,17 @@ defmodule Grasp.Index.Builder do
           calls: non_neg_integer(),
           hidden_calls: non_neg_integer(),
           changed: non_neg_integer()
+        }
+
+  @type extracted :: %{
+          definitions: [Extract.definition()],
+          modules: [Extract.module_info()],
+          embeds: [Extract.embed()]
+        }
+
+  @type detected :: %{
+          entry_points: [EntryPoints.entry()],
+          behaviours: %{String.t() => [String.t()]}
         }
 
   @doc """
@@ -50,32 +66,23 @@ defmodule Grasp.Index.Builder do
 
     base = resolve_base(root, paths, Keyword.get(opts, :base))
     events = trace_compile(root, paths)
-    {definitions, modules, embeds} = extract_all(root, paths)
-    definitions = definitions ++ Templates.definitions(root, embeds, definitions)
+    extracted = extract(root, source_files(root, paths))
+
+    definitions =
+      extracted.definitions ++
+        Templates.definitions(root, extracted.embeds, extracted.definitions)
+
     functions = Join.join(definitions, events)
+    records = classify(functions, base, paths)
 
-    records =
-      if base, do: Changes.classify(functions, compared_sources(base), paths), else: functions
-
-    indexed =
-      MapSet.new(for f <- functions, a <- f.arities, do: Join.function_id(f.module, f.name, a))
-
-    %{entry_points: entry_points, behaviours: behaviours} =
-      EntryPoints.detect(config[:app], indexed)
-
-    document = %{
-      "version" => 1,
-      "generated_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
-      "project" => %{"app" => to_string(config[:app]), "root" => root, "elixirc_paths" => paths},
-      "git" => git_info(root, base),
-      "modules" => Enum.map(modules, &module_json(&1, behaviours)),
-      "functions" => Enum.map(records, &function_json/1),
-      "entry_points" =>
-        Enum.map(
-          entry_points,
-          &%{"kind" => &1.kind, "label" => &1.label, "target" => &1.target, "meta" => &1.meta}
-        )
-    }
+    document =
+      document(
+        records,
+        extracted.modules,
+        entry_points(config[:app], functions),
+        %{"app" => to_string(config[:app]), "root" => root, "elixirc_paths" => paths},
+        git_info(root, base)
+      )
 
     write!(out, Jason.encode!(document, pretty: true))
 
@@ -89,81 +96,114 @@ defmodule Grasp.Index.Builder do
      }}
   end
 
-  # Every file the diff touched, under the contents the base had for it. A file the base
-  # did not have maps to an empty string rather than being left out: without an entry the
-  # classifier cannot tell a file this branch added from one it never touched, and the new
-  # file's functions would read as untouched instead of added.
-  defp compared_sources(base),
-    do: Map.new(base.files, &{&1, Map.get(base.base_sources, &1, "")})
+  @doc """
+  The project-relative `.ex` files under `paths`, sorted.
 
-  defp resolve_base(_root, _paths, nil), do: nil
-
-  defp resolve_base(root, paths, ref) do
-    case BaseRef.resolve(root, ref, paths: paths) do
-      {:ok, base} -> base
-      {:error, message} -> Mix.raise("grasp.index: #{message}")
-    end
-  end
-
-  defp trace_compile(root, paths) do
-    previous_tracers = Code.get_compiler_option(:tracers)
-    previous_parser = Code.get_compiler_option(:parser_options)
-    Tracer.start()
-    Code.put_compiler_option(:tracers, [Tracer | previous_tracers])
-    Code.put_compiler_option(:parser_options, Keyword.put(previous_parser, :columns, true))
-
-    try do
-      Mix.Task.rerun("compile", ["--force"])
-      roots = Enum.map(paths, &(Path.expand(&1, root) <> "/"))
-
-      Tracer.events()
-      |> Enum.map(&%{&1 | file: Path.expand(&1.file, root)})
-      |> Enum.filter(fn event -> Enum.any?(roots, &String.starts_with?(event.file, &1)) end)
-      |> Enum.map(&%{&1 | file: Path.relative_to(&1.file, root)})
-    after
-      Code.put_compiler_option(:tracers, previous_tracers)
-      Code.put_compiler_option(:parser_options, previous_parser)
-      Tracer.stop()
-    end
-  end
-
-  defp extract_all(root, paths) do
+  Sorted because the order files are read in is the order records land in the document,
+  and a build that shuffles its output for no reason is a build whose diffs say nothing.
+  """
+  @spec source_files(String.t(), [String.t()]) :: [String.t()]
+  def source_files(root, paths) do
     paths
     |> Enum.flat_map(&Path.wildcard(Path.join([root, &1, "**", "*.ex"])))
+    |> Enum.map(&Path.relative_to(&1, root))
     |> Enum.sort()
-    |> Enum.reduce({[], [], []}, fn file, {definitions, modules, embeds} ->
-      relative = Path.relative_to(file, root)
+  end
 
-      case extract_file(file, relative) do
+  @doc """
+  Reads and parses each project-relative file under `root` into definitions, modules and
+  the template patterns those modules embed.
+
+  A file that cannot be read or parsed is reported and skipped: one unparseable source
+  costs its own definitions and nothing else.
+  """
+  @spec extract(String.t(), [String.t()]) :: extracted()
+  def extract(root, files) do
+    files
+    |> Enum.reduce({[], [], []}, fn relative, {definitions, modules, embeds} ->
+      case extract_file(Path.join(root, relative), relative) do
         {:ok, extracted} ->
-          {definitions ++ extracted.definitions, modules ++ extracted.modules,
-           embeds ++ extracted.embeds}
+          {[extracted.definitions | definitions], [extracted.modules | modules],
+           [extracted.embeds | embeds]}
 
         {:error, reason} ->
           Mix.shell().error("grasp: skipping #{relative}: #{inspect(reason)}")
           {definitions, modules, embeds}
       end
     end)
+    |> then(fn {definitions, modules, embeds} ->
+      %{
+        definitions: definitions |> Enum.reverse() |> List.flatten(),
+        modules: modules |> Enum.reverse() |> List.flatten(),
+        embeds: embeds |> Enum.reverse() |> List.flatten()
+      }
+    end)
   end
 
-  defp extract_file(file, relative) do
-    case File.read(file) do
-      {:ok, source} -> Extract.extract(source, relative)
-      {:error, reason} -> {:error, reason}
-    end
+  @doc """
+  Entry points and per-module behaviours for `app`, reachable from `records`.
+
+  Only the functions the project still defines can be reached: a removed record describes
+  a function the base commit had, and an entry point pointing at one would lead nowhere.
+  """
+  @spec entry_points(atom() | nil, [Join.function_record()]) :: detected()
+  def entry_points(app, records) do
+    indexed =
+      for record <- records,
+          not Map.get(record, :removed, false),
+          arity <- record.arities,
+          into: MapSet.new(),
+          do: Join.function_id(record.module, record.name, arity)
+
+    EntryPoints.detect(app, indexed)
   end
 
-  defp write!(out, json) do
-    with :ok <- File.mkdir_p(Path.dirname(out)),
-         :ok <- File.write(out, json) do
-      :ok
-    else
-      {:error, reason} ->
-        Mix.raise("grasp.index: cannot write #{out}: #{:file.format_error(reason)}")
-    end
+  @doc """
+  Classifies `records` against `base`, the result of `Grasp.Index.BaseRef.resolve/3`.
+
+  Without a base every record is left as it came: the caller writes a document that says
+  nothing about a branch, which is what an index built with no `--base` is. `paths` are
+  the project's compile paths, so a base source outside them cannot invent removed
+  functions.
+  """
+  @spec classify([Join.function_record()], BaseRef.resolved() | nil, [String.t()]) :: [
+          Changes.classified_record()
+        ]
+  def classify(records, nil, _paths), do: records
+
+  def classify(records, base, paths),
+    do: Changes.classify(records, compared_sources(base), paths)
+
+  @doc """
+  Assembles the JSON document, with the string keys `Grasp.Index.load/1` reads.
+
+  `project` and `git` are passed whole so a caller rewriting part of an index — the
+  incremental update after a save — keeps the blocks the full build wrote rather than
+  recomputing facts that did not change.
+  """
+  @spec document(
+          [Changes.classified_record()],
+          [Extract.module_info()],
+          detected(),
+          map(),
+          map() | nil
+        ) ::
+          map()
+  def document(records, modules, detected, project, git) do
+    %{
+      "version" => 1,
+      "generated_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
+      "project" => project,
+      "git" => git,
+      "modules" => Enum.map(modules, &module_json(&1, detected.behaviours)),
+      "functions" => Enum.map(records, &function_json/1),
+      "entry_points" => Enum.map(detected.entry_points, &entry_point_json/1)
+    }
   end
 
-  defp module_json(module, behaviours) do
+  @doc "The JSON shape of one module, carrying the behaviours detection found for it."
+  @spec module_json(Extract.module_info(), %{String.t() => [String.t()]}) :: map()
+  def module_json(module, behaviours) do
     %{
       "name" => module.name,
       "file" => module.file,
@@ -172,7 +212,9 @@ defmodule Grasp.Index.Builder do
     }
   end
 
-  defp function_json(record) do
+  @doc "The JSON shape of one function record, classified or not."
+  @spec function_json(Join.function_record() | Changes.classified_record()) :: map()
+  def function_json(record) do
     %{
       "id" => record.id,
       "module" => record.module,
@@ -205,7 +247,9 @@ defmodule Grasp.Index.Builder do
     }
   end
 
-  defp git_info(root, base) do
+  @doc "Git metadata for `root`, or `nil` outside a repository. `base` may be `nil`."
+  @spec git_info(String.t(), BaseRef.resolved() | nil) :: map() | nil
+  def git_info(root, base) do
     with {head, 0} <- git(["rev-parse", "HEAD"], root),
          {branch, 0} <- git(["rev-parse", "--abbrev-ref", "HEAD"], root) do
       %{
@@ -216,6 +260,70 @@ defmodule Grasp.Index.Builder do
       }
     else
       _ -> nil
+    end
+  end
+
+  defp entry_point_json(entry),
+    do: %{
+      "kind" => entry.kind,
+      "label" => entry.label,
+      "target" => entry.target,
+      "meta" => entry.meta
+    }
+
+  # Every file the diff touched, under the contents the base had for it. A file the base
+  # did not have maps to an empty string rather than being left out: without an entry the
+  # classifier cannot tell a file this branch added from one it never touched, and the new
+  # file's functions would read as untouched instead of added.
+  defp compared_sources(base),
+    do: Map.new(base.files, &{&1, Map.get(base.base_sources, &1, "")})
+
+  defp resolve_base(_root, _paths, nil), do: nil
+
+  defp resolve_base(root, paths, ref) do
+    case BaseRef.resolve(root, ref, paths: paths) do
+      {:ok, base} -> base
+      {:error, message} -> Mix.raise("grasp.index: #{message}")
+    end
+  end
+
+  defp trace_compile(root, paths) do
+    previous_tracers = Code.get_compiler_option(:tracers)
+    previous_parser = Code.get_compiler_option(:parser_options)
+    Tracer.stop()
+    Tracer.start()
+    Code.put_compiler_option(:tracers, [Tracer | previous_tracers])
+    Code.put_compiler_option(:parser_options, Keyword.put(previous_parser, :columns, true))
+
+    try do
+      Mix.Task.rerun("compile", ["--force"])
+      roots = Enum.map(paths, &(Path.expand(&1, root) <> "/"))
+
+      Tracer.events()
+      |> Enum.map(&%{&1 | file: Path.expand(&1.file, root)})
+      |> Enum.filter(fn event -> Enum.any?(roots, &String.starts_with?(event.file, &1)) end)
+      |> Enum.map(&%{&1 | file: Path.relative_to(&1.file, root)})
+    after
+      Code.put_compiler_option(:tracers, previous_tracers)
+      Code.put_compiler_option(:parser_options, previous_parser)
+      Tracer.stop()
+    end
+  end
+
+  defp extract_file(file, relative) do
+    case File.read(file) do
+      {:ok, source} -> Extract.extract(source, relative)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp write!(out, json) do
+    with :ok <- File.mkdir_p(Path.dirname(out)),
+         :ok <- File.write(out, json) do
+      :ok
+    else
+      {:error, reason} ->
+        Mix.raise("grasp.index: cannot write #{out}: #{:file.format_error(reason)}")
     end
   end
 
