@@ -293,6 +293,11 @@ tracer event whose caller has no definition record is dropped entirely.
 
 ## Part 2 — `grasp` viewer
 
+> Superseded in part by [Part 4](#part-4--in-app-grasp): the viewer is mounted inside the
+> reviewed application's endpoint; the launcher, `~/.grasp/viewer` and port 4040 are gone,
+> and `mix grasp.viewer` serves only Grasp's own development. The card, canvas, session,
+> comment and highlighting sections below still describe the viewer as it is.
+
 ```
 cd my_app && mix grasp.serve [--port 4040] [--editor vscode]
 ```
@@ -722,6 +727,10 @@ badge and file.
 
 ### Assets
 
+> Superseded by [Part 4](#part-4--in-app-grasp) §Mounting: `GraspWeb.Assets` serves the
+> bundle together with the host's own Phoenix and LiveView JavaScript.
+
+
 esbuild bundles the three hooks (palette, keys, canvas). Styling is one hand-written CSS
 file of custom properties over the GitHub Light palette, plus the Lumis theme stylesheet
 inlined in the root layout. No Tailwind. `lazy_html` is a runtime dependency, not a
@@ -904,12 +913,16 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   resolved, and the stamp is per thread, not per pull request — a thread that landed on the
   wrong pull request cannot be published again to the right one. Resolve or delete threads
   from an earlier review before publishing the next.
-- **The launcher needs git and the network on first run.** `mix grasp.serve` clones the
+- **The launcher needs git and the network on first run.** Closed in milestone 7: the
+  launcher is gone. `mix grasp.serve` clones the
   viewer and downloads its dependencies and esbuild once; after that it runs offline. The
   checkout is whatever branch the clone left it on and is never updated by the launcher —
   `git pull` in `~/.grasp/viewer` by hand.
 
 ## Part 3 — MCP
+
+> Superseded in part by [Part 4](#part-4--in-app-grasp): in a host the transport is served by
+> `Grasp.Plug` at `<mount>/mcp` on the host's endpoint. The tools below are unchanged.
 
 Served by `anubis_mcp` at `/mcp` over Streamable HTTP, on the same endpoint as the viewer.
 Every session tool takes a `session` name (default `"default"`) and creates that session on
@@ -1262,6 +1275,12 @@ request switches the working tree" is closed.
 - **Two prefixes, no check.** `grasp "/grasp"` in the router and `plug Grasp.Plug, at: "/grasp"`
   in the endpoint must name the same mount; nothing verifies it, and a host that changes one
   gets a partly unguarded page or an agent pointed at a 404.
+- **The loopback guard is a browser defence.** `GraspWeb.Plugs.LocalOnly` checks `Host`
+  and `Origin`, which stops a page from another origin reaching Grasp through DNS
+  rebinding; it does not stop a peer that sends `Host: 127.0.0.1` itself. A host whose dev
+  server binds every interface (a container, WSL, a `0.0.0.0` bind) exposes every indexed
+  function's source and, in edit mode, an agent that writes files, to anyone on that
+  network. The bind address is the host's choice; Grasp inherits it.
 - **Worktrees are not cleaned up.** `.grasp/worktrees/` grows one checkout and one seeded
   build per pull request until `mix grasp.pr N --close`, which discards uncommitted edits.
 

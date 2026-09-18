@@ -284,7 +284,7 @@ human is looking at. Register it with Claude Code:
 claude mcp add --transport http grasp http://localhost:4000/grasp/mcp
 ```
 
-Only requests addressed to loopback are served: the endpoint checks the `Host` it was
+Requests under the mount are answered only when addressed to loopback: `Grasp.Plug` checks the `Host` it was
 asked for and the `Origin` the browser declares, so a page on someone else's domain cannot
 reach it even if its DNS points at `127.0.0.1`.
 
