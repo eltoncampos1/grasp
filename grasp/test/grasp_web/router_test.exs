@@ -16,12 +16,11 @@ defmodule GraspWeb.RouterTest do
   end
 
   describe "grasp/2" do
-    test "mounts the page, its assets and the MCP endpoint under the prefix" do
+    test "mounts the page and its assets under the prefix, and no MCP route" do
       assert routes(GraspWeb.MountedRouter) == [
                {:get, "/tools/grasp"},
                {:get, "/tools/grasp/s/:name"},
-               {:get, "/tools/grasp/assets/:asset"},
-               {:*, "/tools/grasp/mcp"}
+               {:get, "/tools/grasp/assets/:asset"}
              ]
     end
 
@@ -29,11 +28,14 @@ defmodule GraspWeb.RouterTest do
       assert %{name: :grasp_mounted, extra: extra} =
                live_session(GraspWeb.MountedRouter, "/tools/grasp/s/:name")
 
-      assert extra.session == {Grasp.Router, :__session__, ["/tools/grasp"]}
+      assert extra.session ==
+               {Grasp.Router, :__session__, ["/tools/grasp", "/tools/grasp/mcp"]}
+
       assert extra.root_layout == {GraspWeb.Layouts, :root}
 
-      assert Grasp.Router.__session__(build_conn(), "/tools/grasp") == %{
-               "grasp_path" => "/tools/grasp"
+      assert Grasp.Router.__session__(build_conn(), "/tools/grasp", "/tools/grasp/mcp") == %{
+               "grasp_path" => "/tools/grasp",
+               "mcp_path" => "/tools/grasp/mcp"
              }
     end
 
@@ -47,33 +49,11 @@ defmodule GraspWeb.RouterTest do
       assert Sidebar.session_path("", "foo") == "/s/foo"
     end
 
-    test "the MCP endpoint answers a POST carrying no CSRF token", %{conn: conn} do
-      body = %{
-        "jsonrpc" => "2.0",
-        "id" => 1,
-        "method" => "initialize",
-        "params" => %{
-          "protocolVersion" => "2025-06-18",
-          "capabilities" => %{},
-          "clientInfo" => %{"name" => "router-test", "version" => "0"}
-        }
-      }
-
-      conn =
-        conn
-        |> put_req_header("content-type", "application/json")
-        |> put_req_header("accept", "application/json, text/event-stream")
-        |> post("/mcp", Jason.encode!(body))
-
-      assert response(conn, 200) =~ ~s("serverInfo")
-    end
-
     test "the standalone router mounts the same macro at the root", %{conn: conn} do
       assert routes(GraspWeb.Router) == [
                {:get, "/"},
                {:get, "/s/:name"},
-               {:get, "/assets/:asset"},
-               {:*, "/mcp"}
+               {:get, "/assets/:asset"}
              ]
 
       html = conn |> get("/") |> html_response(200)

@@ -4,8 +4,9 @@ defmodule Grasp.Router do
 
   Grasp runs inside the application it reviews rather than beside it, so it has no endpoint
   of its own to reach: the host owns the port, the session and the live socket, and Grasp
-  contributes routes. `grasp/2` is the whole contribution — the review page, the two static
-  files it loads and the MCP endpoint agents connect to, all under one prefix.
+  contributes routes. `grasp/2` is the whole contribution — the review page and the two
+  static files it loads, under one prefix. The MCP endpoint agents connect to is
+  `Grasp.Plug`, in the host's endpoint.
 
   The prefix is resolved at compile time and travels three ways, because three different
   readers need it: the route's `:private` carries it to the plug pipeline (the root layout
@@ -14,7 +15,7 @@ defmodule Grasp.Router do
   """
 
   @doc """
-  Mounts the Grasp review page, its assets and its MCP endpoint under `path`.
+  Mounts the Grasp review page and its assets under `path`.
 
   Call it from a scope that runs the host's browser pipeline:
 
@@ -24,6 +25,11 @@ defmodule Grasp.Router do
         pipe_through :browser
         grasp "/grasp"
       end
+
+  The MCP endpoint is not among these routes: it is `Grasp.Plug`, added to the host's
+  endpoint. A browser pipeline declares `plug :accepts, ["html"]`, an MCP client asks for
+  `application/json, text/event-stream`, and no route option can exempt a route from the
+  pipeline that fronts it — so the transport is served before any pipeline runs instead.
 
   ## Options
 
@@ -36,6 +42,10 @@ defmodule Grasp.Router do
 
     * `:on_mount` — a `Phoenix.LiveView.on_mount/1` callback, or a list of them, added to the
       live session. Defaults to none.
+
+    * `:mcp_path` — where `Grasp.Plug` was mounted, `path` with `mcp` under it by default. It is the
+      address the chat panel hands the agent, so a host that gives the plug an `:at` of its
+      own says so here, and the two stay one change apart.
   """
   @spec grasp(String.t(), keyword()) :: Macro.t()
   defmacro grasp(path, opts \\ []) do
@@ -49,7 +59,7 @@ defmodule Grasp.Router do
       {session_name, session_opts, route_opts} = Grasp.Router.__options__(prefix, opts)
 
       scope path, alias: false, as: false do
-        import Phoenix.Router, only: [get: 4, forward: 4]
+        import Phoenix.Router, only: [get: 4]
         import Phoenix.LiveView.Router, only: [live: 4, live_session: 3]
 
         live_session session_name, session_opts do
@@ -58,12 +68,6 @@ defmodule Grasp.Router do
         end
 
         get "/assets/:asset", GraspWeb.Assets, :asset, route_opts
-
-        # An MCP client carries neither a session nor a CSRF token, and the host's browser
-        # pipeline rejects a POST without one. Route `:private` is merged into the connection
-        # before the pipeline runs, so the exemption is in place by the time it is read.
-        forward "/mcp", GraspWeb.Plugs.LocalOnlyMcp, [server: Grasp.MCP.Server],
-          private: %{plug_skip_csrf_protection: true}
       end
     end
   end
@@ -79,10 +83,11 @@ defmodule Grasp.Router do
   def __options__(prefix, opts) do
     session_name = Keyword.get(opts, :live_session_name, :grasp)
     live_socket_path = Keyword.get(opts, :live_socket_path, "/live")
+    mcp_path = Keyword.get(opts, :mcp_path, prefix <> "/mcp")
     on_mount = opts |> Keyword.get(:on_mount) |> List.wrap()
 
     session_opts = [
-      session: {__MODULE__, :__session__, [prefix]},
+      session: {__MODULE__, :__session__, [prefix, mcp_path]},
       root_layout: {GraspWeb.Layouts, :root},
       layout: false,
       on_mount: on_mount
@@ -94,8 +99,9 @@ defmodule Grasp.Router do
   end
 
   @doc false
-  @spec __session__(Plug.Conn.t(), String.t()) :: %{String.t() => String.t()}
-  def __session__(%Plug.Conn{}, prefix), do: %{"grasp_path" => prefix}
+  @spec __session__(Plug.Conn.t(), String.t(), String.t()) :: %{String.t() => String.t()}
+  def __session__(%Plug.Conn{}, prefix, mcp_path),
+    do: %{"grasp_path" => prefix, "mcp_path" => mcp_path}
 
   defp expand_alias({:__aliases__, _meta, _parts} = alias, env),
     do: Macro.expand(alias, %{env | function: {:grasp, 2}})

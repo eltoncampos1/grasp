@@ -47,23 +47,32 @@ Then `mix deps.get`, and in the router:
 ```elixir
 import Grasp.Router
 
-pipeline :grasp_browser do
-  plug :fetch_session
-  plug :protect_from_forgery
-  plug :put_secure_browser_headers
-end
-
 scope "/" do
-  pipe_through :grasp_browser
+  pipe_through :browser
   grasp "/grasp"
 end
 ```
 
-Your own `:browser` pipeline works too, as long as it does not carry `plug :accepts,
-["html"]`: the MCP endpoint sits under the same prefix and speaks JSON and server-sent
-events, and a pipeline that admits HTML alone refuses it. The session is what Grasp does
-need — its LiveView connects over your endpoint's live socket. Declare that socket
-somewhere other than `/live` and the mount has to be told:
+and in the endpoint, beside the code reloader:
+
+```elixir
+if code_reloading? do
+  plug Grasp.Plug
+end
+```
+
+That plug is the MCP endpoint, at `/grasp/mcp`. It sits in front of the router because a
+browser pipeline declares `plug :accepts, ["html"]` and an MCP client asks for
+`application/json, text/event-stream`, which no route can make it accept. Move one and tell
+the other:
+
+```elixir
+plug Grasp.Plug, at: "/tools/grasp/mcp"
+grasp "/tools/grasp", mcp_path: "/tools/grasp/mcp"
+```
+
+Grasp's LiveView connects over your endpoint's live socket. Declare that socket somewhere
+other than `/live` and the mount has to be told:
 
 ```elixir
 grasp "/grasp", live_socket_path: "/socket/live"
@@ -239,8 +248,8 @@ In the viewer:
 
 ## MCP
 
-Grasp serves an MCP endpoint at `mcp` under its mount path, on the same port as the page,
-over Streamable HTTP. An agent connected to it reads the index and arranges the cards the
+`Grasp.Plug` serves an MCP endpoint at `/grasp/mcp`, on the same port as the page, over
+Streamable HTTP. An agent connected to it reads the index and arranges the cards the
 human is looking at. Register it with Claude Code:
 
 ```

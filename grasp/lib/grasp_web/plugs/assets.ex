@@ -30,6 +30,10 @@ defmodule GraspWeb.Assets do
   @external_resource js_path
   @external_resource css_path
 
+  for path <- [js_path, css_path], not File.regular?(path) do
+    raise "Grasp's bundle is missing: #{path}. Run `mix assets.build` in grasp/ to write it."
+  end
+
   # A concatenated file inherits the last `sourceMappingURL` it contains, which would point
   # the browser at a map describing only part of it.
   @js Enum.map_join(vendor_paths ++ [js_path], "\n", fn path ->

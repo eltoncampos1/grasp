@@ -64,7 +64,7 @@ defmodule Grasp.MixProject do
     [
       licenses: ["Apache-2.0"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib priv/static mix.exs README.md LICENSE)
+      files: ~w(lib priv/static mix.exs .formatter.exs README.md LICENSE)
     ]
   end
 end

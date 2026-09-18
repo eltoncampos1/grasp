@@ -15,6 +15,12 @@ defmodule GraspWeb.ReviewLive do
   tab's own is where a comment is being written (`composing`), which resolved threads have
   been opened back up (`expanded_threads`) and which folds of a changes-only diff have been
   opened (`expanded_folds`) — each is one reader mid-gesture.
+
+  The page is mounted by `Grasp.Router.grasp/2` and depends on the two session keys that
+  macro's live session provides: `"grasp_path"`, the prefix the host mounted Grasp at, from
+  which every link and asset URL is built, and `"mcp_path"`, where the agent reaches
+  `Grasp.Plug`. Both are required — a default would render a page whose links quietly point
+  somewhere else — so this LiveView is mountable only through the macro.
   """
 
   use GraspWeb, :live_view
@@ -34,11 +40,12 @@ defmodule GraspWeb.ReviewLive do
   @impl true
   def mount(params, session, socket) do
     name = Map.get(params, "name", "default")
-    # Grasp answers under whatever prefix the host's router mounted it at, so every link the
-    # page writes is built from it. The live session carries it, which is the one channel
-    # open to both the disconnected render and the connected mount.
+    # The live session is the one channel open to both the disconnected render and the
+    # connected mount. The agent reaches Grasp over HTTP like any other MCP client, so the
+    # scheme, host and port it is given are the host endpoint's own.
     prefix = Map.fetch!(session, "grasp_path")
-    socket = assign(socket, grasp_path: prefix, mcp_url: mcp_url(socket, prefix))
+    mcp_url = socket.endpoint.url() <> Map.fetch!(session, "mcp_path")
+    socket = assign(socket, grasp_path: prefix, mcp_url: mcp_url)
 
     # A name that is not a session name names a file the viewer would have to write, so the
     # tab is sent to the default session rather than opening a session under it.
@@ -48,11 +55,6 @@ defmodule GraspWeb.ReviewLive do
   end
 
   defp default_path(socket), do: session_path(socket.assigns.grasp_path, "default")
-
-  # The agent reaches Grasp over HTTP like any other MCP client, so it needs the address the
-  # host answers on rather than the viewer's own: the endpoint is the host's, and the prefix
-  # is where the host mounted Grasp under it.
-  defp mcp_url(socket, prefix), do: socket.endpoint.url() <> prefix <> "/mcp"
 
   defp mount_session(socket, name) do
     :ok = Session.ensure(name)

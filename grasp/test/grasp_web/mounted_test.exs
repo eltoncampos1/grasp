@@ -2,6 +2,7 @@ defmodule GraspWeb.MountedTest do
   use ExUnit.Case, async: true
 
   import Phoenix.ConnTest
+  import Plug.Conn
   import Phoenix.LiveViewTest
 
   alias GraspWeb.Assets
@@ -25,6 +26,29 @@ defmodule GraspWeb.MountedTest do
     conn = get(conn, "/tools/grasp/assets/grasp.js")
 
     assert String.starts_with?(response(conn, 200), "var Phoenix =")
+  end
+
+  # The router's browser pipeline declares `plug :accepts, ["html"]`, which would refuse this
+  # request: reaching the transport at all is the point of serving it from the endpoint.
+  test "the MCP endpoint answers under the prefix, in front of the router", %{conn: conn} do
+    body = %{
+      "jsonrpc" => "2.0",
+      "id" => 1,
+      "method" => "initialize",
+      "params" => %{
+        "protocolVersion" => "2025-06-18",
+        "capabilities" => %{},
+        "clientInfo" => %{"name" => "mounted-test", "version" => "0"}
+      }
+    }
+
+    conn =
+      %{conn | host: "127.0.0.1"}
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("accept", "application/json, text/event-stream")
+      |> post("/tools/grasp/mcp", Jason.encode!(body))
+
+    assert response(conn, 200) =~ ~s("serverInfo")
   end
 
   test "session links are built under the prefix", %{conn: conn} do

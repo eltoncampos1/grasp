@@ -43,8 +43,8 @@ root under "Index JSON".
 
 ## Serving
 
-Grasp mounts in the host application's router and runs on its dev server; see the root
-README's Quick start. It starts no endpoint of its own there; `config :grasp, standalone: true`
+Grasp mounts in the host application's router, with its MCP endpoint as a plug in the host's
+own endpoint, and runs on the host's dev server; see the root README's Quick start. It starts no endpoint of its own there; `config :grasp, standalone: true`
 is what gives it one, and `mix grasp.viewer` sets that itself.
 
 ```

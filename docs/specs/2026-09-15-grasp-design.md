@@ -1114,29 +1114,30 @@ the test environment set; embedded in a host it starts no endpoint of its own.
 
 ### Mounting
 
-The host adds Grasp to its router inside a scope that runs a browser pipeline — its own, or
-one written for Grasp:
+The host adds Grasp to its router inside a scope that runs its `:browser` pipeline, and adds
+one plug to its endpoint:
 
 ```elixir
 import Grasp.Router
 
-pipeline :grasp_browser do
-  plug :fetch_session
-  plug :protect_from_forgery
-  plug :put_secure_browser_headers
-end
-
 scope "/" do
-  pipe_through :grasp_browser
+  pipe_through :browser
   grasp "/grasp"
 end
 ```
 
-The pipeline must fetch the session, since the LiveView connects over the host's live socket,
-and must not restrict the accepted formats to HTML: `plug :accepts, ["html"]` refuses the MCP
-endpoint under the same prefix before the route is reached, and no route option can exempt it.
-Forgery protection needs no such care — the MCP route declares itself exempt through the route
-`:private` the router merges before the pipeline runs.
+```elixir
+if code_reloading? do
+  plug Grasp.Plug
+end
+```
+
+The MCP endpoint is that plug rather than a route, because a browser pipeline declares
+`plug :accepts, ["html"]`, an MCP client asks for `application/json, text/event-stream`, and
+no route option exempts a route from the pipeline that fronts it. Served from the endpoint it
+is reached before any pipeline runs, and the host's browser scope stays as it was. The plug
+takes `:at` (default `/grasp/mcp`) and checks loopback the way the page does; `grasp/2` takes
+`:mcp_path` to match, since that is the address the chat panel hands the agent.
 
 `grasp/2` expands, as `live_dashboard/2` does, to a `live_session` named `:grasp` with
 Grasp's own root layout and no app layout, routing `/grasp` and `/grasp/s/:name` to

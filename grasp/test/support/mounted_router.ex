@@ -11,14 +11,15 @@ defmodule GraspWeb.MountedRouter do
 
   import Grasp.Router
 
-  pipeline :grasp_browser do
+  pipeline :browser do
+    plug :accepts, ["html"]
     plug :fetch_session
     plug :protect_from_forgery
   end
 
   scope "/tools" do
-    pipe_through :grasp_browser
+    pipe_through :browser
 
-    grasp("/grasp", live_session_name: :grasp_mounted, live_socket_path: "/socket/live")
+    grasp "/grasp", live_session_name: :grasp_mounted, live_socket_path: "/socket/live"
   end
 end

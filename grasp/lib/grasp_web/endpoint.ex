@@ -23,5 +23,6 @@ defmodule GraspWeb.Endpoint do
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
+  plug Grasp.Plug, at: "/mcp"
   plug GraspWeb.Router
 end
