@@ -1,130 +1,103 @@
-# grasp
+# Grasp
 
-Call-chain code review for Elixir, mounted in your app. One package: the indexer that
-writes a JSON call graph of a project, the Phoenix LiveView canvas that renders it as
-branching function cards, and the MCP server an agent drives it through. The repository
-root's [README](../README.md) describes the canvas and its gestures.
+Call-chain code review for Elixir. Grasp draws each function as a card on a canvas: click a
+call inside a card and the callee opens beside it, joined by an edge, so a call chain reads
+left to right instead of as a series of editor jumps.
 
-Add it to the project you want to review:
+Indexed against a base branch the same canvas reviews a pull request — changed functions lead
+the sidebar, a modified card swaps between its source and its diff, and review comments sit on
+the lines they are about. A coding agent drives the canvas over MCP: it searches the index,
+traces the paths into a function, lays the cards out, and answers the comments you left.
+
+Grasp exists because agents now write more code than humans can comfortably review with a text
+editor and a unified diff.
+
+One Mix project and one Hex package: the indexer that writes a JSON call graph of a project,
+the Phoenix LiveView canvas that renders it as branching function cards, and the MCP server an
+agent drives it through.
+
+## Requirements
+
+- Elixir 1.19 or later
+- Phoenix `~> 1.8` and Phoenix LiveView `~> 1.1` in the project you review
+- `gh`, installed and signed in, to review pull requests
+- the [Claude Code](https://claude.com/claude-code) CLI for the chat panel
+
+## Install
+
+Grasp mounts inside the application it reviews, the way LiveDashboard does. In that project's
+`mix.exs`:
 
 ```elixir
-{:grasp, "~> 0.1", only: :dev}
+{:grasp, git: "https://github.com/gfrancischelli/grasp.git", sparse: "grasp", only: :dev}
 ```
 
-## Indexing
+A Hex release will follow. Then, in the router:
 
-```
-mix grasp.index [--out .grasp/index.json] [--base main] [--build-path _build/grasp]
-```
+```elixir
+import Grasp.Router
 
-The task forces a full recompile with a compiler tracer attached, so every call the
-compiler resolves is recorded with the position of the call in your source, then joins
-those calls with the function definitions Sourceror finds and writes one JSON document.
-The canvas and the MCP server read that document; `Grasp.Index` is the reader they use.
-
-The first index is a full build, and that is the only one you have to ask for. Once Grasp
-is running in your dev server it installs the same tracer into the VM's compiler options,
-so every compile your code reloader performs after a save reports its calls too: a third of
-a second after the last one, Grasp re-extracts the files the compile touched, rebuilds
-their records, rewrites the index and the canvas follows. Run `mix grasp.index` again when
-something outside a save changes — a branch switch, a new `--base`, a dependency.
-
-The forced recompile happens in a build directory of Grasp's own, `_build/grasp`, seeded by
-copying the project's current build the first time it is missing, so it neither waits on
-the dev server's build lock nor invalidates the beams the server is running. `--build-path`
-names another one; naming the project's own runs the build in place.
-
-The seed is a copy, and it is taken once. A dependency rebuilt in `_build/dev` afterwards is
-not copied across again — the forced recompile refreshes the project's own modules, not the
-dependencies underneath them. Delete `_build/grasp` to take a fresh seed.
-
-`--base REF` classifies every function against the merge base of `REF` and `HEAD` — added,
-modified, unchanged or removed — and carries the base version of each modified function's
-source, which is what turns the canvas into a pull-request review.
-
-The document also lists the project's **entry points** — the places its code starts
-executing. After compiling, the task loads the application's modules and reads what they
-export and what behaviours they declare: Phoenix routers (by their `__routes__/0`) give a
-`route` per controller action and a `live_route` per LiveView route, with the verb, path,
-router and helper as meta, and a router mounted with `forward` has the mount's prefix on
-its paths; `Oban.Worker` gives `perform/1` with its queue and max attempts;
-`Phoenix.LiveView`, `Phoenix.LiveComponent`, `GenServer`, `Supervisor`, `Application` and
-`Plug` give the callbacks their behaviour declares, minus the few that configure a module
-rather than run its work. A callback is listed only when the index holds a definition for
-it, so the defaults `use GenServer` injects and a dependency's forwarded controllers stay
-out. Each module record also carries the `behaviours` it declares.
-
-The document shape is described in `docs/specs/2026-09-15-grasp-design.md` at the repo
-root under "Index JSON".
-
-## Pull requests
-
-```
-mix grasp.pr N [--close] [--base REF]
+scope "/" do
+  pipe_through :browser
+  grasp "/grasp"
+end
 ```
 
-Reads pull request `N` with `gh`, checks its head out in a worktree of its own under
-`.grasp/worktrees/pr-N`, lends that worktree the project's `deps/` and a copy of its
-`_build/dev`, and builds the index inside it against the pull request's base, writing it to
-the index file the viewer watches — `.grasp/index.json`, or whatever `:grasp, :index_path`
-names. The working tree the task is run from is left
-where it is, so the dev server keeps running the code it started with. `--close` removes the
-worktree again, with anything left uncommitted in it. Review comments and sessions are kept
-under the directory Grasp was started in rather than in the worktree, so they outlive it.
-Run the task from that directory; a worktree it opened earlier is refused.
+and in the endpoint, beside the code reloader:
 
-## Serving
-
-Grasp mounts in the host application's router, with `Grasp.Plug` in the host's own endpoint
-guarding that mount and serving the MCP endpoint, and runs on the host's dev server; see the
-root README's Quick start. It starts no endpoint of its own there;
-`config :grasp, standalone: true` is what gives it one, and `mix grasp.viewer` sets that
-itself.
-
-```
-cd grasp
-mix setup
-mix grasp.viewer --index /path/to/project/.grasp/index.json [--port 4040] [--editor vscode]
+```elixir
+if code_reloading? do
+  plug Grasp.Plug, at: "/grasp"
+end
 ```
 
-That is how Grasp is worked on, and how any index is opened without touching the project
-it describes.
+The plug guards the mount — Grasp hands out your source and drives an agent that edits files,
+so every request for it has to come from loopback — and serves the MCP endpoint at
+`/grasp/mcp`. Its `at:` and the router's path must name the same mount.
 
-The first `mix deps.get` downloads Lumis' precompiled NIF, and the first cards rendered
-load the tree-sitter grammars they need — Elixir, plus HTML, CSS and JavaScript for a
-`~H` template. Both are one-off waits, seconds each, on a new machine.
+In `.formatter.exs`:
 
-A project that has never run `mix grasp.index` opens on a page saying so and naming the
-task; the store watches the path all the same and the canvas fills in as soon as the file
-is written.
-
-## Assets
-
-`priv/static/assets/grasp.js` and `grasp.css` are committed, because a host installs Grasp
-from Hex and never builds them: `GraspWeb.Assets` embeds both at compile time and serves
-them under the mount path. The bundle carries Grasp's hooks and stylesheet alone — Phoenix,
-`phoenix_html` and LiveView are read from the host's own `priv/static`, so the client always
-matches the LiveView the host runs.
-
-`mix assets.build` is what produces the committed files — unminified, with no sourcemap, so
-the diff of a hook change is readable. `mix assets.deploy` minifies, and the dev server's
-watcher adds an inline sourcemap; neither output belongs in a commit.
-
-```
-mix assets.build    # rebuild both files; commit them with the change that moved them
-mix assets.deploy   # the same, minified
+```elixir
+import_deps: [:grasp]
 ```
 
-The dev server runs esbuild in watch mode, and `@external_resource` on each file makes a
-rebuild recompile the plug, so a saved hook reaches the browser on the next reload.
+And in `.gitignore`:
 
-## Tests
-
-```
-mix test       # unit tests
-mix test.all   # unit tests plus the integration test, which runs mix grasp.index
-               # against test/fixtures/sample_app in a subprocess
+```gitignore
+.grasp/index.json
+.grasp/worktrees/
 ```
 
-`mix test` excludes the `:integration` tag, so it needs no fixture deps and no subprocess
-compile. `mix test.all` is `mix test --include integration`.
+## Quick start
+
+```
+mix grasp.index --base main
+mix phx.server
+```
+
+Open <http://localhost:4000/grasp>, pick an entry point or a module in the sidebar or press
+⌘K, and click any call inside a card to open the callee next to it. Register the MCP server
+so an agent can drive the same canvas:
+
+```
+claude mcp add --transport http grasp http://localhost:4000/grasp/mcp
+```
+
+## Guides
+
+- [Getting started](guides/getting-started.md) — install, the first index, the sidebar, the
+  palette and the toolbar.
+- [Reviewing](guides/reviewing.md) — the canvas, cards, edges, comments and sessions.
+- [Pull requests](guides/pull-requests.md) — reviewing a branch or someone else's PR, and
+  publishing the comments to GitHub.
+- [The agent](guides/agent.md) — the chat panel, the MCP tools and what to ask for.
+- [Indexing](guides/indexing.md) — what the index holds, how it stays current, and what it
+  misses.
+- [Contributing](guides/contributing.md) — layout, tests, assets and docs.
+
+## License
+
+Apache-2.0.
+
+The MCP endpoint is served by [Anubis MCP](https://hex.pm/packages/anubis_mcp), which is
+LGPL-3.0. Grasp uses it as an unmodified dependency, resolved from Hex at build time.

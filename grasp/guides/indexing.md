@@ -1,0 +1,134 @@
+# Indexing
+
+The index is the call graph everything else reads: the canvas draws it, the palette searches
+it, and the MCP tools answer from it.
+
+## What the index holds
+
+```
+mix grasp.index [--out PATH] [--base REF] [--build-path PATH]
+```
+
+The task forces a full recompile with a compiler tracer attached, so every call the compiler
+resolves is recorded with the position of the call in your source. Those calls are then
+joined with the function definitions Sourceror finds, and the result is written as one JSON
+document.
+
+Because the calls come from the compiler rather than from a text search, resolution is exact:
+an alias, an import and a fully qualified name all reach the same function, and a call through
+a default-argument arity resolves to the definition that carries it. A call the compiler
+resolved that has no clickable site in the source — a call a macro expanded — is kept as a
+*hidden call*, so the callers and callees graph stays complete even where nothing is
+clickable; the card lists those under "Also calls".
+
+The document also lists the project's **entry points** — the places its code starts
+executing. After compiling, the task loads the application's modules and reads what they
+export and what behaviours they declare:
+
+- Phoenix routers, by their `__routes__/0`, give a route per controller action and a live
+  route per LiveView route, with the verb, path, router and helper as meta; a router mounted
+  with `forward` has the mount's prefix on its paths.
+- `Oban.Worker` gives `perform/1` with its queue and max attempts.
+- `Phoenix.LiveView`, `Phoenix.LiveComponent`, `GenServer`, `Supervisor`, `Application` and
+  `Plug` give the callbacks their behaviour declares, minus the few that configure a module
+  rather than run its work.
+
+A callback is listed only when the index holds a definition for it, so the defaults
+`use GenServer` injects and a dependency's forwarded controllers stay out. Each module record
+also carries the behaviours it declares.
+
+**Templates are records.** A file an `embed_templates` pattern matched is a record of its own,
+with the template path as its file and the whole file as its source, and the component tags
+inside it are call sites. A component tag in a `~H` body is a call site the same way. A call
+to `Phoenix.Controller.render/2,3` in a module named `…Controller`, whose second argument is
+a literal atom or string, retargets at the `…HTML.<name>/1` record, so a route reads through
+its action and its page into the contexts underneath.
+
+`--base REF` classifies every function against the merge base of `REF` and `HEAD` — added,
+modified, unchanged or removed — and carries the base version of each modified function's
+source. That is what turns the canvas into a pull-request review; see
+[Pull requests](pull-requests.md).
+
+## Where the file lives
+
+`.grasp/index.json` under the project root, or wherever `--out` and `config :grasp,
+index_path:` name. The viewer watches that path: rewrite the file and the canvas redraws over
+the new code. It is derived from the checkout, so it belongs in `.gitignore`.
+
+## The first build
+
+The first index is a full build, and that is the only one you have to ask for. It is also the
+slow one — a full recompile of the project.
+
+The forced recompile happens in a build directory of Grasp's own, `_build/grasp`, seeded by
+copying the project's current build the first time it is missing, so it neither waits on the
+dev server's build lock nor invalidates the beams the server is running. `--build-path` names
+another one; naming the project's own runs the build in place.
+
+The seed is a copy, and it is taken once. A dependency rebuilt in `_build/dev` afterwards is
+not copied across again — the forced recompile refreshes the project's own modules, not the
+dependencies underneath them. Delete `_build/grasp` to take a fresh seed.
+
+A project that fails to compile aborts the task with the compiler's own error. A single file
+that cannot be read or parsed is reported and skipped; only its definitions are missing.
+
+## Live reindexing
+
+Once Grasp is running in your dev server it installs the same tracer into the VM's compiler
+options, so every compile your code reloader performs after a save reports its calls too.
+A third of a second after the last one, Grasp re-extracts the files the compile touched,
+rebuilds their records, recomputes entry points from the modules now loaded, reclassifies the
+changed files against the base commit the document records, writes the document back and
+reloads the store. Cards follow a save within a second or two, with no `mix grasp.index` run.
+
+What that path cannot see is what the full build is for:
+
+- a compile that happened before Grasp started;
+- a change to which files are compiled at all;
+- a branch switch, a new `--base`, a dependency.
+
+A batch naming more than fifty project files is a rebuild rather than a save: the reindexer
+says so and leaves the index to `mix grasp.index`. Reindexing also pauses, once and with a
+line saying so, while the loaded index is rooted in a pull request's worktree, since your
+dev server's compiles describe a different tree.
+
+## What is not indexed
+
+The join is only as complete as the definitions the extractor finds, and a tracer event whose
+caller has no definition record is dropped.
+
+- **`defimpl` and `defprotocol` bodies.** The extractor walks `defmodule` only, so the
+  functions inside a protocol or an implementation get no definition record.
+- **Definitions nested under a control structure.** A `def` written inside `if`, `for`, `case`
+  or `quote` in a module body is invisible to the extractor for the same reason.
+- **Macro-generated functions.** A function a `use` injects has no source of its own to
+  extract. The one exception is `embed_templates`, whose functions have a source: the template
+  file.
+- **Interpolated calls in templates stay hidden.** A call written in `{…}` inside a template
+  or a `~H` body is reported with no column, so it reaches the graph as a hidden call on the
+  template or the function holding the `~H`. Only component tags are clickable.
+- **Only the `…Controller` → `…HTML` convention is followed.** A controller that `put_view`s
+  another module, or renders through `Phoenix.Template.render/4` or `render_to_string`, is not
+  linked to its template.
+- **A template's diff is the whole file**, since a template has no smaller unit, and a deleted
+  template is not reported as removed.
+
+## The loopback guard
+
+Grasp serves every indexed function's source, and in edit mode drives an agent that writes
+files. `Grasp.Plug` therefore guards its whole mount: `GraspWeb.Plugs.LocalOnly` checks the
+`Host` the request was addressed to and the `Origin` the browser declares, for the page, its
+assets and the MCP endpoint alike.
+
+That stops a page on another origin from reaching Grasp through DNS rebinding — binding the
+dev server to `127.0.0.1` alone does not, since a domain whose DNS resolves to `127.0.0.1`
+becomes same-origin with the server.
+
+It does **not** stop a peer that sends `Host: 127.0.0.1` itself. A dev server bound to every
+interface — a container, WSL, a `0.0.0.0` bind — exposes every indexed function's source, and
+in edit mode an agent that writes files, to anyone on that network. The bind address is the
+host application's choice; Grasp inherits it.
+
+One more thing nothing checks: `grasp "/grasp"` in the router and `plug Grasp.Plug,
+at: "/grasp"` in the endpoint must name the same mount. Change one and you get a partly
+unguarded page, or an agent pointed at a 404.

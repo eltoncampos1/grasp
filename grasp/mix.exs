@@ -19,7 +19,7 @@ defmodule Grasp.MixProject do
       description: "Grasp: call-chain code review for Elixir, mounted in your app",
       package: package(),
       name: "Grasp",
-      docs: [main: "readme", extras: ["README.md"], source_url: @source_url]
+      docs: docs()
     ]
   end
 
@@ -65,7 +65,32 @@ defmodule Grasp.MixProject do
     [
       licenses: ["Apache-2.0"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib priv/static mix.exs .formatter.exs README.md LICENSE)
+      files: ~w(lib priv/static guides mix.exs .formatter.exs README.md LICENSE)
+    ]
+  end
+
+  defp docs do
+    [
+      main: "readme",
+      source_url: @source_url,
+      source_ref: "main",
+      extras: [
+        "README.md",
+        "guides/getting-started.md",
+        "guides/reviewing.md",
+        "guides/pull-requests.md",
+        "guides/agent.md",
+        "guides/indexing.md",
+        "guides/contributing.md"
+      ],
+      groups_for_extras: [Guides: ~r"guides/"],
+      groups_for_modules: [
+        Indexer: ~r/Grasp\.Index/,
+        Viewer: ~r/GraspWeb/,
+        MCP: ~r/Grasp\.MCP/,
+        Agent: ~r/Grasp\.Agent/,
+        "Mix tasks": ~r/Mix\.Tasks/
+      ]
     ]
   end
 end
