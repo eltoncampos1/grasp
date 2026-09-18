@@ -248,7 +248,7 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
 .comment__author { padding: 0 var(--space-s); border-radius: 999px; background: var(--bg); color: var(--fg-muted); font-size: 11px; }
 .comment[data-author="agent"] .comment__author { background: var(--accent-soft); color: var(--accent); }
 .comment time { color: var(--fg-subtle); font-size: 11px; }
-.comment__delete { grid-column: 4; padding: 0 var(--space-xs); color: var(--fg-faint); }
+.comment__delete { grid-column: 4; padding: 0 var(--space-xs); color: var(--fg-muted); }
 .comment__delete:hover { color: var(--danger); }
 .comment__body { grid-column: 1 / -1; margin: 0; white-space: pre-wrap; }
 .thread__actions { display: flex; gap: var(--space-m); }
