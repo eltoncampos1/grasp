@@ -630,7 +630,9 @@ redraw the flow" is one prompt in the chat panel.
   file is, or `"old"` for a line the diff deleted, numbered from 1 within `base_source` as
   the diff view numbers them; `snippet` is the trimmed text of the line when the comment
   was made; `author` is `"human"` or `"agent"`; `created_at` is ISO 8601 UTC; a reply is
-  `%{id, author, body, created_at}`; `github` is `nil` until the thread is published to a
+  `%{id, author, body, created_at}`; `end_line` is `nil` for a thread on one line, or the
+  last line of the range the thread covers (`end_line > line`, same side) — the snippet is
+  always the first line's text, which is what re-anchoring reads; `github` is `nil` until the thread is published to a
   pull request, then `%{id, url, published_at}` — the review comment's id and link, kept
   so a second publish skips it. Ids are never reused. A body is stored trimmed and may
   not be blank. Every change broadcasts `:comments_changed` on the `"comments"` topic and
@@ -648,7 +650,11 @@ redraw the flow" is one prompt in the chat panel.
   function is no longer in the index is *orphaned* and is listed in the sidebar alone.
 - **Card.** Every line number in a card body is a control: hovering shows `+`, clicking it
   opens a composer under that line (a textarea, Save, Cancel; ⌘/Ctrl+Enter saves, Escape
-  cancels). A deleted line in the diff view takes a comment on its `"old"` side. Threads
+  cancels). Dragging down or up the line numbers selects a range on one side of one card —
+  the lines tint while the pointer moves — and releasing opens the composer under the last
+  line for the whole range; Shift-clicking another line number while a composer is open
+  extends or shrinks its range. A ranged thread renders under its last line with every line
+  it covers tinted, its label reads `L12–L18`, and folding keeps the whole range open. A deleted line in the diff view takes a comment on its `"old"` side. Threads
   render under their line: each comment with its author (`you` or `claude`), its time and
   its body as plain text with line breaks kept, then reply, resolve or reopen, and delete.
   A resolved thread collapses to one line, `Resolved · n comments`, that expands on click;
@@ -672,7 +678,8 @@ redraw the flow" is one prompt in the chat panel.
   of the current branch as GitHub review comments through `gh`, so a review done in Grasp
   ends up where the author reads it. A thread on the `"new"` side whose line falls inside
   the pull request's diff (the changed lines and the context GitHub shows around them) is
-  posted on that line; every other thread — a line outside the diff, or a `"old"`-side line,
+  posted on that line, and a ranged thread whose first and last lines both fall inside the
+  diff is posted as a multi-line comment (`start_line`, `line`); every other thread — a line outside the diff, or a `"old"`-side line,
   which Grasp numbers within the function rather than within the base file — is posted as
   a file-level comment that names the function, the side and the line and quotes the
   snippet. A thread the agent wrote is prefixed `claude:`; replies are posted as replies,
@@ -1000,7 +1007,8 @@ first reference. Results are JSON text content, so any MCP client can read them.
   body, side?)` leaves a thread as the agent (`author: "agent"`) on a line of the function's
   current source (`side` `"new"`, the default) or of its base source (`"old"`), taking the
   snippet from the index, and is a tool error naming the function and its span when the
-  line is outside it; `reply_comment(comment_id, body)` appends a reply as the agent;
+  line is outside it; `end_line` (optional, greater than `line`, inside the span) makes it
+  a ranged thread, and every thread carries `end_line` in its map; `reply_comment(comment_id, body)` appends a reply as the agent;
   `resolve_comment(comment_id, resolved?)` resolves (default) or reopens a thread. Unknown
   ids and blank bodies are tool errors. `get_function` carries `comments`, the function's
   open threads with the same fields, and every thread carries `github_url` (null until
@@ -1336,6 +1344,8 @@ request switches the working tree" is closed.
      `embed_templates` files are records, `render` reaches its template.
    - Milestone 6.2 turns the canvas into a whiteboard: absolute positions, the hook places
      a new card beside its opener, nothing else moves; session files move to version 2.
+   - Milestone 7.1: ranged comments — drag along the line numbers, `end_line` on a thread,
+     multi-line review comments on GitHub.
 7. In-app Grasp: one dev dependency mounted in the host's endpoint, the tracer riding the
    host's code reloader for incremental indexing, pull requests reviewed from worktrees
    (see [Part 4](#part-4--in-app-grasp)).
