@@ -11,6 +11,8 @@ defmodule GraspWeb.MountedRouter do
 
   import Grasp.Router
 
+  alias GraspWeb.TestOnMount
+
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -20,6 +22,9 @@ defmodule GraspWeb.MountedRouter do
   scope "/tools" do
     pipe_through :browser
 
-    grasp "/grasp", live_session_name: :grasp_mounted, live_socket_path: "/socket/live"
+    grasp "/grasp",
+      live_session_name: :grasp_mounted,
+      live_socket_path: "/socket/live",
+      on_mount: TestOnMount
   end
 end

@@ -5,8 +5,9 @@ defmodule Grasp.Router do
   Grasp runs inside the application it reviews rather than beside it, so it has no endpoint
   of its own to reach: the host owns the port, the session and the live socket, and Grasp
   contributes routes. `grasp/2` is the whole contribution — the review page and the two
-  static files it loads, under one prefix. The MCP endpoint agents connect to is
-  `Grasp.Plug`, in the host's endpoint.
+  static files it loads, under one prefix. `Grasp.Plug`, in the host's endpoint, is the other
+  half: it guards that prefix and serves the MCP endpoint agents connect to. The two are
+  given the same prefix, and neither works properly without the other.
 
   The prefix is resolved at compile time and travels three ways, because three different
   readers need it: the route's `:private` carries it to the plug pipeline (the root layout
@@ -26,10 +27,15 @@ defmodule Grasp.Router do
         grasp "/grasp"
       end
 
-  The MCP endpoint is not among these routes: it is `Grasp.Plug`, added to the host's
-  endpoint. A browser pipeline declares `plug :accepts, ["html"]`, an MCP client asks for
-  `application/json, text/event-stream`, and no route option can exempt a route from the
-  pipeline that fronts it — so the transport is served before any pipeline runs instead.
+  `Grasp.Plug` goes in the host's endpoint with the same prefix, and is what keeps these
+  routes off the public internet — a router pipeline is not enough, since a host cannot be
+  asked to add a loopback check to the pipeline its own pages run through:
+
+      plug Grasp.Plug, at: "/grasp"
+
+  The MCP endpoint is that plug rather than a route here, because a browser pipeline declares
+  `plug :accepts, ["html"]`, an MCP client asks for `application/json, text/event-stream`, and
+  no route option can exempt a route from the pipeline that fronts it.
 
   ## Options
 
@@ -43,17 +49,12 @@ defmodule Grasp.Router do
     * `:on_mount` — a `Phoenix.LiveView.on_mount/1` callback, or a list of them, added to the
       live session. Defaults to none.
 
-    * `:mcp_path` — where `Grasp.Plug` was mounted, `path` with `mcp` under it by default. It is the
-      address the chat panel hands the agent, so a host that gives the plug an `:at` of its
-      own says so here, and the two stay one change apart.
+    * `:mcp_path` — where `Grasp.Plug` serves the transport, `path` with `mcp` under it by
+      default, which is the plug's own default too. It is the address the chat panel hands the
+      agent, so a host that gives the plug a `:mcp` of its own says so here as well.
   """
   @spec grasp(String.t(), keyword()) :: Macro.t()
   defmacro grasp(path, opts \\ []) do
-    opts =
-      if Macro.quoted_literal?(opts),
-        do: Macro.prewalk(opts, &expand_alias(&1, __CALLER__)),
-        else: opts
-
     quote bind_quoted: binding() do
       prefix = Grasp.Router.__prefix__(__MODULE__, path)
       {session_name, session_opts, route_opts} = Grasp.Router.__options__(prefix, opts)
@@ -100,11 +101,11 @@ defmodule Grasp.Router do
 
   @doc false
   @spec __session__(Plug.Conn.t(), String.t(), String.t()) :: %{String.t() => String.t()}
-  def __session__(%Plug.Conn{}, prefix, mcp_path),
-    do: %{"grasp_path" => prefix, "mcp_path" => mcp_path}
+  def __session__(%Plug.Conn{} = conn, prefix, mcp_path),
+    do: %{"grasp_path" => __path__(conn, prefix), "mcp_path" => __path__(conn, mcp_path)}
 
-  defp expand_alias({:__aliases__, _meta, _parts} = alias, env),
-    do: Macro.expand(alias, %{env | function: {:grasp, 2}})
-
-  defp expand_alias(other, _env), do: other
+  @doc false
+  @spec __path__(Plug.Conn.t(), String.t()) :: String.t()
+  def __path__(%Plug.Conn{script_name: script_name}, path),
+    do: Enum.map_join(script_name, &("/" <> &1)) <> path
 end

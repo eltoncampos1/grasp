@@ -9,9 +9,15 @@ defmodule GraspWeb.MountedTest do
 
   @endpoint GraspWeb.MountedEndpoint
 
-  setup do
+  # The only module that names this endpoint, so it is started once for the whole of it.
+  setup_all do
     start_supervised!(GraspWeb.MountedEndpoint)
-    {:ok, conn: build_conn()}
+    :ok
+  end
+
+  # `Grasp.Plug` guards the mount, and ConnTest's default host is not a loopback name.
+  setup do
+    {:ok, conn: %{build_conn() | host: "127.0.0.1"}}
   end
 
   test "the page loads its assets from under the prefix, on the host's socket", %{conn: conn} do
@@ -43,12 +49,25 @@ defmodule GraspWeb.MountedTest do
     }
 
     conn =
-      %{conn | host: "127.0.0.1"}
+      conn
       |> put_req_header("content-type", "application/json")
       |> put_req_header("accept", "application/json, text/event-stream")
       |> post("/tools/grasp/mcp", Jason.encode!(body))
 
     assert response(conn, 200) =~ ~s("serverInfo")
+  end
+
+  test "the page and its assets are refused from a host that is not loopback", %{conn: conn} do
+    conn = %{conn | host: "www.example.com"}
+
+    assert conn |> get("/tools/grasp") |> response(403) == "forbidden"
+    assert conn |> get("/tools/grasp/assets/grasp.js") |> response(403) == "forbidden"
+    assert conn |> get("/tools/grasp/s/anything") |> response(403) == "forbidden"
+  end
+
+  # Not 403: a path the host serves itself is none of Grasp's business, whoever asks for it.
+  test "a request outside the mount is left to the host", %{conn: conn} do
+    assert %{conn | host: "www.example.com"} |> get("/users") |> response(404)
   end
 
   test "session links are built under the prefix", %{conn: conn} do

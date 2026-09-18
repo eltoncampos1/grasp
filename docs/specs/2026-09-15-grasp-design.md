@@ -1140,18 +1140,27 @@ if code_reloading? do
 end
 ```
 
-The MCP endpoint is that plug rather than a route, because a browser pipeline declares
-`plug :accepts, ["html"]`, an MCP client asks for `application/json, text/event-stream`, and
-no route option exempts a route from the pipeline that fronts it. Served from the endpoint it
-is reached before any pipeline runs, and the host's browser scope stays as it was. The plug
-takes `:at` (default `/grasp/mcp`) and checks loopback the way the page does; `grasp/2` takes
-`:mcp_path` to match, since that is the address the chat panel hands the agent.
+That plug carries both of Grasp's reasons to run before the router. It **guards** the mount:
+`GraspWeb.Plugs.LocalOnly` has to cover the page and its assets, not only the MCP endpoint,
+since a page whose DNS rebinds to `127.0.0.1` is same-origin with the dev server and Grasp
+serves it every indexed function's source and an agent that edits files — and a host cannot be
+asked to put a loopback check in the pipeline its own pages run through. And it **serves the
+MCP transport**, because a browser pipeline declares `plug :accepts, ["html"]`, an MCP client
+asks for `application/json, text/event-stream`, and no route option exempts a route from the
+pipeline that fronts it.
+
+The plug takes `:at`, the prefix Grasp is mounted at (default `/grasp`), and `:mcp`, where the
+transport answers (default `:at` with `mcp` under it). `:at` must be the path `grasp/2` was
+given; `"/"` guards the whole application, which is what Grasp's own standalone endpoint wants
+and what a host does not. `grasp/2` takes `:mcp_path` to match `:mcp`, since that is the
+address the chat panel hands the agent. Everything else under the prefix passes through to the
+router once it has been checked, and everything outside it passes through untouched.
 
 `grasp/2` expands, as `live_dashboard/2` does, to a `live_session` named `:grasp` with
 Grasp's own root layout and no app layout, routing `/grasp` and `/grasp/s/:name` to
-`GraspWeb.ReviewLive`; a `forward "/grasp/mcp"` to the Streamable HTTP plug behind
-`GraspWeb.Plugs.LocalOnly`; and `/grasp/assets/:asset` served by `GraspWeb.Assets`, a plug
-that embeds at compile time the host's own `phoenix.js` and `phoenix_live_view.js` (read
+`GraspWeb.ReviewLive`; and `/grasp/assets/:asset` served by `GraspWeb.Assets`, a plug
+that embeds at compile time the host's own `phoenix.js`, `phoenix_html.js` and
+`phoenix_live_view.js` (read
 from those applications' `priv/static`, so the JavaScript always matches the LiveView the
 host runs) followed by Grasp's hooks bundle, and Grasp's stylesheet, each under a content
 hash. Grasp's bundle therefore does not bundle Phoenix or LiveView: `app.js` reads them from
@@ -1159,6 +1168,10 @@ the globals those files define and connects its own `LiveSocket` to the host's l
 path (`live_socket_path` from the endpoint's configuration, `/live` by default). The Lumis
 theme stays inlined in the root layout. The standalone endpoint mounts the same macro at
 `/`, so the viewer's own tests exercise the mounted form.
+
+The root layout carries an inline `<style>` for that theme and a same-origin `<script>`, so a
+host whose dev environment sends a strict `Content-Security-Policy` needs `style-src` to admit
+the inline block — by nonce or by exception — for the page to render as designed.
 
 Configuration lives under `:grasp` in the host's `config/dev.exs`, all optional:
 `index_path` (default `.grasp/index.json` under the project root), `editor`, `agent_command`,

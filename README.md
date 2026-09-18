@@ -61,15 +61,23 @@ if code_reloading? do
 end
 ```
 
-That plug is the MCP endpoint, at `/grasp/mcp`. It sits in front of the router because a
-browser pipeline declares `plug :accepts, ["html"]` and an MCP client asks for
-`application/json, text/event-stream`, which no route can make it accept. Move one and tell
-the other:
+The plug does two things under that one prefix. It checks that every request for Grasp came
+from loopback — binding your dev server to `127.0.0.1` does not stop a page whose DNS rebinds
+to it, and Grasp hands out your source and drives an agent that edits files — and it serves
+the MCP endpoint at `/grasp/mcp`, in front of the router because a browser pipeline declares
+`plug :accepts, ["html"]` and an MCP client asks for `application/json, text/event-stream`,
+which no route can make it accept.
+
+**`at:` and the router's path must be the same**, or the guard covers less than the mount.
+`"/grasp"` is the default on both sides; change one and change the other:
 
 ```elixir
-plug Grasp.Plug, at: "/tools/grasp/mcp"
-grasp "/tools/grasp", mcp_path: "/tools/grasp/mcp"
+plug Grasp.Plug, at: "/tools/grasp"
+grasp "/tools/grasp"
 ```
+
+Give the plug `"/"` in a host and it guards the whole application, which is not what you
+want. Grasp's own standalone server is the one place that is right.
 
 Grasp's LiveView connects over your endpoint's live socket. Declare that socket somewhere
 other than `/live` and the mount has to be told:

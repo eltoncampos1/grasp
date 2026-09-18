@@ -6,7 +6,6 @@ defmodule GraspWeb.ConnCase do
   using do
     quote do
       @endpoint GraspWeb.Endpoint
-      use GraspWeb, :verified_routes
       import Plug.Conn
       import Phoenix.ConnTest
       import Phoenix.LiveViewTest

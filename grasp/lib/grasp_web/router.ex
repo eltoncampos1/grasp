@@ -11,8 +11,9 @@ defmodule GraspWeb.Router do
 
   import Grasp.Router
 
+  # No loopback check: `Grasp.Plug`, in the endpoint, guards every path this router serves,
+  # exactly as it guards a host's mount.
   pipeline :browser do
-    plug GraspWeb.Plugs.LocalOnly
     plug :accepts, ["html"]
     plug :fetch_session
     plug :protect_from_forgery

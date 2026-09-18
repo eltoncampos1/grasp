@@ -47,7 +47,12 @@ defmodule GraspWeb.Assets do
     "grasp.css" => Base.encode16(:crypto.hash(:md5, @css), case: :lower)
   }
 
-  @doc "The content hash of `asset`, the `vsn` its URL carries."
+  @doc """
+  The content hash of `asset`, the `vsn` its URL carries.
+
+  `asset` is `"grasp.js"` or `"grasp.css"` — the only two files there are. Any other name
+  raises: it is a typo in a layout, not a request that arrived from outside.
+  """
   @spec hash(String.t()) :: String.t()
   def hash(asset) when is_map_key(@hashes, asset), do: Map.fetch!(@hashes, asset)
 

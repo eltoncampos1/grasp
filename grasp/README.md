@@ -43,9 +43,11 @@ root under "Index JSON".
 
 ## Serving
 
-Grasp mounts in the host application's router, with its MCP endpoint as a plug in the host's
-own endpoint, and runs on the host's dev server; see the root README's Quick start. It starts no endpoint of its own there; `config :grasp, standalone: true`
-is what gives it one, and `mix grasp.viewer` sets that itself.
+Grasp mounts in the host application's router, with `Grasp.Plug` in the host's own endpoint
+guarding that mount and serving the MCP endpoint, and runs on the host's dev server; see the
+root README's Quick start. It starts no endpoint of its own there;
+`config :grasp, standalone: true` is what gives it one, and `mix grasp.viewer` sets that
+itself.
 
 ```
 cd grasp
@@ -71,6 +73,10 @@ from Hex and never builds them: `GraspWeb.Assets` embeds both at compile time an
 them under the mount path. The bundle carries Grasp's hooks and stylesheet alone — Phoenix,
 `phoenix_html` and LiveView are read from the host's own `priv/static`, so the client always
 matches the LiveView the host runs.
+
+`mix assets.build` is what produces the committed files — unminified, with no sourcemap, so
+the diff of a hook change is readable. `mix assets.deploy` minifies, and the dev server's
+watcher adds an inline sourcemap; neither output belongs in a commit.
 
 ```
 mix assets.build    # rebuild both files; commit them with the change that moved them

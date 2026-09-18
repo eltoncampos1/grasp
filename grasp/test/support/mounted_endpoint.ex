@@ -19,10 +19,11 @@ defmodule GraspWeb.MountedEndpoint do
   socket "/socket/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]]
 
+  plug Grasp.Plug, at: "/tools/grasp"
+
   plug Plug.Parsers, parsers: [:urlencoded, :multipart, :json], pass: ["*/*"], json_decoder: Jason
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
-  plug Grasp.Plug, at: "/tools/grasp/mcp"
   plug GraspWeb.MountedRouter
 end

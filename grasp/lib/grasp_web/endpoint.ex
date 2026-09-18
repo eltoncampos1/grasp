@@ -18,11 +18,14 @@ defmodule GraspWeb.Endpoint do
     plug Phoenix.CodeReloader
   end
 
+  # `at: "/"` because this endpoint serves nothing but Grasp: the loopback guard belongs on
+  # every path, not on a prefix. A host gives the plug the prefix it mounted Grasp at.
+  plug Grasp.Plug, at: "/"
+
   plug Plug.RequestId
   plug Plug.Parsers, parsers: [:urlencoded, :multipart, :json], pass: ["*/*"], json_decoder: Jason
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
-  plug Grasp.Plug, at: "/mcp"
   plug GraspWeb.Router
 end

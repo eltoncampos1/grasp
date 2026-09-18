@@ -39,6 +39,21 @@ defmodule GraspWeb.RouterTest do
              }
     end
 
+    test "an endpoint forwarded to from another is answered under its own script name" do
+      conn = %{build_conn() | script_name: ["dev", "tools"]}
+
+      assert Grasp.Router.__session__(conn, "/grasp", "/grasp/mcp") == %{
+               "grasp_path" => "/dev/tools/grasp",
+               "mcp_path" => "/dev/tools/grasp/mcp"
+             }
+    end
+
+    test "an on_mount module written as an alias resolves in the host's router" do
+      %{extra: extra} = live_session(GraspWeb.MountedRouter, "/tools/grasp")
+
+      assert Enum.map(extra.on_mount, & &1.id) == [{GraspWeb.TestOnMount, :default}]
+    end
+
     test "builds session links under the prefix" do
       assert Sidebar.session_path("/tools/grasp", "foo") == "/tools/grasp/s/foo"
       assert Sidebar.session_path("/tools/grasp", "default") == "/tools/grasp"
@@ -68,9 +83,14 @@ defmodule GraspWeb.RouterTest do
     test "serves the host's Phoenix client in front of Grasp's bundle", %{conn: conn} do
       conn = get(conn, "/assets/grasp.js")
 
+      body = response(conn, 200)
+
       assert response_content_type(conn, :js) =~ "application/javascript"
-      assert String.starts_with?(response(conn, 200), "var Phoenix =")
-      assert response(conn, 200) =~ "LiveSocket"
+      assert String.starts_with?(body, "var Phoenix =")
+      # One marker per file, each unique to it: Grasp's own bundle names `LiveSocket` too.
+      assert body =~ "var LiveView ="
+      assert body =~ "PolyfillEvent"
+      assert body =~ "Palette: palette_default"
     end
 
     test "serves the stylesheet", %{conn: conn} do
