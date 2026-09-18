@@ -1,5 +1,7 @@
 defmodule Grasp.ApplicationTest do
-  use ExUnit.Case, async: true
+  # The home test drops the suite-wide comments path to see what the home directory gives,
+  # so this module runs alone.
+  use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
 
@@ -36,12 +38,15 @@ defmodule Grasp.ApplicationTest do
     assert is_binary(home)
     assert home == Application.get_env(:grasp, :home)
 
-    # The index names a project root that is not on this machine, and the comments file
-    # still lands somewhere: it belongs to the checkout Grasp was started in, not to the
-    # reviewed tree.
-    assert Grasp.IndexStore.get().project["root"] == "/tmp/sample_app"
-    assert File.dir?("/tmp/sample_app") == false
-    assert is_binary(Grasp.Comments.path())
+    previous = Application.get_env(:grasp, :comments_path)
+    Application.put_env(:grasp, :comments_path, nil)
+    on_exit(fn -> Application.put_env(:grasp, :comments_path, previous) end)
+
+    # A store started with nothing overriding it writes under the home directory, whatever
+    # project root the index names.
+    store = start_supervised!({Grasp.Comments, [name: :application_test_comments]})
+
+    assert Grasp.Comments.path(store) == Path.join(home, ".grasp/comments.json")
   end
 
   test "without Mix there is nothing to start" do

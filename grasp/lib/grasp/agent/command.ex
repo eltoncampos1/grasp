@@ -181,13 +181,15 @@ defmodule Grasp.Agent.Command do
   defp allowed_tools(_read), do: @read_allowed_tools
 
   defp pull_request("edit", _reindex) do
+    home = Grasp.Application.home() || File.cwd!()
+
     """
     When the user asks you to open, review or look at a pull request by number:
-    1. Run `mix grasp.pr N` from the project root. It reads the pull request with `gh`, fetches its base and head branches, checks the head out in a worktree of its own under `.grasp/worktrees/pr-N`, and builds the index of that worktree against the pull request's base, writing it to the index file the viewer watches. The user's own working tree is untouched, so never check a branch out yourself. The task prints the worktree, the branches and the pull request's title; if it fails, report what it printed and stop.
+    1. Run `mix grasp.pr N` from #{home}, the directory Grasp was started in — not from the directory you are in, which is the tree being reviewed once a pull request is open. It reads the pull request with `gh`, fetches its base and head branches, checks the head out in a worktree of its own under `.grasp/worktrees/pr-N`, and builds the index of that worktree against the pull request's base, writing it to the index file the viewer watches. The user's own working tree is untouched, so never check a branch out yourself. The task prints the worktree, the branches and the pull request's title; if it fails, report what it printed and stop.
     2. Call reload_index, so what you read next is the index the task wrote rather than the one it replaced.
     3. Call list_changes, trace each changed function back to its entry points with find_paths, then call set_cards with the roots at the entry points and one group per flow, each group titled after what that flow does. Reply in two sentences that name the pull request's title.
-    The pull request's code is in the worktree, which is what the index now names as its project root: read, edit and format files there, and rebuild from there with `mix grasp.index --base origin/<base> --out <host>/.grasp/index.json`, where `<host>` is the directory you started in.
-    Comments stay in `.grasp/comments.json` under the directory you started in, whatever tree is being reviewed, so list_comments can answer with threads left on another branch.
+    The pull request's code is in the worktree, which is what the index now names as its project root: read, edit and format files there, and rebuild from there with `mix grasp.index --base origin/<base> --out #{Path.join(home, ".grasp/index.json")}`, which is the file the viewer watches.
+    Comments stay in `#{Path.join(home, ".grasp/comments.json")}`, whatever tree is being reviewed, so list_comments can answer with threads left on another branch.
     """
     |> String.trim_trailing()
   end

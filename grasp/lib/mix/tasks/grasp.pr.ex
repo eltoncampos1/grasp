@@ -8,8 +8,9 @@ defmodule Mix.Tasks.Grasp.Pr do
 
   The working tree this is run from is left alone: the pull request's head is checked out
   under `.grasp/worktrees/pr-N`, `deps/` and a copy of `_build/dev` are lent to it, and the
-  index is built inside it and written to `.grasp/index.json` here — the file the viewer
-  watches. The viewer reloads it within a second or two and the cards read the pull
+  index is built inside it and written to the file the viewer watches — `.grasp/index.json`
+  here, or whatever `:grasp, :index_path` names. Run it from the project you started Grasp
+  in; a worktree it opened earlier is refused. The viewer reloads it within a second or two and the cards read the pull
   request's code, from the worktree.
 
   Review comments and saved sessions are not in the worktree; they stay under the
@@ -21,6 +22,8 @@ defmodule Mix.Tasks.Grasp.Pr do
   ## Options
 
     * `--close` - remove the worktree the pull request was opened in and prune the list.
+      The removal is forced, so anything left uncommitted in that worktree — an edit the
+      agent made on a review comment, say — goes with it. Commit or copy it first.
     * `--base` - review against this ref instead of the branch the pull request targets.
   """
 

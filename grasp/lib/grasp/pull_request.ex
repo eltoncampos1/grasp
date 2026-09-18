@@ -17,8 +17,9 @@ defmodule Grasp.PullRequest do
   carries. The lending is also the limit — a pull request that changes `mix.lock` is
   indexed against the host's dependencies until `mix deps.get` is run in the worktree.
 
-  The index is written to the host's `.grasp/index.json`, the file the reader's viewer
-  watches, and names the worktree as its project root: the cards are the pull request's
+  The index is written to the file the reader's viewer watches — `:grasp, :index_path` when
+  that names one, `.grasp/index.json` under the root otherwise — and names the worktree as
+  its project root: the cards are the pull request's
   code, read from where that code actually is. Comments and sessions are unaffected — they
   live under `Grasp.Application.home/0`, so a review survives `close/2` removing the tree
   it was written against.
@@ -62,8 +63,12 @@ defmodule Grasp.PullRequest do
   The steps, each stopping the recipe with the command's output when it fails: read the
   pull request with `gh pr view`; fetch its base and head branches; add the worktree, or
   detach an existing one at the newly fetched head; lend it `deps/` and a build directory;
-  and build the index inside it against `origin/<base>`, writing it to `.grasp/index.json`
-  under `root`.
+  and build the index inside it against `origin/<base>`, writing it to the index file the
+  viewer watches.
+
+  `root` is the reader's own checkout, so a root that is itself one of these worktrees is
+  refused: a review of a review would index a tree nobody is reading and overwrite the
+  index of the one they are.
 
   `:root` is the reader's checkout, the working directory by default; `:runner` runs the
   commands, `System.cmd/3` by default; `:gh` is the GitHub CLI; `:base_override` reviews
@@ -76,9 +81,10 @@ defmodule Grasp.PullRequest do
     runner = Keyword.get(opts, :runner, &run/3)
     log = logger(opts)
     worktree = worktree(root, number)
-    index = Path.join(root, ".grasp/index.json")
+    index = index_path(root)
 
-    with {:ok, pull_request} <- view(number, root, runner, opts),
+    with :ok <- reader_checkout(root),
+         {:ok, pull_request} <- view(number, root, runner, opts),
          base = Keyword.get(opts, :base_override) || pull_request.base,
          head = pull_request.head,
          :ok <- log.("Reading pull request #{number}: #{pull_request.title}"),
@@ -136,6 +142,31 @@ defmodule Grasp.PullRequest do
   def worktree(root, number) when is_integer(number) and number > 0,
     do: Path.join([Path.expand(root), ".grasp", "worktrees", "pr-#{number}"])
 
+  # The viewer watches one file, and a rebuild that wrote anywhere else would leave it
+  # showing the branch the reader opened rather than the pull request they asked for.
+  defp index_path(root) do
+    case Application.get_env(:grasp, :index_path) do
+      path when is_binary(path) and path != "" -> Path.expand(path, root)
+      _unset -> Path.join(root, ".grasp/index.json")
+    end
+  end
+
+  defp reader_checkout(root) do
+    worktree_of_ours? =
+      root
+      |> Path.split()
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.any?(&(&1 == [".grasp", "worktrees"]))
+
+    if worktree_of_ours? do
+      {:error,
+       "#{root} is a worktree Grasp opened a pull request in. Run mix grasp.pr from the " <>
+         "project you started Grasp in, whose index the viewer watches."}
+    else
+      :ok
+    end
+  end
+
   # Every step answers `:ok` whatever the caller's `:log` returns, so a printer that
   # answers something else cannot break the chain it is only narrating.
   defp logger(opts) do
@@ -167,11 +198,23 @@ defmodule Grasp.PullRequest do
     end
   end
 
+  # `gh` writes notices — a new version, an authentication hint — to stderr, and the runner
+  # folds stderr into stdout so a failure is reported in gh's own words. The answer is
+  # therefore read from the first line that opens an object rather than from the whole of it.
   defp decode(output) do
-    case Jason.decode(output) do
-      {:ok, json} when is_map(json) -> {:ok, json}
+    with line when is_binary(line) <- json_line(output),
+         {:ok, json} when is_map(json) <- Jason.decode(line) do
+      {:ok, json}
+    else
       _undecodable -> {:error, "gh pr view did not answer with JSON: #{String.trim(output)}"}
     end
+  end
+
+  defp json_line(output) do
+    output
+    |> String.split("\n")
+    |> Enum.map(&String.trim/1)
+    |> Enum.find(&String.starts_with?(&1, "{"))
   end
 
   defp fetch(root, base, head, runner) do
@@ -182,17 +225,51 @@ defmodule Grasp.PullRequest do
   # An existing worktree is moved to the head that was just fetched rather than left where
   # the last review put it: a pull request pushed to since then is a different commit.
   defp place(root, worktree, head, runner, log) do
-    argv =
-      if File.dir?(worktree) do
-        ["git", "-C", worktree, "checkout", "--detach", "origin/#{head}"]
-      else
-        File.mkdir_p!(Path.dirname(worktree))
-        ["git", "worktree", "add", "--detach", worktree, "origin/#{head}"]
-      end
-
-    with {:ok, _output} <- command(argv, root, [], runner) do
+    with {:ok, _pruned} <- prune(root, runner),
+         {:ok, argv} <- placement(root, worktree, head, runner, log),
+         {:ok, _output} <- command(argv, root, [], runner) do
       log.("Worktree #{Path.relative_to(worktree, root)} is at origin/#{head}")
-      :ok
+    end
+  end
+
+  # A directory git has forgotten — pruned while it was still there, or copied into place —
+  # is Grasp's own to replace: it is under `.grasp/worktrees/`, which nothing else writes.
+  defp placement(root, worktree, head, runner, log) do
+    cond do
+      not File.exists?(worktree) ->
+        File.mkdir_p!(Path.dirname(worktree))
+        {:ok, add(worktree, head)}
+
+      owned?(root, worktree, runner) ->
+        {:ok, ["git", "-C", worktree, "checkout", "--detach", "origin/#{head}"]}
+
+      true ->
+        log.("#{Path.relative_to(worktree, root)} is not a worktree git knows; replacing it")
+
+        with :ok <- discard(worktree),
+             {:ok, _pruned} <- prune(root, runner) do
+          {:ok, add(worktree, head)}
+        end
+    end
+  end
+
+  defp add(worktree, head), do: ["git", "worktree", "add", "--detach", worktree, "origin/#{head}"]
+
+  defp owned?(root, worktree, runner) do
+    match?({_output, 0}, runner.(["git", "-C", worktree, "rev-parse", "--git-dir"], root, []))
+  end
+
+  # Pruning before the worktree is placed clears the admin entries of directories that were
+  # deleted by hand, which `git worktree add` would otherwise refuse to reuse the path of.
+  defp prune(root, runner), do: command(["git", "worktree", "prune"], root, [], runner)
+
+  defp discard(worktree) do
+    case File.rm_rf(worktree) do
+      {:ok, _removed} ->
+        :ok
+
+      {:error, reason, path} ->
+        {:error, "could not remove #{path}: #{:file.format_error(reason)}"}
     end
   end
 
@@ -212,7 +289,7 @@ defmodule Grasp.PullRequest do
       true ->
         case File.ln_s(source, target) do
           :ok ->
-            log.("Linked deps to #{Path.relative_to(source, root)}")
+            log.("Linked #{Path.relative_to(target, root)} to #{source}")
             :ok
 
           {:error, reason} ->
@@ -256,12 +333,17 @@ defmodule Grasp.PullRequest do
   end
 
   defp remove(root, worktree, runner, log) do
-    if File.dir?(worktree) do
-      argv = ["git", "worktree", "remove", "--force", worktree]
+    if File.exists?(worktree) do
+      log.("Removing #{Path.relative_to(worktree, root)} and any edit left uncommitted in it")
 
-      with {:ok, _output} <- command(argv, root, [], runner) do
-        log.("Removed #{Path.relative_to(worktree, root)}")
-        :ok
+      case command(["git", "worktree", "remove", "--force", worktree], root, [], runner) do
+        {:ok, _output} ->
+          :ok
+
+        # git refuses a path it does not hold as a working tree, and that path is still a
+        # directory Grasp made and nothing else writes to.
+        {:error, _message} ->
+          discard(worktree)
       end
     else
       :ok

@@ -1,5 +1,7 @@
 defmodule Grasp.PullRequestTest do
-  use ExUnit.Case, async: true
+  # The index path the task writes to is application-wide, and these tests decide what it
+  # is, so this module runs alone.
+  use ExUnit.Case, async: false
 
   alias Grasp.PullRequest
 
@@ -7,9 +9,20 @@ defmodule Grasp.PullRequestTest do
 
   # Identity and signing are given on every git call, so a commit works on a machine that
   # configures neither, and on one that signs every commit by default.
-  @git_config ["-c", "user.name=Grasp Test", "-c", "user.email=grasp@example.com"]
+  @git_config [
+    "-c",
+    "user.name=Grasp Test",
+    "-c",
+    "user.email=grasp@example.com",
+    "-c",
+    "commit.gpgsign=false"
+  ]
 
   setup %{tmp_dir: tmp_dir} do
+    index_path = Application.get_env(:grasp, :index_path)
+    Application.put_env(:grasp, :index_path, nil)
+    on_exit(fn -> Application.put_env(:grasp, :index_path, index_path) end)
+
     tmp_dir = Path.expand(tmp_dir)
     origin = Path.join(tmp_dir, "origin.git")
     root = Path.join(tmp_dir, "app")
@@ -151,6 +164,88 @@ defmodule Grasp.PullRequestTest do
 
     refute File.exists?(worktree)
     refute worktrees(root) =~ "pr-7"
+  end
+
+  test "open/2 writes the index file the store is configured to watch", context do
+    %{root: root, worktree: worktree} = context
+    Application.put_env(:grasp, :index_path, "tmp/watched.json")
+
+    assert {:ok, pull_request} = PullRequest.open(7, opts(root))
+
+    assert pull_request.index == Path.join(root, "tmp/watched.json")
+    assert_received {:ran, argv, _cwd, _run_opts}
+
+    assert Enum.drop(argv, 4) == [
+             "--out",
+             Path.join(root, "tmp/watched.json"),
+             "--build-path",
+             Path.join(worktree, "_build/grasp")
+           ]
+  end
+
+  test "open/2 refuses to run from a worktree it opened earlier", context do
+    %{root: root} = context
+    assert {:ok, pull_request} = PullRequest.open(7, opts(root))
+
+    assert {:error, message} = PullRequest.open(8, opts(pull_request.worktree))
+
+    assert message =~ "is a worktree Grasp opened a pull request in"
+    assert message =~ "Run mix grasp.pr from the project you started Grasp in"
+  end
+
+  test "open/2 finds the JSON in gh's answer when gh has a notice to make first", context do
+    %{root: root} = context
+    System.put_env("FAKE_GH_NOTICE", "A new release of gh is available: 2.40.0 → 2.41.0")
+    on_exit(fn -> System.delete_env("FAKE_GH_NOTICE") end)
+
+    assert {:ok, pull_request} = PullRequest.open(7, opts(root))
+
+    assert pull_request.title == "Add greeting"
+    assert pull_request.head == "feature"
+  end
+
+  test "open/2 adds the worktree again when its directory was deleted by hand", context do
+    %{root: root, worktree: worktree} = context
+    assert {:ok, _first} = PullRequest.open(7, opts(root))
+    File.rm_rf!(worktree)
+
+    assert {:ok, _second} = PullRequest.open(7, opts(root))
+
+    assert File.dir?(worktree)
+    assert head(worktree) == rev(root, "origin/feature")
+    assert detached?(worktree)
+  end
+
+  test "open/2 replaces a directory git no longer holds as a worktree", context do
+    %{root: root, worktree: worktree} = context
+    assert {:ok, _first} = PullRequest.open(7, opts(root))
+    File.rm_rf!(Path.join(root, ".git/worktrees/pr-7"))
+
+    assert {:ok, _second} = PullRequest.open(7, opts(root))
+
+    assert head(worktree) == rev(root, "origin/feature")
+    assert detached?(worktree)
+    assert Enum.join(collect_steps(), "\n") =~ "is not a worktree git knows; replacing it"
+  end
+
+  test "close/2 removes a directory git no longer holds as a worktree", context do
+    %{root: root, worktree: worktree} = context
+    assert {:ok, _pull_request} = PullRequest.open(7, opts(root))
+    File.rm_rf!(Path.join(root, ".git/worktrees/pr-7"))
+
+    assert PullRequest.close(7, opts(root)) == :ok
+
+    refute File.exists?(worktree)
+  end
+
+  test "close/2 says an uncommitted edit in the worktree goes with it", context do
+    %{root: root} = context
+    assert {:ok, _pull_request} = PullRequest.open(7, opts(root))
+    collect_steps()
+
+    assert PullRequest.close(7, opts(root)) == :ok
+
+    assert Enum.join(collect_steps(), "\n") =~ "any edit left uncommitted in it"
   end
 
   test "close/2 on a pull request that was never opened is a prune", %{root: root} do

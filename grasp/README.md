@@ -62,10 +62,12 @@ mix grasp.pr N [--close] [--base REF]
 Reads pull request `N` with `gh`, checks its head out in a worktree of its own under
 `.grasp/worktrees/pr-N`, lends that worktree the project's `deps/` and a copy of its
 `_build/dev`, and builds the index inside it against the pull request's base, writing it to
-the `.grasp/index.json` the viewer watches. The working tree the task is run from is left
+the index file the viewer watches — `.grasp/index.json`, or whatever `:grasp, :index_path`
+names. The working tree the task is run from is left
 where it is, so the dev server keeps running the code it started with. `--close` removes the
-worktree again. Review comments and sessions are kept under the directory Grasp was started
-in rather than in the worktree, so they outlive it.
+worktree again, with anything left uncommitted in it. Review comments and sessions are kept
+under the directory Grasp was started in rather than in the worktree, so they outlive it.
+Run the task from that directory; a worktree it opened earlier is refused.
 
 ## Serving
 

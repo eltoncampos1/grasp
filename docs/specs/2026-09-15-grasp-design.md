@@ -1215,8 +1215,12 @@ worktree (`project.root`), as do `mix format` and the rebuild; the host keeps ru
 code it started with.
 
 Comments and sessions belong to the reader, not to the tree under review: their files live
-under the host project's own `.grasp/` — the directory Grasp started in — whatever
-`project.root` the index names, so a review survives the worktree being removed.
+under the host project's own `.grasp/` — `:grasp, :home`, recorded at start as the directory
+Grasp started in — whatever `project.root` the index names, so a review survives the worktree
+being removed. `mix grasp.viewer` pins that home to the indexed project's root instead when
+it is a directory on this machine: the standalone viewer is started from Grasp's own
+checkout, which is nobody's review, so its comments and sessions stay with the code they are
+about.
 
 ### What goes away
 

@@ -158,9 +158,13 @@ defmodule Grasp.Comments do
   def delete_reply(thread_id, reply_id) when is_integer(thread_id) and is_integer(reply_id),
     do: GenServer.call(__MODULE__, {:delete_reply, thread_id, reply_id})
 
-  @doc "The file the threads are written to, or `nil` when they are held in memory only."
-  @spec path() :: String.t() | nil
-  def path, do: GenServer.call(__MODULE__, :path)
+  @doc """
+  The file the threads are written to, or `nil` when they are held in memory only.
+
+  `store` reads a store other than the application's, as `list/2` and `add/2` do.
+  """
+  @spec path(store()) :: String.t() | nil
+  def path(store \\ __MODULE__), do: GenServer.call(store, :path)
 
   @doc """
   The trimmed text of line `line` of `record` on `side`, or `nil` when there is no such

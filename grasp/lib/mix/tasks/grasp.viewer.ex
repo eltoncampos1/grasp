@@ -11,11 +11,13 @@ defmodule Mix.Tasks.Grasp.Viewer do
   code mounts Grasp in its router instead and reaches it on its own dev server.
 
   The index is the file `mix grasp.index` wrote in the target project. The viewer binds
-  to 127.0.0.1 and reloads the index whenever the file changes. Review comments belong to
-  the reader rather than to the tree being read, so they live in `.grasp/comments.json`
-  under the directory the viewer was started in, and are read on boot and rewritten after
-  every change so they persist across restarts. `:grasp, :comments_path` and
-  `:grasp, :sessions_dir` name other files when the indexed project is where they belong.
+  to 127.0.0.1 and reloads the index whenever the file changes. Review comments and saved
+  sessions stay with the project being read: the task pins Grasp's home directory to the
+  indexed project's root when that root is on this machine, so `.grasp/comments.json` and
+  `.grasp/sessions/` are written there and are found again by the next viewer opened on the
+  same project, whichever directory it was started from. An index whose project is not
+  checked out here falls back to the working directory. `:grasp, :comments_path` and
+  `:grasp, :sessions_dir` name other files still.
 
   ## Options
 
@@ -77,10 +79,14 @@ defmodule Mix.Tasks.Grasp.Viewer do
 
     # The store loads the index again at boot; one extra decode buys a readable error here
     # instead of a viewer that comes up empty and explains nothing.
-    case Grasp.Index.load(index) do
-      {:ok, _index} -> :ok
-      {:error, reason} -> Mix.raise("grasp.viewer: cannot read #{index}: #{inspect(reason)}")
-    end
+    loaded =
+      case Grasp.Index.load(index) do
+        {:ok, loaded} -> loaded
+        {:error, reason} -> Mix.raise("grasp.viewer: cannot read #{index}: #{inspect(reason)}")
+      end
+
+    # Recorded before the application starts, which is what reads it.
+    Application.put_env(:grasp, :home, home(loaded), persistent: true)
 
     System.put_env("GRASP_INDEX", index)
     if opts[:port], do: System.put_env("GRASP_PORT", Integer.to_string(opts[:port]))
@@ -93,5 +99,20 @@ defmodule Mix.Tasks.Grasp.Viewer do
     Application.put_env(:phoenix, :serve_endpoints, true, persistent: true)
     Mix.shell().info("Grasp viewer: http://127.0.0.1:#{opts[:port] || 4040}  (index: #{index})")
     Mix.Task.run("run", ["--no-halt"])
+  end
+
+  @doc """
+  The directory this viewer keeps comments and sessions in for `index`.
+
+  The indexed project's root, so a review stays with the code it is about rather than with
+  the directory the viewer happened to be started from — `mix grasp.viewer` is run from
+  Grasp's own checkout, which is nobody's review. A root that is not a directory on this
+  machine leaves the working directory, where the files at least have somewhere to go.
+  """
+  @spec home(Grasp.Index.t()) :: Path.t()
+  def home(%Grasp.Index{} = index) do
+    root = index.project["root"]
+
+    if is_binary(root) and File.dir?(root), do: Path.expand(root), else: File.cwd!()
   end
 end

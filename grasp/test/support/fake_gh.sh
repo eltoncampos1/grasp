@@ -6,7 +6,13 @@
 # branch fields answers pull 7, whose feature branch is open against main, for the worktree
 # recipe. An `api` call whose argv
 # carries GHFAIL answers GitHub's validation error. With FAKE_GH_LOG set it appends each
-# argv as one line to that file, so a test can read back the flags it was called with.
+# argv as one line to that file, so a test can read back the flags it was called with, and
+# with FAKE_GH_NOTICE set it writes that line to stderr first, the way gh announces a new
+# release, so a caller that folds stderr into stdout has to find the JSON within it.
+if [ -n "$FAKE_GH_NOTICE" ]; then
+  printf '%s\n' "$FAKE_GH_NOTICE" 1>&2
+fi
+
 if [ -n "$FAKE_GH_LOG" ]; then
   printf '%s\n' "$*" >> "$FAKE_GH_LOG"
 fi

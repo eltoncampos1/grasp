@@ -126,7 +126,9 @@ defmodule Grasp.Agent.CommandTest do
     prompt = Command.system_prompt("s1", "edit", "mix grasp.index --base main")
 
     assert prompt =~ "When the user asks you to open, review or look at a pull request by number:"
-    assert prompt =~ "Run `mix grasp.pr N` from the project root."
+    home = Grasp.Application.home()
+
+    assert prompt =~ "Run `mix grasp.pr N` from #{home}, the directory Grasp was started in"
     assert prompt =~ ".grasp/worktrees/pr-N"
 
     assert prompt =~
@@ -134,8 +136,11 @@ defmodule Grasp.Agent.CommandTest do
 
     assert prompt =~ "reload_index"
     assert prompt =~ "list_changes"
-    assert prompt =~ "mix grasp.index --base origin/<base> --out <host>/.grasp/index.json"
-    assert prompt =~ ".grasp/comments.json"
+
+    assert prompt =~
+             "mix grasp.index --base origin/<base> --out #{Path.join(home, ".grasp/index.json")}"
+
+    assert prompt =~ Path.join(home, ".grasp/comments.json")
     refute prompt =~ "gh pr checkout"
     refute prompt =~ "git switch"
   end

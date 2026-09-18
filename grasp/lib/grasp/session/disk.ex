@@ -11,10 +11,9 @@ defmodule Grasp.Session.Disk do
   from a worktree is still there once that worktree is removed. `Grasp.Session.Forest.dump/1` writes version 2 of that document, in
   which a card holds its position on the stage; a version 1 file, which held a displacement
   from a layout the canvas no longer draws, still opens, with its cards laid out afresh.
-  `:grasp, :sessions_dir` overrides the directory, and when neither
-  that nor a project root on this machine gives one, every call here is a no-op and
-  sessions live in memory only — a viewer pointed at an index whose project is not checked
-  out still runs, it just forgets.
+  `:grasp, :sessions_dir` overrides the directory, and when neither that nor
+  `Grasp.Application.home/0` gives one, every call here is a no-op and sessions live in
+  memory only — a viewer running outside a started application still draws, it just forgets.
 
   A write goes to a temporary file beside the target and is renamed over it, so a crash
   midway through leaves either the previous document or the new one and never half of

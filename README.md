@@ -198,8 +198,9 @@ which one has the focus. The session named `default` is the canvas at `/`; any o
 the canvas at `/s/<name>`, so a review of one pull request and a walk through a subsystem sit
 side by side instead of on top of each other.
 
-Each session is a file under `.grasp/sessions/` in the project Grasp was started in, written
-a moment after the canvas changes and read back when the viewer starts, so quitting and coming back — or
+Each session is a file under `.grasp/sessions/` in the project Grasp was started in — the
+standalone `mix grasp.viewer` puts them with the project its index describes instead —
+written a moment after the canvas changes and read back when the viewer starts, so quitting and coming back — or
 restarting the viewer on the same project — finds the cards where they were.
 
 The sidebar's header names the session being read and opens the menu of every session the
@@ -236,14 +237,15 @@ Someone else's pull request is read from a worktree of its own:
 mix grasp.pr 1212
 ```
 
-That reads the pull request with `gh`, checks its head out under `.grasp/worktrees/pr-1212`,
-lends the worktree your `deps/` and a copy of your `_build/dev`, and indexes it there against
-the pull request's base, writing the index your viewer watches. Your own checkout stays on the
-branch you were on and your dev server keeps running the code it started with; the cards are
-the pull request's code, read from the worktree. `mix grasp.pr 1212 --close` removes it again,
-and `--base REF` reviews against a ref other than the one the pull request targets. Comments
-and sessions are not kept in the worktree — they live under the checkout you started Grasp in
-— so a review outlives the tree it was written against.
+Run it from the project you started Grasp in. It reads the pull request with `gh`, checks its
+head out under `.grasp/worktrees/pr-1212`, lends the worktree your `deps/` and a copy of your
+`_build/dev`, and indexes it there against the pull request's base, writing the index your
+viewer watches. Your own checkout stays on the branch you were on and your dev server keeps
+running the code it started with; the cards are the pull request's code, read from the
+worktree. `mix grasp.pr 1212 --close` removes it again, along with anything left uncommitted
+in it, and `--base REF` reviews against a ref other than the one the pull request targets.
+Comments and sessions are not kept in the worktree — they live under the checkout you started
+Grasp in — so a review outlives the tree it was written against.
 
 In the viewer:
 
