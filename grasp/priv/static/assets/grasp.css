@@ -443,6 +443,8 @@ body.grasp-dragging .flow__title {
   fill: none;
   stroke: var(--edge-color, var(--border));
   stroke-width: 2;
+  pointer-events: visibleStroke;
+  cursor: pointer;
 }
 .connectors .arrow {
   fill: var(--edge-color, var(--border));

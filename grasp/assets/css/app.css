@@ -133,7 +133,9 @@ body.grasp-space .canvas, body.grasp-space .card { cursor: grab; }
 body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, body.grasp-dragging .flow__title { cursor: grabbing; }
 .stage { position: absolute; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; }
 .connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 0; }
-.connectors .edge { fill: none; stroke: var(--edge-color, var(--border)); stroke-width: 2; }
+/* The layer itself takes no pointer, but a stroke does, so a double click on an edge can
+   travel along it; the hit area is the drawn stroke, not the path's bounding box. */
+.connectors .edge { fill: none; stroke: var(--edge-color, var(--border)); stroke-width: 2; pointer-events: visibleStroke; cursor: pointer; }
 .connectors .arrow { fill: var(--edge-color, var(--border)); }
 /* The frames the hook draws, under the cards: one rectangle per group, placed in stage
    units. The border is divided by the zoom so it stays a hairline however far out you are. */

@@ -103,6 +103,7 @@ const Canvas = {
     this.onPointerUp = (e) => this.pointerUp(e)
     this.onPointerCancel = (e) => this.pointerCancel(e)
     this.onClickCapture = (e) => this.clickCapture(e)
+    this.onDoubleClick = (e) => this.doubleClick(e)
     this.onContextMenu = (e) => this.contextMenu(e)
     this.onKeyDown = (e) => this.spaceDown(e)
     this.onKeyUp = (e) => this.spaceUp(e)
@@ -116,6 +117,7 @@ const Canvas = {
     window.addEventListener("pointerup", this.onPointerUp)
     window.addEventListener("pointercancel", this.onPointerCancel)
     this.el.addEventListener("click", this.onClickCapture, true)
+    this.el.addEventListener("dblclick", this.onDoubleClick)
     this.el.addEventListener("contextmenu", this.onContextMenu)
     window.addEventListener("keydown", this.onKeyDown)
     window.addEventListener("keyup", this.onKeyUp)
@@ -185,6 +187,7 @@ const Canvas = {
     window.removeEventListener("pointerup", this.onPointerUp)
     window.removeEventListener("pointercancel", this.onPointerCancel)
     this.el.removeEventListener("click", this.onClickCapture, true)
+    this.el.removeEventListener("dblclick", this.onDoubleClick)
     this.el.removeEventListener("contextmenu", this.onContextMenu)
     window.removeEventListener("keydown", this.onKeyDown)
     window.removeEventListener("keyup", this.onKeyUp)
@@ -440,6 +443,26 @@ const Canvas = {
       bottom = Math.max(bottom, (b.bottom - s.top) / scale)
     }
     return {left, top, right, bottom, width: right - left, height: bottom - top}
+  },
+
+  // A double click on an edge travels along it: of the two cards the edge joins, the one
+  // further from the pointer is the one out of sight, so that is the card brought into view
+  // and given focus. Near either end the gesture is a way to jump to the other.
+  doubleClick(e) {
+    const edge = e.target.closest?.(".edge")
+    if (!edge) return
+    const ends = [edge.dataset.from, edge.dataset.to]
+      .map((id) => ({id, card: document.getElementById(`card-${id}`)}))
+      .filter(({card}) => card)
+    if (ends.length === 0) return
+    const distance = ({card}) => {
+      const b = card.getBoundingClientRect()
+      return Math.hypot(b.left + b.width / 2 - e.clientX, b.top + b.height / 2 - e.clientY)
+    }
+    const far = ends.reduce((a, b) => (distance(b) > distance(a) ? b : a))
+    e.preventDefault()
+    this.pushEvent("focus_card", {card: far.id})
+    this.revealCard(far.id)
   },
 
   revealCard(id) {
@@ -942,8 +965,9 @@ const Canvas = {
       const color = /^[0-7]$/.test(site.dataset.color || "") ? site.dataset.color : null
       // The path is drawn in stage units, which the zoom scales; `vector-effect` is what keeps
       // its stroke 2 screen pixels instead of thinning to under half a one at MIN_SCALE.
+      const from = card.id.replace("card-", "")
       paths.push(
-        `<path class="edge" vector-effect="non-scaling-stroke"` +
+        `<path class="edge" vector-effect="non-scaling-stroke" data-from="${from}" data-to="${site.dataset.edgeTo}"` +
           (color === null ? "" : ` data-color="${color}" marker-end="url(#arrow-${color})"`) +
           ` d="${d}" />`,
       )
