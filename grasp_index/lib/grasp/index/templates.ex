@@ -5,8 +5,11 @@ defmodule Grasp.Index.Templates do
 
   Phoenix compiles every file an `embed_templates` pattern matches into a one-argument
   function of the embedding module, named after the basename with its format and engine
-  extensions dropped, and points `@file` at the template, so the compiler reports the calls
-  the template makes against the template's own path. A definition per match is what those
+  extensions dropped and the embed's `:suffix` appended, and points `@file` at the
+  template, so the compiler reports the calls the template makes against the template's own
+  path. The pattern is looked for under the embed's `:root`, resolved against the directory
+  of the module that embeds it, which is also where it is looked for when no `:root` is
+  given. A definition per match is what those
   calls land on, and it gives the template's component tags — scanned by
   `Grasp.Index.Heex` — a range a reader can click. The whole file is the definition: it
   spans line 1 to its last line and its source is the file's text.
@@ -49,9 +52,9 @@ defmodule Grasp.Index.Templates do
       embeds
       |> Enum.flat_map(&paths(root, &1))
       |> Enum.uniq()
-      |> Enum.reduce({[], written}, fn {module, path}, {templates, claimed} ->
+      |> Enum.reduce({[], written}, fn {module, suffix, path}, {templates, claimed} ->
         relative = Path.relative_to(path, root)
-        name = name(path)
+        name = name(path, suffix)
 
         if MapSet.member?(claimed, {module, name, 1}) do
           {templates, claimed}
@@ -71,7 +74,8 @@ defmodule Grasp.Index.Templates do
     Enum.reverse(templates)
   end
 
-  # The pattern is relative to the directory of the module that embeds it, and Phoenix
+  # The pattern is looked for under the embed's `:root` — resolved against the directory of
+  # the module that embeds it, and that directory itself when there is none — and Phoenix
   # appends the extension of every engine it compiles, so `"greet_html/*"` matches
   # `greet_html/show.html.heex` and not the fixtures or assets sitting beside it. A match is
   # expanded before anything is done with it: a pattern that walks up (`"../shared_html/*"`)
@@ -80,18 +84,27 @@ defmodule Grasp.Index.Templates do
   # machine could resolve.
   defp paths(root, embed) do
     directory = Path.dirname(Path.join(root, embed.file))
+    base = Path.expand(embed.root || directory, directory)
 
-    directory
+    base
     |> Path.join(embed.pattern <> ".{heex,eex}")
     |> Path.wildcard()
     |> Enum.map(&Path.expand/1)
     |> Enum.filter(&String.starts_with?(&1, root <> "/"))
     |> Enum.sort()
-    |> Enum.map(&{embed.module, &1})
+    |> Enum.map(&{embed.module, embed.suffix, &1})
   end
 
-  defp name(path),
-    do: path |> Path.basename() |> Path.rootname() |> Path.rootname() |> String.to_atom()
+  # `Phoenix.Component.__embed__/2`: the basename without its format and engine extensions,
+  # carrying the embed's suffix.
+  defp name(path, suffix) do
+    path
+    |> Path.basename()
+    |> Path.rootname()
+    |> Path.rootname()
+    |> Kernel.<>(suffix || "")
+    |> String.to_atom()
+  end
 
   defp definition(module, name, file, source) do
     %{

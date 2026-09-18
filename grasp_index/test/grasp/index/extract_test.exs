@@ -209,10 +209,28 @@ defmodule Grasp.Index.ExtractTest do
              %{
                module: "SampleWeb.Page",
                pattern: "page_html/*",
+               suffix: nil,
+               root: nil,
                file: "lib/sample_web/page.ex",
                line: 2
              }
            ]
+  end
+
+  @embed_options ~S'''
+  defmodule SampleWeb.Mailer do
+    embed_templates "emails/*", suffix: "_html", root: "../shared"
+
+    embed_templates "texts/*", suffix: @suffix
+  end
+  '''
+
+  test "reads the suffix and root an embed names, and only when they are literal" do
+    {:ok, %{embeds: embeds}} = Extract.extract(@embed_options, "lib/sample_web/mailer.ex")
+
+    assert [emails, texts] = embeds
+    assert %{pattern: "emails/*", suffix: "_html", root: "../shared"} = emails
+    assert %{pattern: "texts/*", suffix: nil, root: nil} = texts
   end
 
   test "leaves template nil on a call site that is not a render call" do

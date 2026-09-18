@@ -76,6 +76,8 @@ defmodule Grasp.Index.Extract do
   @type embed :: %{
           module: String.t(),
           pattern: String.t(),
+          suffix: String.t() | nil,
+          root: String.t() | nil,
           file: String.t(),
           line: pos_integer()
         }
@@ -109,6 +111,10 @@ defmodule Grasp.Index.Extract do
   @doc """
   Parses `source`, read from the project-relative `file`, into definitions, modules and
   the template patterns its modules embed.
+
+  An embed carries the pattern and the `:suffix` and `:root` options that decide what the
+  embedded functions are called and where they are looked for; an option that is not a
+  literal string reads as absent.
   """
   @spec extract(String.t(), String.t()) ::
           {:ok, %{definitions: [definition()], modules: [module_info()], embeds: [embed()]}}
@@ -176,8 +182,8 @@ defmodule Grasp.Index.Extract do
         {:defmodule, _, _} = node, {acc, _pending} ->
           {walk(node, parts, acc), []}
 
-        {:embed_templates, meta, [pattern | _opts]}, {acc, _pending} ->
-          {add_embed(acc, module, pattern, meta), []}
+        {:embed_templates, meta, [pattern | opts]}, {acc, _pending} ->
+          {add_embed(acc, module, pattern, opts, meta), []}
 
         _other, {acc, _pending} ->
           {acc, []}
@@ -186,12 +192,33 @@ defmodule Grasp.Index.Extract do
     acc
   end
 
-  defp add_embed(acc, module, {:__block__, _meta, [pattern]}, meta) when is_binary(pattern) do
-    embed = %{module: module, pattern: pattern, file: acc.file, line: meta[:line]}
+  defp add_embed(acc, module, {:__block__, _meta, [pattern]}, opts, meta)
+       when is_binary(pattern) do
+    embed = %{
+      module: module,
+      pattern: pattern,
+      suffix: embed_option(opts, :suffix),
+      root: embed_option(opts, :root),
+      file: acc.file,
+      line: meta[:line]
+    }
+
     %{acc | embeds: [embed | acc.embeds]}
   end
 
-  defp add_embed(acc, _module, _dynamic_pattern, _meta), do: acc
+  defp add_embed(acc, _module, _dynamic_pattern, _opts, _meta), do: acc
+
+  # Only a literal string in a literal keyword list is read. An option computed elsewhere
+  # (`suffix: @suffix`) is a value no parser can know, and guessing it would name a function
+  # the compiler never defined, so it reads as absent.
+  defp embed_option([opts], key) when is_list(opts) do
+    Enum.find_value(opts, fn
+      {{:__block__, _, [^key]}, {:__block__, _, [value]}} when is_binary(value) -> value
+      _pair -> nil
+    end)
+  end
+
+  defp embed_option(_opts, _key), do: nil
 
   defp add_clause(acc, module, kind, head, node, pending) do
     case head_signature(head) do

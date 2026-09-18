@@ -29,7 +29,9 @@ defmodule Grasp.Index.Heex do
   string inside an interpolation (`{"{"}`) is counted like any other, so an unbalanced one
   swallows the rest of the template, as an unterminated `<%!--`, `<!--`, `<script>` or
   `<style>` does. EEx expression tags (`<%= ... %>`) are not skipped, so a tag written
-  inside a string in one is reported.
+  inside a string in one is reported, and so is a tag-shaped pattern inside a plain
+  attribute string (`title="<.badge />"`) — harmless in both cases, since the compiler
+  reports no call there and nothing lands on the site.
   """
 
   alias Grasp.Index.Extract

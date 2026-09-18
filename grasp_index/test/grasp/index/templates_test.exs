@@ -87,10 +87,33 @@ defmodule Grasp.Index.TemplatesTest do
     assert Templates.definitions(root, [embed], []) == []
   end
 
+  @tag :tmp_dir
+  test "carries the suffix an embed names into the function it defines", %{tmp_dir: root} do
+    write!(root, "lib/sample_app_web/greet_html.ex", "defmodule SampleAppWeb.GreetHTML do\nend\n")
+    write!(root, "lib/sample_app_web/greet_html/welcome.html.heex", @template)
+
+    embed = %{embed() | suffix: "_html"}
+
+    assert [%{name: :welcome_html, arity: 1}] = Templates.definitions(root, [embed], [])
+  end
+
+  @tag :tmp_dir
+  test "globs under the root an embed names", %{tmp_dir: root} do
+    write!(root, "lib/sample_app_web/greet_html.ex", "defmodule SampleAppWeb.GreetHTML do\nend\n")
+    write!(root, "lib/shared/mail/welcome.html.heex", @template)
+
+    embed = %{embed() | pattern: "mail/*", root: "../shared"}
+
+    assert [%{name: :welcome, file: "lib/shared/mail/welcome.html.heex"}] =
+             Templates.definitions(root, [embed], [])
+  end
+
   defp embed do
     %{
       module: "SampleAppWeb.GreetHTML",
       pattern: "greet_html/*",
+      suffix: nil,
+      root: nil,
       file: "lib/sample_app_web/greet_html.ex",
       line: 2
     }
