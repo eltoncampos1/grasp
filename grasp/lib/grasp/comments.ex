@@ -460,7 +460,7 @@ defmodule Grasp.Comments do
     with {:ok, function_id} <- binary_field(attrs, :function_id),
          {:ok, side} <- member_field(attrs, :side, @sides),
          {:ok, line} <- line_field(attrs),
-         {:ok, end_line} <- end_line_field(attrs, line),
+         {:ok, end_line} <- end_line_value(Map.get(attrs, :end_line), line),
          {:ok, author} <- member_field(attrs, :author, @authors),
          {:ok, body} <- body_field(attrs) do
       {:ok,
@@ -517,13 +517,12 @@ defmodule Grasp.Comments do
   # A range that stops where it starts is a thread on one line, so it is refused rather than
   # stored as a range of one: two spellings of the same thread would read differently
   # everywhere the range is drawn.
-  defp end_line_field(attrs, line) do
-    case Map.get(attrs, :end_line) do
-      nil -> {:ok, nil}
-      end_line when is_integer(end_line) and end_line > line -> {:ok, end_line}
-      _invalid -> {:error, :invalid_end_line}
-    end
-  end
+  defp end_line_value(nil, _line), do: {:ok, nil}
+
+  defp end_line_value(end_line, line) when is_integer(end_line) and end_line > line,
+    do: {:ok, end_line}
+
+  defp end_line_value(_invalid, _line), do: {:error, :invalid_end_line}
 
   defp body_field(attrs) do
     case Map.get(attrs, :body) do
@@ -612,7 +611,7 @@ defmodule Grasp.Comments do
     snippet = Map.get(comment, "snippet")
 
     with true <- is_nil(snippet) or is_binary(snippet),
-         {:ok, end_line} <- end_line_field(%{end_line: Map.get(comment, "end_line")}, line),
+         {:ok, end_line} <- end_line_value(Map.get(comment, "end_line"), line),
          {:ok, github} <- decode_github(Map.get(comment, "github")) do
       {replies, dropped} = decode_replies(Map.get(comment, "replies", []))
 

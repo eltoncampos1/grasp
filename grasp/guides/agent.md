@@ -128,9 +128,10 @@ canvas at `/grasp/s/<name>` and is created on first mention.
   agent's own, with their replies. Open threads only unless `include_resolved` is set. Each
   one says where it now sits: `anchored` on `anchored_line`, `outdated` when the line it was
   written on has been edited away, or `orphan` when the function has left the index.
-- `add_comment` — write a comment on one line, as the agent. `side` is `new` for the branch's
-  code and `old` for the base version of a modified function, which is how a comment lands on
-  a line the branch deleted.
+- `add_comment` — write a comment on a line, or on a range of lines, as the agent. `side` is
+  `new` for the branch's code and `old` for the base version of a modified function, which is
+  how a comment lands on a line the branch deleted; `end_line` covers everything from `line`
+  to it, for a finding about a whole clause rather than about one line of it.
 - `reply_comment` — answer a thread, as the agent.
 - `resolve_comment` — close a thread once it is dealt with, or reopen one.
 - `publish_comments` — post the threads to a pull request as review comments, each with its

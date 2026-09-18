@@ -6,8 +6,8 @@ defmodule Grasp.Comments.Publisher do
   the same threads the cards show, so publishing walks the store in id order, posts each
   one as a review comment with its replies under it, and stamps the thread with what GitHub
   answered. The stamp is what makes a second publish safe: a thread already carrying one is
-  skipped rather than posted twice, so a reviewer can publish, write three more comments and
-  publish again.
+  skipped rather than posted twice, so a reviewer can publish, write three more comments
+  and publish again.
 
   Where a thread lands depends on the pull request's own diff. GitHub accepts a line comment
   only on a line the diff covers, so the diff's hunks are read first and a thread whose line
@@ -15,9 +15,9 @@ defmodule Grasp.Comments.Publisher do
   — is posted as a file comment instead, opening with the function and line it was written
   on so nothing about it is lost. A thread written over a range goes up as a multi-line
   comment when the diff covers both of its ends, and on the file when it covers only one:
-  half a range is a comment about code its author did not mark. That is a degradation rather than a failure: a remark
-  posted on the file is still a remark the author reads, and refusing to post it would leave
-  the review half published.
+  half a range is a comment about code its author did not mark. That is a degradation rather
+  than a failure: a remark posted on the file is still a remark the author reads, and
+  refusing to post it would leave the review half published.
 
   Nothing is rolled back. A comment GitHub refuses is reported under `failed` and the rest
   of the review still goes; a reply that fails after its comment landed is a warning, because

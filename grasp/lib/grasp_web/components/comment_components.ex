@@ -16,10 +16,11 @@ defmodule GraspWeb.CommentComponents do
 
   The composer's text is the browser's alone. The textarea is `phx-update="ignore"` so a
   patch arriving mid-sentence cannot rewrite what is being typed, and its id names the
-  anchor it was opened at — card, side, line and the thread it replies to — so a draft
-  belongs to the one place it was written and never reappears under another line. A new
-  thread's box names the lines it will cover, and the range's last line is left out of that
-  id: stretching the selection is the same box, and keeps the half-written sentence in it.
+  anchor the box was opened at — card, side, anchor line and the thread it replies to — so a
+  draft belongs to the one place it was written and never reappears under another line. A new
+  thread's box names the lines it will cover, and neither end of that range is part of the
+  id: stretching the selection either way is the same box, and keeps the half-written
+  sentence in it.
   """
 
   use GraspWeb, :html
@@ -127,14 +128,15 @@ defmodule GraspWeb.CommentComponents do
   attr :card_id, :integer, required: true
 
   @doc """
-  The box a comment is written in, carrying the anchor it was opened at as hidden fields so
-  the submit says where the comment belongs without the server holding the form's state.
+  The box a comment is written in, naming in its markup the anchor it was opened at: the
+  view answers the submit from its own record of where the box stands, and the fields are
+  what a reader — or a test — sees that record as.
   """
   def composer(assigns) do
     composing = assigns.composing
 
     id =
-      "composer-#{assigns.card_id}-#{composing.side}-#{composing.line}-#{composing.reply_to || "new"}"
+      "composer-#{assigns.card_id}-#{composing.side}-#{composing.anchor}-#{composing.reply_to || "new"}"
 
     assigns =
       assign(assigns, id: id, reply?: composing.reply_to != nil, lines: heading(composing))

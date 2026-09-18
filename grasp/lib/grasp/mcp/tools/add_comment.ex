@@ -99,7 +99,6 @@ defmodule Grasp.MCP.Tools.AddComment do
     case Comments.add(attrs) do
       {:ok, thread} -> {:ok, thread}
       {:error, :invalid} -> {:error, "body must not be blank"}
-      {:error, :invalid_end_line} -> {:error, "end_line #{end_line} must come after line #{line}"}
     end
   end
 end

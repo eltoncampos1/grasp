@@ -5,8 +5,9 @@ defmodule Grasp.Diff.Hunks do
 
   The input is the per-line list `Grasp.Highlight.diff_lines/2` hands back, each entry
   carrying the `op` the diff gave it. An entry is an *anchor* when it is part of the change
-  (`op` is `:ins` or `:del`) or when a comment thread sits on it — a thread names a line, and
-  folding the line it hangs from would take the conversation off the card. The `context`
+  (`op` is `:ins` or `:del`) or when it is one of the lines a comment thread covers — a
+  thread names a line, or a range of them, and folding any of them away would leave the
+  conversation talking about code the reader cannot see. The `context`
   entries on either side of every anchor stay visible so a change reads against the code
   around it, and each remaining run of unchanged lines collapses into one `t:fold/0` naming
   the current lines it hides.
@@ -28,9 +29,10 @@ defmodule Grasp.Diff.Hunks do
   @type fold :: %{fold: true, from: pos_integer(), to: pos_integer(), count: pos_integer()}
 
   @typedoc """
-  `context` is how many lines stay visible on either side of an anchor; `keep` holds the
-  `{side, line}` anchors of the card's comment threads; `expanded` holds the `from` line of
-  every fold the reader has opened.
+  `context` is how many lines stay visible on either side of an anchor; `keep` holds every
+  `{side, line}` a comment thread of the card covers — each line of each thread's range, not
+  only the line it hangs from; `expanded` holds the `from` line of every fold the reader has
+  opened.
   """
   @type opts :: [
           context: non_neg_integer(),

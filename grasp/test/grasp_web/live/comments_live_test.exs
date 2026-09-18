@@ -4,6 +4,7 @@ defmodule GraspWeb.CommentsLiveTest do
   alias Grasp.Comments
   alias Grasp.Session
 
+  @badge "SampleAppWeb.GreetHTML.badge/1"
   @greet "SampleApp.Greeter.greet/2"
   @shout "SampleApp.Formatter.shout/1"
 
@@ -37,36 +38,40 @@ defmodule GraspWeb.CommentsLiveTest do
   end
 
   test "a range of lines takes one comment, drawn under its last line", %{view: view, name: name} do
-    Session.open_root(name, @greet)
+    Session.open_root(name, @badge)
     body = unique("these three lines are one thought")
 
     render_click(view, "comment_start", %{
       "card" => "1",
       "side" => "new",
-      "line" => "6",
-      "end_line" => "8"
+      "line" => "8",
+      "end_line" => "10"
     })
 
-    assert has_element?(view, "#card-1 .composer__lines", "Lines 6–8")
-    assert has_element?(view, "#card-1 form.composer input[name='line'][value='6']")
+    assert has_element?(view, "#card-1 .composer__lines", "Lines 8–10")
+    assert has_element?(view, "#card-1 form.composer input[name='line'][value='8']")
 
     view |> form("#card-1 form.composer", %{"body" => body}) |> render_submit()
 
     id = thread_id(body)
-    assert %{line: 6, end_line: 8} = Comments.fetch(id) |> then(fn {:ok, thread} -> thread end)
+    assert %{line: 8, end_line: 10} = Comments.fetch(id) |> then(fn {:ok, thread} -> thread end)
 
+    # No other test writes on this function, so every tinted line of the card is this
+    # thread's own.
     html = card(view)
-    assert html =~ ~s|data-line="6" data-commented="true"|
-    assert html =~ ~s|data-line="7" data-commented="true"|
     assert html =~ ~s|data-line="8" data-commented="true"|
+    assert html =~ ~s|data-line="9" data-commented="true"|
+    assert html =~ ~s|data-line="10" data-commented="true"|
+    refute html =~ ~s|data-line="7" data-commented|
+    refute html =~ ~s|data-line="11" data-commented|
 
-    assert before?(html, ~s(data-line="8"), body)
-    assert before?(html, body, ~s(data-line="9"))
+    assert before?(html, ~s(data-line="10"), body)
+    assert before?(html, body, ~s(data-line="11"))
 
     assert has_element?(
              view,
              "#entries .entry--comment[phx-value-id='#{id}'] .entry__where",
-             "greet/2 · L6–L8"
+             "badge/1 · L8–L10"
            )
   end
 
@@ -84,7 +89,9 @@ defmodule GraspWeb.CommentsLiveTest do
     })
 
     assert has_element?(view, "#card-1 .composer__lines", "Lines 9–11")
-    assert composing(view) == %{card: 1, side: "new", line: 9, end_line: 11, reply_to: nil}
+
+    assert composing(view) ==
+             %{card: 1, side: "new", anchor: 9, line: 9, end_line: 11, reply_to: nil}
 
     # The anchor is where the composer was opened, so a Shift click above it runs the range
     # the other way rather than off the composer's far end.
@@ -97,6 +104,27 @@ defmodule GraspWeb.CommentsLiveTest do
 
     assert has_element?(view, "#card-1 .composer__lines", "Lines 7–9")
 
+    # Every stretch runs from the same anchor, so Shift-clicking the anchor itself is what
+    # takes the box back to the one line it was opened on.
+    render_click(view, "comment_start", %{
+      "card" => "1",
+      "side" => "new",
+      "line" => "9",
+      "shift" => true
+    })
+
+    assert has_element?(view, "#card-1 .composer__lines", "Line 9")
+  end
+
+  test "stretching a composer upwards keeps the box the draft was typed in", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+
+    view |> element("#card-1 .line[data-line='9'] .ln") |> render_click()
+    assert has_element?(view, "#card-1 form.composer#composer-1-new-9-new")
+
     render_click(view, "comment_start", %{
       "card" => "1",
       "side" => "new",
@@ -104,7 +132,31 @@ defmodule GraspWeb.CommentsLiveTest do
       "shift" => true
     })
 
-    assert has_element?(view, "#card-1 .composer__lines", "Line 7")
+    assert has_element?(view, "#card-1 .composer__lines", "Lines 7–9")
+    assert has_element?(view, "#card-1 form.composer#composer-1-new-9-new")
+    refute has_element?(view, "#card-1 form.composer#composer-1-new-7-new")
+  end
+
+  test "a line the function has not got opens no composer over it", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+
+    render_click(view, "comment_start", %{
+      "card" => "1",
+      "side" => "new",
+      "line" => "8",
+      "end_line" => "9999"
+    })
+
+    assert has_element?(view, "#card-1 .composer__lines", "Line 8")
+
+    view |> form("#card-1 form.composer", %{"body" => unique("only one line")}) |> render_submit()
+
+    assert [%{line: 8, end_line: nil}] =
+             Comments.list(function_id: @greet, include_resolved: true)
+             |> Enum.filter(&(&1.body =~ "only one line"))
+
+    render_click(view, "comment_start", %{"card" => "1", "side" => "new", "line" => "9999"})
+    refute has_element?(view, "#card-1 form.composer")
   end
 
   test "a thread is replied to, resolved, expanded and taken apart again", %{

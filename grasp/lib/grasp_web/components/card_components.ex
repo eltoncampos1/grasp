@@ -13,6 +13,7 @@ defmodule GraspWeb.CardComponents do
 
   import GraspWeb.CommentComponents
 
+  alias Grasp.Comments
   alias Grasp.Comments.Anchor
   alias Grasp.Diff
   alias Grasp.Diff.Hunks
@@ -156,7 +157,7 @@ defmodule GraspWeb.CardComponents do
 
     anchored =
       Enum.map(anchored, fn {thread, {side, line}} ->
-        span = (thread.end_line || thread.line) - thread.line
+        span = Range.size(Comments.range(thread)) - 1
         last = last_line(record, side)
         %{thread: thread, side: side, range: line..min(line + span, last)//1}
       end)
@@ -420,16 +421,17 @@ defmodule GraspWeb.CardComponents do
     """
   end
 
-  # Where the composer for a new thread is drawn. A reply is not placed here: it belongs
-  # inside the thread it answers, which renders it itself.
+  # Where the composer for a new thread is drawn: under the last line of the range it covers,
+  # so the code it is about reads before the box that talks about it. A reply is not placed
+  # here: it belongs inside the thread it answers, which renders it itself.
   defp composing_at?(
-         %{card: card, side: side, line: line, reply_to: nil},
+         %{card: card, side: side, line: line, end_line: end_line, reply_to: nil},
          card_id,
          line_side,
          number
        )
-       when card == card_id and line == number,
-       do: to_string(line_side) == side
+       when card == card_id,
+       do: to_string(line_side) == side and number == (end_line || line)
 
   defp composing_at?(_composing, _card_id, _side, _number), do: false
 

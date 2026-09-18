@@ -83,8 +83,8 @@ defmodule Grasp.Comments.PublisherTest do
       call = api_call(log, body)
       assert call =~ "start_line=6"
       assert call =~ "line=8"
-      assert call =~ "start_side=RIGHT"
-      assert call =~ "side=RIGHT"
+      assert call =~ "-f start_side=RIGHT"
+      assert call =~ "-f side=RIGHT"
     end
 
     test "posts a range reaching past the diff on the file, naming both its ends", %{
