@@ -248,6 +248,25 @@ defmodule Grasp.PullRequestTest do
     assert Enum.join(collect_steps(), "\n") =~ "any edit left uncommitted in it"
   end
 
+  test "open/2 replaces a plain directory sitting at the worktree's path", context do
+    %{root: root, worktree: worktree} = context
+    File.mkdir_p!(worktree)
+    File.write!(Path.join(worktree, "left-behind.txt"), "not a checkout")
+    main = head(root)
+
+    assert {:ok, _pull_request} = PullRequest.open(7, opts(root))
+
+    # The directory is inside the reader's own repository, so git answers every question
+    # about it with that repository: taking it for a worktree would detach the reader's HEAD.
+    assert branch(root) == "main"
+    assert head(root) == main
+    refute File.read!(Path.join(root, "lib/greeter.ex")) =~ "def shout"
+
+    assert head(worktree) == rev(root, "origin/feature")
+    assert detached?(worktree)
+    refute File.exists?(Path.join(worktree, "left-behind.txt"))
+  end
+
   test "close/2 on a pull request that was never opened is a prune", %{root: root} do
     assert PullRequest.close(7, opts(root)) == :ok
   end

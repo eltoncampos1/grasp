@@ -128,7 +128,8 @@ defmodule Grasp.Agent.CommandTest do
     assert prompt =~ "When the user asks you to open, review or look at a pull request by number:"
     home = Grasp.Application.home()
 
-    assert prompt =~ "Run `mix grasp.pr N` from #{home}, the directory Grasp was started in"
+    assert prompt =~ "Run `mix grasp.pr N --root #{home}`"
+    assert prompt =~ "mix grasp.pr N --close --root #{home}"
     assert prompt =~ ".grasp/worktrees/pr-N"
 
     assert prompt =~

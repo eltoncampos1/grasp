@@ -20,4 +20,15 @@ defmodule Mix.Tasks.Grasp.PrTest do
       Mix.Tasks.Grasp.Pr.run(["--branch", "feature", "7"])
     end
   end
+
+  # The agent's shell runs inside the tree under review and cannot change directory, so the
+  # root it works on has to be nameable. The refusal answers before any command runs, which
+  # is what makes it the cheap proof that the switch reaches `Grasp.PullRequest.open/2`.
+  test "the task works on the root it is given" do
+    worktree = Path.join(File.cwd!(), ".grasp/worktrees/pr-1")
+
+    assert_raise Mix.Error, ~r/is a worktree Grasp opened a pull request in/, fn ->
+      Mix.Tasks.Grasp.Pr.run(["--root", worktree, "7"])
+    end
+  end
 end

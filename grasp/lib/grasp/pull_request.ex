@@ -68,7 +68,13 @@ defmodule Grasp.PullRequest do
 
   `root` is the reader's own checkout, so a root that is itself one of these worktrees is
   refused: a review of a review would index a tree nobody is reading and overwrite the
-  index of the one they are.
+  index of the one they are. A caller running elsewhere — the agent, whose working directory
+  is the tree under review — passes `:root` rather than relying on the working directory.
+
+  Re-opening a pull request moves the worktree it already has to the newly fetched head, and
+  the checkout that does so is not forced: an edit left uncommitted in that worktree which
+  the move would overwrite stops the recipe with git's own message. Committing the edit, or
+  `close/2` to discard it, is what unblocks it.
 
   `:root` is the reader's checkout, the working directory by default; `:runner` runs the
   commands, `System.cmd/3` by default; `:gh` is the GitHub CLI; `:base_override` reviews
@@ -112,7 +118,8 @@ defmodule Grasp.PullRequest do
 
   The removal is forced, because a worktree is Grasp's to throw away: the agent edits the
   pull request's code there, and a reader who wants to keep an edit commits or copies it
-  before closing. A pull request that was never opened, or whose directory is already
+  before closing. It is also how a worktree whose uncommitted edits block a re-open is made
+  ready for one. A pull request that was never opened, or whose directory is already
   gone, is closed by pruning alone. Takes `:root`, `:runner` and `:log` as `open/2` does.
   """
   @spec close(pos_integer(), [option()]) :: :ok | {:error, String.t()}
@@ -161,7 +168,8 @@ defmodule Grasp.PullRequest do
     if worktree_of_ours? do
       {:error,
        "#{root} is a worktree Grasp opened a pull request in. Run mix grasp.pr from the " <>
-         "project you started Grasp in, whose index the viewer watches."}
+         "project you started Grasp in, whose index the viewer watches, or name it with " <>
+         "--root."}
     else
       :ok
     end
@@ -255,8 +263,25 @@ defmodule Grasp.PullRequest do
 
   defp add(worktree, head), do: ["git", "worktree", "add", "--detach", worktree, "origin/#{head}"]
 
+  # Every directory under the checkout answers `rev-parse` — git resolves upward to the
+  # repository containing it — so the questions are which tree the path *is* the top of, and
+  # whether that tree has an admin directory of its own. A plain directory left at the
+  # worktree's path answers with the reader's own checkout, and detaching that would rewrite
+  # the files they are working on.
   defp owned?(root, worktree, runner) do
-    match?({_output, 0}, runner.(["git", "-C", worktree, "rev-parse", "--git-dir"], root, []))
+    with {toplevel, 0} <- rev_parse(root, worktree, "--show-toplevel", runner),
+         {git_dir, 0} <- rev_parse(root, worktree, "--absolute-git-dir", runner),
+         {common_dir, 0} <- rev_parse(root, worktree, "--git-common-dir", runner) do
+      Path.expand(toplevel) == Path.expand(worktree) and
+        Path.expand(git_dir) != Path.expand(common_dir, worktree)
+    else
+      _no_repository -> false
+    end
+  end
+
+  defp rev_parse(root, worktree, question, runner) do
+    {output, status} = runner.(["git", "-C", worktree, "rev-parse", question], root, [])
+    {String.trim(output), status}
   end
 
   # Pruning before the worktree is placed clears the admin entries of directories that were
