@@ -61,6 +61,41 @@ defmodule Grasp.Router do
       default, which is the plug's own default too. It is the address the chat panel hands the
       agent, so a host that gives the plug a `:mcp` of its own says so here as well.
   """
+  @doc """
+  Mounts Grasp into the router being compiled, without importing this module.
+
+  A host that has Grasp in `:dev` only cannot write `import Grasp.Router` or `grasp "/grasp"`
+  in its router: the compiler expands an import and a macro call while compiling the module,
+  inside an `if` that is never taken as much as outside one, and in `:test` or `:prod` there
+  is no `Grasp.Router` to expand. A function call to an absent module compiles, so the host
+  writes
+
+      if Code.ensure_loaded?(Grasp.Router), do: Grasp.Router.mount(__ENV__, "/grasp")
+
+  and the routes exist exactly where the dependency does. The call writes into the router
+  what `scope "/" do pipe_through :browser; grasp "/grasp" end` would have — `:pipeline`
+  (default `:browser`) names the host pipeline, every other option is `grasp/2`'s — so the
+  path is relative to the router's root and pairs with `plug Grasp.Plug, at: "/grasp"`.
+  """
+  @spec mount(Macro.Env.t(), String.t(), keyword()) :: :ok
+  def mount(%Macro.Env{module: module} = env, path, opts \\ [])
+      when is_atom(module) and not is_nil(module) and is_binary(path) and is_list(opts) do
+    {pipeline, opts} = Keyword.pop(opts, :pipeline, :browser)
+
+    quoted =
+      quote do
+        import Grasp.Router, only: [grasp: 1, grasp: 2]
+
+        scope "/" do
+          pipe_through unquote(pipeline)
+          grasp unquote(path), unquote(opts)
+        end
+      end
+
+    Module.eval_quoted(env, quoted)
+    :ok
+  end
+
   @spec grasp(String.t(), keyword()) :: Macro.t()
   defmacro grasp(path, opts \\ []) do
     quote bind_quoted: binding() do

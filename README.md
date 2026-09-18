@@ -56,13 +56,14 @@ Mix at the `grasp/` directory inside this repository.
 In the router:
 
 ```elixir
-import Grasp.Router
-
-scope "/" do
-  pipe_through :browser
-  grasp "/grasp"
-end
+if Code.ensure_loaded?(Grasp.Router), do: Grasp.Router.mount(__ENV__, "/grasp")
 ```
+
+The guard matters: Grasp is a `:dev` dependency, and the compiler expands an `import` or a
+macro even inside an `if` it never takes, so a router that wrote `import Grasp.Router` would
+fail to compile in `:test` and `:prod`. `mount/3` writes the routes as `grasp "/grasp"`
+inside a `:browser` scope would (pass `pipeline:` to name another pipeline); a project that
+ships Grasp in every environment may write the macro directly instead.
 
 In the endpoint, beside the code reloader:
 

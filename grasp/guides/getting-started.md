@@ -18,13 +18,14 @@ points Mix at the `grasp/` directory inside the repository.
 Run `mix deps.get`, then mount the page in the router:
 
 ```elixir
-import Grasp.Router
-
-scope "/" do
-  pipe_through :browser
-  grasp "/grasp"
-end
+if Code.ensure_loaded?(Grasp.Router), do: Grasp.Router.mount(__ENV__, "/grasp")
 ```
+
+The guard matters: Grasp is a `:dev` dependency, and the compiler expands an `import` or a
+macro even inside an `if` it never takes, so a router that wrote `import Grasp.Router` would
+fail to compile in `:test` and `:prod`. `mount/3` writes the routes as `grasp "/grasp"`
+inside a `:browser` scope would (pass `pipeline:` to name another pipeline); a project that
+ships Grasp in every environment may write the macro directly instead.
 
 and add the plug to the endpoint, beside the code reloader:
 
@@ -52,7 +53,8 @@ somewhere other than `/live`, say so at the mount:
 grasp "/grasp", live_socket_path: "/socket/live"
 ```
 
-Add the formatter export so `grasp "/grasp"` formats without parentheses:
+If you write the `grasp "/grasp"` macro directly (a project that ships Grasp in every
+environment), add the formatter export so it formats without parentheses:
 
 ```elixir
 # .formatter.exs
