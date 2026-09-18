@@ -1,9 +1,10 @@
 defmodule Grasp.MCP.Tools.GetSession do
   @moduledoc """
   Read what a review session is showing, as a graph: `cards` with what each one calls and
-  is called by, `edges` naming the call each one was opened from, `columns` giving the
-  left-to-right layout, and `focus`. The card ids it returns are what `open_card`,
-  `close_card`, `focus_card` and `highlight_card` address.
+  is called by and the `position` it sits at on the canvas, `edges` naming the call each one
+  was opened from, `columns` ordering each section's cards by their depth from its root, and
+  `focus`. The card ids it returns are what `open_card`, `close_card`, `focus_card` and
+  `highlight_card` address.
 
   Every session tool answers in this shape, so the reply to a change is the whole graph
   after it.

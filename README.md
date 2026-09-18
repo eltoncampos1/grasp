@@ -112,8 +112,8 @@ cd grasp && mix setup && mix grasp.viewer --index /path/to/project/.grasp/index.
 - Arrow keys walk the graph, `x` closes the focused card, `Shift+x` closes it together
   with everything that had no other way to be reached, `c` collapses it, ⌘K opens the
   palette.
-- **A group of cards is drawn as a frame** round the cards themselves, laid out from its own
-  left edge, so two flows on one canvas are read apart rather than run together. The frame
+- **A group of cards is drawn as a frame** round the cards themselves, wherever on the canvas
+  they sit, so two flows on one canvas are read apart rather than run together. The frame
   follows its cards: drag one to the edge of a flow and the frame grows with it, header and
   all, rather than leaving the card outside its own group. The frame's header
   carries its title, how many cards are in it, and `ungroup`, which takes the frame away and
@@ -240,9 +240,9 @@ Reading the code:
 
 Arranging the cards:
 
-- `get_session(name)` — every open card with what it calls and is called by, the edges
-  between them, the columns they are laid out in, what each points at, and which card has
-  focus. The ids it returns are what the other card tools address. Every session tool
+- `get_session(name)` — every open card with what it calls and is called by, the position it
+  sits at, the edges between them, the columns ordering each section by depth, what each
+  points at, and which card has focus. The ids it returns are what the other card tools address. Every session tool
   answers in this shape.
 - `set_cards(name, cards)` — replace the whole canvas with a graph described in one call and
   lay it out afresh: every card it makes is new, so each one is placed beside the card it

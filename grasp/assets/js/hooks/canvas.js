@@ -77,10 +77,13 @@ const Canvas = {
     this.frames = []
     this.lastReveal = null
     this.extent = {width: 0, height: 0}
-    // The cards a pass has already asked the server to place. A card still unplaced after the
-    // server has answered was refused, and asking again would be a pass per answer for ever.
-    this.attempted = new Set()
-    this.warnedUnplaced = false
+    // The cards a pass has asked the server to place, each with the box it was given and the
+    // pass that asked. A card still unplaced once the answer has had time to arrive was
+    // refused, and asking again would be a pass per answer for ever; until then the box stands
+    // in for the position the next render will carry, so a card placed a moment later is
+    // placed against it rather than on top of it.
+    this.attempted = new Map()
+    this.passes = 0
     // applyView() redraws whenever the scale differs from the one the frames were drawn at,
     // and the draw that ends mount covers the first frame; seeding the scale keeps that first
     // frame from being drawn twice.
@@ -479,7 +482,13 @@ const Canvas = {
     e.preventDefault()
     document.body.classList.add("grasp-dragging")
     const node = card.closest(".node")
-    const {x, y} = this.positionOf(node)
+    // Where the card is now: the position the server rendered plus a displacement it has yet
+    // to answer for. A second drag that started from the rendered position alone would push
+    // the first one's move away again.
+    const position = this.positionOf(node)
+    const carried = this.translateOf(node)
+    const x = Math.round(position.x + carried.x)
+    const y = Math.round(position.y + carried.y)
     this.drag = {
       kind: "card",
       ctrl,
@@ -584,12 +593,13 @@ const Canvas = {
       this.view.y = this.drag.y + my
       this.applyView()
     } else {
-      // The displacement is rounded to whole screen pixels, for the same reason applyView()
-      // rounds the pan: the card then travels in whole pixels and does not shimmer. At a scale
-      // other than 1 it keeps whatever subpixel phase its layout gave it — it is not on a grid.
+      // The displacement is rounded to whole stage pixels, which is the unit a position is
+      // stored in: the card travels through exactly the positions it can be dropped on, so
+      // what the drag shows is what the release pushes. The card keeps whatever subpixel
+      // phase its layout gave it — it is not on a grid.
       const s = this.view.scale
-      const tx = Math.round(mx) / s
-      const ty = Math.round(my) / s
+      const tx = Math.round(mx / s)
+      const ty = Math.round(my / s)
       for (const node of this.dragNodes(this.drag)) {
         node.style.translate = `${tx}px ${ty}px`
       }
@@ -701,10 +711,12 @@ const Canvas = {
       right = Math.max(right, (b.right - s.left) / scale)
       bottom = Math.max(bottom, (b.bottom - s.top) / scale)
     }
-    this.extent = {
-      width: Math.ceil(right + STAGE_PAD),
-      height: Math.ceil(bottom + STAGE_PAD),
-    }
+    const width = Math.ceil(right + STAGE_PAD)
+    const height = Math.ceil(bottom + STAGE_PAD)
+    // Every pointermove of a drag draws; rewriting the rule each time would have the browser
+    // re-parse the stylesheet for a size that has not changed.
+    if (width === this.extent.width && height === this.extent.height) return
+    this.extent = {width, height}
     this.writeStyle()
   },
 
@@ -920,20 +932,32 @@ const Canvas = {
   // A card is placed against the boxes of the cards that already have a place, its own
   // included as soon as it has one, so a pass that lays out a whole canvas — the one after
   // `reset_layout`, where nothing is placed — reads like the one that places a single new
-  // card: depth order puts a caller down before the callee that hangs off it.
+  // card: taken section by section in depth order, a caller is down before the callee that
+  // hangs off it.
   placeCards() {
-    // A card the server has answered about is a card to forget; what stays behind is a card it
-    // refused, and a pass that asked again on every patch would never stop.
-    for (const id of this.attempted) {
+    this.passes++
+    // A card the server has answered about is a card to forget; what stays behind is a card
+    // whose answer is still on the wire, or one the server refused — and a pass that asked
+    // again on every patch would never stop.
+    for (const [id] of this.attempted) {
       const node = document.getElementById(`node-${id}`)
       if (!node || !node.hasAttribute("data-unplaced")) this.attempted.delete(id)
     }
     const waiting = [...this.el.querySelectorAll(".node[data-unplaced]")]
     if (waiting.length === 0) return
     const unplaced = waiting.filter((node) => !this.attempted.has(node.dataset.card))
-    if (unplaced.length < waiting.length && !this.warnedUnplaced) {
-      this.warnedUnplaced = true
-      console.warn("grasp: a card the canvas placed is still unplaced; leaving it where it is")
+    // A patch of the server's own arrives while a placement is still travelling, so the pass
+    // straight after the push says nothing about whether the card was taken. A pass later than
+    // that one and the answer has been and gone without the position, which is a refusal:
+    // said once for the card, which stays where an unplaced card is drawn.
+    for (const node of waiting) {
+      const asked = this.attempted.get(node.dataset.card)
+      if (!asked || asked.warned || this.passes - asked.pass < 2) continue
+      asked.warned = true
+      console.warn(
+        `grasp: the canvas placed card ${node.dataset.card} and the session did not take it; ` +
+          "the card stays hidden at the stage's corner",
+      )
     }
     if (unplaced.length === 0) return
 
@@ -952,14 +976,27 @@ const Canvas = {
         height: b.height / scale,
       })
     }
-    // Where each card stands: the position the server rendered, or the one this pass decided.
+    // Where each card stands: the position the server rendered, or the one an earlier pass
+    // asked for and is still waiting to see. A card is placed against both, so two cards
+    // opened inside one round trip do not land on each other.
+    //
+    // A node's position is its box because `.node` has no margin and no border, and `#nodes`
+    // is the one in-flow child of `#stage`, at the stage's own corner: a node's --x/--y and
+    // the rectangle it is measured at are the same coordinates.
     const boxes = new Map()
     const occupied = []
     for (const node of nodes) {
-      if (node.hasAttribute("data-unplaced")) continue
       const m = measured.get(node)
-      const {x, y} = this.positionOf(node)
-      const box = {left: x, top: y, right: x + m.width, bottom: y + m.height, node}
+      const asked = this.attempted.get(node.dataset.card)
+      let box
+      if (!node.hasAttribute("data-unplaced")) {
+        const {x, y} = this.positionOf(node)
+        box = {left: x, top: y, right: x + m.width, bottom: y + m.height, node}
+      } else if (asked) {
+        box = {...asked.box, node}
+      } else {
+        continue
+      }
       boxes.set(node, box)
       occupied.push(box)
     }
@@ -972,8 +1009,14 @@ const Canvas = {
       if (node) sites.push({site, node, to: site.dataset.edgeTo})
     }
 
+    // A depth counts from the root of the card's own section, so it says how far along a flow
+    // a card is and nothing about where a card of another section stands. Taking the sections
+    // one at a time is what makes the order mean something: inside one, a caller is placed
+    // before the callee that hangs off it, and a group that has yet to place a card is laid
+    // out against the groups already down rather than into the middle of them.
     unplaced.sort(
       (a, b) =>
+        sortGroup(a) - sortGroup(b) ||
         Number(a.dataset.depth) - Number(b.dataset.depth) ||
         Number(a.dataset.card) - Number(b.dataset.card),
     )
@@ -1041,11 +1084,23 @@ const Canvas = {
       boxes.set(node, box)
       occupied.push(box)
       placements.push({id: Number(id), x: px, y: py})
-      this.attempted.add(id)
+      // The box outlives the pass: until the answer arrives the card is still `data-unplaced`
+      // and drawn at the corner, and this is the only record of where it is going.
+      this.attempted.set(id, {
+        box: {left: px, top: py, right: box.right, bottom: box.bottom},
+        pass: this.passes,
+        warned: false,
+      })
     }
 
     this.pushEvent("place_cards", {cards: placements})
   },
+}
+
+// A node's group as a number to sort by. Group ids count from 1, so the cards in no group are
+// a section of their own ahead of them rather than a member of the first.
+function sortGroup(node) {
+  return node.dataset.group === "" ? -1 : Number(node.dataset.group)
 }
 
 // Two boxes are clear of one another only with the placement gap between them, so a card never
