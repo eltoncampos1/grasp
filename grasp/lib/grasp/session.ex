@@ -152,10 +152,12 @@ defmodule Grasp.Session do
 
   @doc """
   Places each `{card_id, x, y}` whose card has no position yet, leaving a placed card where
-  it is, so a placement computed before a drag cannot undo it.
+  it is, so a placement computed before a drag cannot undo it. An entry whose coordinates
+  are not both integers is skipped.
   """
   @spec place(name(), [{Forest.id(), integer(), integer()}]) :: Forest.t()
-  def place(name, placements), do: mutate(name, &Forest.place(&1, placements))
+  def place(name, placements) when is_list(placements),
+    do: mutate(name, &Forest.place(&1, placements))
 
   @doc """
   Adds `{dx, dy}` to the position of every placed card in `group_id`, moving the group as

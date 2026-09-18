@@ -100,6 +100,17 @@ defmodule Grasp.SessionTest do
     assert Forest.card(forest, root).position == {30, 40}
   end
 
+  test "place/2 skips an entry whose coordinates are not both integers", %{name: name} do
+    forest = Session.open_root(name, "A.f/0")
+    root = forest.focus
+
+    forest = Session.place(name, [{root, 10.5, 20}])
+    assert Forest.card(forest, root).position == nil
+
+    forest = Session.place(name, [{root, 10, 20}])
+    assert Forest.card(forest, root).position == {10, 20}
+  end
+
   test "sessions are isolated by name", %{name: name} do
     other = name <> "-other"
     :ok = Session.ensure(other)

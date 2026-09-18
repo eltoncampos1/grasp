@@ -518,15 +518,24 @@ defmodule Grasp.Session.Forest do
   a placement is computed from the canvas as it was rendered, so a tab that measured the
   stage before another tab's drag would otherwise pull the dragged card back to where it
   used to be. An unknown id places nothing.
+
+  An entry whose coordinates are not both integers is skipped and the rest of the list is
+  still placed, so one unreadable measurement costs the card it names and no more. A
+  coordinate that is not an integer would be written to the session file as something
+  `load/2` refuses, which would cost the reviewer the whole arrangement at the next start.
   """
   @spec place(t(), [{id(), integer(), integer()}]) :: t()
   def place(%__MODULE__{} = forest, placements) when is_list(placements) do
     cards =
-      Enum.reduce(placements, forest.cards, fn {id, x, y}, cards ->
-        case Map.get(cards, id) do
-          %{position: nil} = card -> Map.put(cards, id, %{card | position: {x, y}})
-          _placed_or_unknown -> cards
-        end
+      Enum.reduce(placements, forest.cards, fn
+        {id, x, y}, cards when is_integer(x) and is_integer(y) ->
+          case Map.get(cards, id) do
+            %{position: nil} = card -> Map.put(cards, id, %{card | position: {x, y}})
+            _placed_or_unknown -> cards
+          end
+
+        _unplaceable, cards ->
+          cards
       end)
 
     %{forest | cards: cards}
@@ -538,8 +547,8 @@ defmodule Grasp.Session.Forest do
 
   The members keep their positions relative to one another, which is what makes the frame
   drawn round them travel unchanged. Deltas rather than a position each, since they start
-  from positions of their own. A member with no position keeps none — it is placed where
-  the group now stands rather than where it stood. An unknown group changes nothing.
+  from positions of their own. A member with no position keeps none. An unknown group
+  changes nothing.
   """
   @spec shift_group(t(), group_id(), {integer(), integer()}) :: t()
   def shift_group(%__MODULE__{} = forest, group_id, {dx, dy})
@@ -827,10 +836,11 @@ defmodule Grasp.Session.Forest do
   the same way.
 
   `:error` for a document of another version and for one whose fields do not decode: an id
-  that is not a positive integer, a `view` or `context` that names nothing, a `position`
-  that is neither null nor two integers, a `highlight` that is neither a call nor a pair of
-  line numbers, a colour outside the palette, an edge naming a card the document does not
-  hold, or a group a card claims to belong to and the document does not describe. A
+  that is not a positive integer, a `view` or `context` that names nothing, a version 2
+  `position` that is absent or is neither null nor two integers, a `highlight` that is
+  neither a call nor a pair of line numbers, a colour outside the palette, an edge naming a
+  card the document does not hold, or a group a card claims to belong to and the document
+  does not describe. A
   half-written file is therefore refused whole rather than drawn in part, and a card the
   renderer would crash on never reaches it.
 
@@ -909,7 +919,7 @@ defmodule Grasp.Session.Forest do
     with {:ok, view} <- decode_name(view, [:auto, :source, :diff]),
          {:ok, context} <- decode_name(context, [:auto, :hunks, :full]),
          {:ok, highlight} <- decode_highlight(highlight),
-         {:ok, position} <- decode_position(version, Map.get(card, "position")),
+         {:ok, position} <- decode_position(version, Map.fetch(card, "position")),
          true <- is_nil(group) or (is_integer(group) and group > 0) do
       {:ok,
        %{
@@ -931,9 +941,14 @@ defmodule Grasp.Session.Forest do
 
   # Version 1 wrote a displacement from a layout rather than a place on the stage, so its
   # cards arrive unplaced whatever it holds and are laid out once by the canvas reading it.
+  # Version 2 writes the key for every card, placed or not, so a card without it is a card
+  # the write did not finish rather than a card sitting at no position.
   defp decode_position(1, _offset), do: {:ok, nil}
-  defp decode_position(2, nil), do: {:ok, nil}
-  defp decode_position(2, [x, y]) when is_integer(x) and is_integer(y), do: {:ok, {x, y}}
+  defp decode_position(2, {:ok, nil}), do: {:ok, nil}
+
+  defp decode_position(2, {:ok, [x, y]}) when is_integer(x) and is_integer(y),
+    do: {:ok, {x, y}}
+
   defp decode_position(_version, _position), do: :error
 
   defp dumped_position(nil), do: nil

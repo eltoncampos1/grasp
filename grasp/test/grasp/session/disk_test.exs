@@ -25,8 +25,10 @@ defmodule Grasp.Session.DiskTest do
     forest = Forest.move(forest, wrap, {40, -12})
 
     assert Disk.write(name, forest) == :ok
-    assert Disk.read(name, nil) == {:ok, forest}
-    assert Forest.card(forest, greeter).position == nil
+    assert {:ok, loaded} = Disk.read(name, nil)
+    assert loaded == forest
+    assert Forest.card(loaded, wrap).position == {40, -12}
+    assert Forest.card(loaded, greeter).position == nil
   end
 
   test "a version 1 file opens with its cards unplaced", %{name: name, tmp_dir: tmp_dir} do

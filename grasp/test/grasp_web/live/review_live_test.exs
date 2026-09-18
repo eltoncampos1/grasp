@@ -677,13 +677,15 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "aside.sidebar")
   end
 
-  test "dragging a card stores its position and reset_layout empties it", %{
+  test "dragging a card stores its position and reset_layout empties every one", %{
     view: view,
     name: name
   } do
     Session.open_root(name, @greet)
+    Session.open_root(name, @perform)
+    Session.open_root(name, @show)
 
-    assert has_element?(view, "#node-1[data-unplaced] > #card-1")
+    assert count(view, ".node[data-unplaced]") == 3
 
     render_hook(view, "move_card", %{"card" => 1, "x" => 40, "y" => -12})
     assert has_element?(view, "#node-1[style*='--x: 40px'][style*='--y: -12px'] > #card-1")
@@ -695,13 +697,20 @@ defmodule GraspWeb.ReviewLiveTest do
     render_hook(view, "move_card", %{"card" => 1, "x" => "nope", "y" => 0})
     assert has_element?(view, "#node-1[style*='--x: 7px'][style*='--y: 8px']")
 
+    render_hook(view, "move_card", %{"card" => 2, "x" => 300, "y" => 0})
+    render_hook(view, "place_cards", %{"cards" => [%{"id" => 3, "x" => 0, "y" => 400}]})
+    assert count(view, ".node[data-unplaced]") == 0
+
     render_click(view, "reset_layout", %{})
+
+    assert count(view, ".node[data-unplaced]") == 3
     assert has_element?(view, "#node-1[data-unplaced][style*='--x: 0px'][style*='--y: 0px']")
   end
 
   test "place_cards fills a position only while a card has none", %{view: view, name: name} do
     Session.open_root(name, @greet)
     Session.open_root(name, @perform)
+    Session.open_root(name, @show)
 
     render_hook(view, "place_cards", %{
       "cards" => [%{"id" => 1, "x" => 100, "y" => 200}, %{"id" => "2", "x" => "0", "y" => "60"}]
@@ -709,14 +718,22 @@ defmodule GraspWeb.ReviewLiveTest do
 
     assert has_element?(view, "#node-1[style*='--x: 100px'][style*='--y: 200px']")
     assert has_element?(view, "#node-2[style*='--x: 0px'][style*='--y: 60px']")
-    refute has_element?(view, ".node[data-unplaced]")
+    assert count(view, ".node[data-unplaced]") == 1
 
     # A pass measured before another tab's drag says where a card it saw unplaced should go;
     # the card is somewhere by then, and stays there.
     render_hook(view, "place_cards", %{"cards" => [%{"id" => 1, "x" => 1, "y" => 1}]})
     assert has_element?(view, "#node-1[style*='--x: 100px'][style*='--y: 200px']")
 
-    render_hook(view, "place_cards", %{"cards" => [%{"id" => "nope"}, "junk"]})
+    # An entry the server cannot read costs the card it names and no more: the card beside
+    # it in the same pass is placed.
+    render_hook(view, "place_cards", %{
+      "cards" => ["junk", %{"id" => "nope", "x" => 5, "y" => 5}, %{"id" => 3, "x" => 8, "y" => 9}]
+    })
+
+    assert has_element?(view, "#node-3[style*='--x: 8px'][style*='--y: 9px']")
+    assert count(view, ".node[data-unplaced]") == 0
+
     render_hook(view, "place_cards", %{"cards" => "junk"})
     assert has_element?(view, "#node-1[style*='--x: 100px'][style*='--y: 200px']")
   end

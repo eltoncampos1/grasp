@@ -327,8 +327,6 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
-  def handle_event("place_cards", _params, socket), do: {:noreply, socket}
-
   # A group drag carries deltas rather than the position each card lands on: the members start
   # from positions of their own and keep their places relative to one another, so the frame drawn
   # round them moves unchanged. Membership is untouched — a group is moved, not regrouped.
@@ -1093,7 +1091,7 @@ defmodule GraspWeb.ReviewLive do
               forest={@forest}
               index={@index}
               card_id={node.id}
-              column={node.depth}
+              depth={node.depth}
               open_calls={Map.get(@open_calls, node.id, %{})}
               editor={@editor}
               callers_open={@callers_open}

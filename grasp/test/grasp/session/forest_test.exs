@@ -303,6 +303,20 @@ defmodule Grasp.Session.ForestTest do
     assert Forest.place(forest, []) == forest
   end
 
+  test "place/2 skips an entry whose coordinates are not both integers" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+
+    # A coordinate that is not an integer would reach the session file as something `load/2`
+    # refuses, costing the reviewer the whole arrangement rather than the one card.
+    placed = Forest.place(forest, [{a, 10.5, 20}, {b, 30, 40}])
+
+    assert Forest.card(placed, a).position == nil
+    assert Forest.card(placed, b).position == {30, 40}
+
+    assert Forest.place(forest, [{a, "40", nil}]) == forest
+  end
+
   test "shift_group/3 adds to every placed member and leaves the rest alone" do
     {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
     {forest, b} = Forest.open_child(forest, a, "B.g/0")
@@ -919,10 +933,36 @@ defmodule Grasp.Session.ForestTest do
 
       document = %{Forest.dump(forest) | "version" => 1, "cards" => cards}
 
+      refute Enum.any?(cards, &Map.has_key?(&1, "position"))
+
       assert {:ok, loaded} = Forest.load(document, nil)
       assert Forest.card(loaded, greeter).position == nil
       assert Forest.card(loaded, wrap).position == nil
       assert loaded == forest
+    end
+
+    test "a version 1 document is refused for everything but its positions" do
+      {forest, greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+      {forest, _wrap} = Forest.open_child(forest, greeter, "SampleApp.Formatter.wrap/1")
+      dumped = Forest.dump(forest)
+      cards = Enum.map(dumped["cards"], &Map.delete(&1, "position"))
+      document = %{dumped | "version" => 1, "cards" => cards}
+
+      assert {:ok, _forest} = Forest.load(document, nil)
+
+      sideways = Enum.map(cards, &Map.put(&1, "view", "sideways"))
+      assert Forest.load(%{document | "cards" => sideways}, nil) == :error
+
+      absent = Enum.map(document["edges"], &Map.put(&1, "to", 999))
+      assert Forest.load(%{document | "edges" => absent}, nil) == :error
+    end
+
+    test "a version 2 card without a position is refused" do
+      {forest, _greeter} = Forest.open_root(Forest.new(), "SampleApp.Greeter.greet/2")
+      document = Forest.dump(forest)
+      cards = Enum.map(document["cards"], &Map.delete(&1, "position"))
+
+      assert Forest.load(%{document | "cards" => cards}, nil) == :error
     end
 
     test "a position that is not a pair of integers is refused" do

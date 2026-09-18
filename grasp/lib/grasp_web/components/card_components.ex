@@ -32,7 +32,7 @@ defmodule GraspWeb.CardComponents do
   attr :forest, Forest, required: true
   attr :index, Index, required: true
   attr :card_id, :integer, required: true
-  attr :column, :integer, required: true
+  attr :depth, :integer, required: true
   attr :open_calls, :map, required: true
   attr :editor, :string, default: nil
   attr :callers_open, :integer, default: nil
@@ -57,7 +57,7 @@ defmodule GraspWeb.CardComponents do
       class="node"
       id={"node-#{@card.id}"}
       data-card={@card.id}
-      data-depth={@column}
+      data-depth={@depth}
       data-group={@card.group || ""}
       data-unplaced={@card.position == nil}
       style={"--x: #{@x}px; --y: #{@y}px"}
