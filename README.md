@@ -93,8 +93,8 @@ mix phx.server
 
 Open `/grasp` on your own dev server, pick an entry point (or a module) in the sidebar or
 press ⌘K, and click any call inside a card to open the callee next to it. The canvas is
-written to `.grasp/sessions/` beside the index, so the cards are where you left them when
-you come back.
+written to `.grasp/sessions/` in the project you started the server in, so the cards are
+where you left them when you come back.
 
 `mix grasp.index` writes `.grasp/index.json`, which Grasp watches: run it again and the
 canvas redraws over the new code.
@@ -198,8 +198,8 @@ which one has the focus. The session named `default` is the canvas at `/`; any o
 the canvas at `/s/<name>`, so a review of one pull request and a walk through a subsystem sit
 side by side instead of on top of each other.
 
-Each session is a file under `.grasp/sessions/` beside the index, written a moment after the
-canvas changes and read back when the viewer starts, so quitting and coming back — or
+Each session is a file under `.grasp/sessions/` in the project Grasp was started in, written
+a moment after the canvas changes and read back when the viewer starts, so quitting and coming back — or
 restarting the viewer on the same project — finds the cards where they were.
 
 The sidebar's header names the session being read and opens the menu of every session the
@@ -210,7 +210,8 @@ session a tab is reading sends that tab to the default canvas; deleting `default
 clears it rather than taking it away, since the next visit starts it again, empty.
 
 `.grasp/index.json` is rebuilt by `mix grasp.index` from whatever the checkout holds, so it
-is worth adding to `.gitignore`. The sessions and `.grasp/comments.json` are not derived from
+is worth adding to `.gitignore`, as is `.grasp/worktrees/`, which holds the checkouts
+`mix grasp.pr` reviews from. The sessions and `.grasp/comments.json` are not derived from
 the code: a session is an arrangement someone made, so commit `.grasp/sessions/` alongside a
 branch if you want the canvas to travel with the pull request.
 
@@ -228,6 +229,21 @@ Comparison is against the merge base of `HEAD` and the ref, so a base branch tha
 moved on since the branch started does not make every file look touched. Uncommitted and untracked
 work counts as part of the branch, so a review reads the code as it is on disk rather than
 as it was last committed.
+
+Someone else's pull request is read from a worktree of its own:
+
+```
+mix grasp.pr 1212
+```
+
+That reads the pull request with `gh`, checks its head out under `.grasp/worktrees/pr-1212`,
+lends the worktree your `deps/` and a copy of your `_build/dev`, and indexes it there against
+the pull request's base, writing the index your viewer watches. Your own checkout stays on the
+branch you were on and your dev server keeps running the code it started with; the cards are
+the pull request's code, read from the worktree. `mix grasp.pr 1212 --close` removes it again,
+and `--base REF` reviews against a ref other than the one the pull request targets. Comments
+and sessions are not kept in the worktree — they live under the checkout you started Grasp in
+— so a review outlives the tree it was written against.
 
 In the viewer:
 
@@ -354,8 +370,9 @@ Comments:
 
 `get_function` carries a function's open threads under `comments`, so reading the code and
 reading what the reviewer said about it is one call. Comments belong to the project, not to
-a session: they are kept in `.grasp/comments.json` beside the index and show on whatever
-canvas draws the function. The file travels with the checkout — commit it alongside the
+a session: they are kept in `.grasp/comments.json` in the project Grasp was started in and
+show on whatever canvas draws the function — including a pull request read from a worktree,
+whose threads are yours and stay behind when the worktree goes. The file travels with the checkout — commit it alongside the
 changes it is about if you want the discussion to go with the PR, or add it to
 `.gitignore` if you'd rather keep review chatter out of the repository.
 
@@ -380,8 +397,8 @@ edits no file and runs no command. The transcript shows each tool call as it hap
 kills the run, and New conversation starts over.
 
 The panel's Mode select switches that. In `edit files` the agent also gets `Edit`, `Write`
-and a `Bash` narrowed to seven commands: `mix`, `git status`, `git diff`, `git fetch`,
-`git switch`, `gh pr view` and `gh pr checkout`. That lets it change files under the
+and a `Bash` narrowed to five commands: `mix`, `git status`, `git diff`, `git fetch` and
+`gh pr view`. Nothing in that set changes the branch you have checked out. That lets it change files under the
 project root — which is what makes "address all the comments and update the diagram
 afterwards" a thing you can ask for. It works a comment at a time: reads what the
 thread points at, makes the change, replies with what it did and resolves the thread; then
@@ -393,14 +410,12 @@ next prompt, and survives New conversation. Nothing is sandboxed: edit mode is t
 editing your working tree, so point it at a branch you can throw away and read the diff
 before you keep it.
 
-Edit mode also takes "Open PR 1212". The agent reads the pull request with `gh pr view` for
-its base branch and title, runs `gh pr checkout`, fetches the base branch, rebuilds the
-index against it with the same `--out` the viewer is watching, reloads the viewer and lays
-the change out one group per flow. Uncommitted changes and untracked files ride along, as
-they do on any `git switch`; a checkout git refuses because it would overwrite a modified
-file stops the agent, which names the files rather than stashing or discarding anything. `gh` has to be installed and signed in, and the checkout
-happens in your own working tree: the branch you had is gone from disk until you switch
-back, so finish what you were doing first.
+Edit mode also takes "Open PR 1212". The agent runs `mix grasp.pr 1212`, the task described
+under PR mode above, then reloads the index it wrote and lays the change out one group per
+flow. Your working tree is not touched: the pull request is read from its own worktree, which
+is where the agent then reads, edits and formats files, so an edit it makes on a review
+comment lands on the pull request's code rather than on yours. `gh` has to be installed and
+signed in.
 
 "Publish the comments to PR 1212" sends the review to GitHub. The agent calls
 `publish_comments`, which posts each thread as a review comment with its replies under it,

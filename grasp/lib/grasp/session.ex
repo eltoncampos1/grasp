@@ -272,9 +272,8 @@ defmodule Grasp.Session do
     # never runs, losing whatever mutation the debounce timer was still holding.
     Process.flag(:trap_exit, true)
 
-    # Resolved once and held: `Disk.dir/0` answers nil until the index is loaded and names a
-    # directory afterwards, and a session that read nothing must not write to a directory
-    # that turned up later.
+    # Resolved once and held: a session that read nothing must not write to a directory that
+    # turned up under it afterwards.
     dir = Disk.dir()
 
     {forest, understood} =

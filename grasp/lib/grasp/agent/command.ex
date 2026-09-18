@@ -9,12 +9,11 @@ defmodule Grasp.Agent.Command do
   run, and the tool allowlist follows the chat's mode. In `read` mode it is the grasp tools
   plus `Read`, `Grep` and `Glob`, with nothing that writes files or runs commands. In `edit`
   mode it also carries `Edit`, `Write` and a `Bash` narrowed to `mix`, to the read-only git
-  commands, to `git fetch` and `git switch`, and to the two `gh` subcommands that read a pull
-  request and check it out, so the agent can act on a review comment, rebuild the index and
-  put a pull request's branch in the working tree, and still cannot reach for an arbitrary
-  shell command. The branch-changing command is `git switch` rather than `git checkout`:
-  checkout also discards files, while switch refuses to leave uncommitted changes behind
-  unless it is told to — and the prompt forbids telling it to.
+  commands, to `git fetch` and to `gh pr view`, so the agent can act on a review comment,
+  rebuild the index and read a pull request, and still cannot reach for an arbitrary shell
+  command. Nothing in the allowlist changes the branch the reader has checked out:
+  `mix grasp.pr` puts a pull request in a worktree of its own, and the git work happens
+  inside the task rather than under the agent's hand.
 
   The system prompt names the viewer session the agent is driving; every grasp card tool
   takes that session, so an agent that forgets it would arrange cards on a canvas nobody is
@@ -25,10 +24,9 @@ defmodule Grasp.Agent.Command do
   one group per flow, so each is framed and titled on the canvas instead of running into
   its neighbour. Publishing the comments to the pull request is named in both modes: the
   tool posts them through `gh`, so it needs nothing the agent's own tools grant. A pull
-  request asked for by number has its own recipe — check the branch
-  out, rebuild the index against the pull request's base, reload it, then lay the change
-  out — which `edit` mode spells out step by step and `read` mode answers with the one
-  sentence that sends the user to the mode that can run it. It closes on the mode: what
+  request asked for by number has its own recipe — `mix grasp.pr N`, reload the index it
+  wrote, then lay the change out — which `edit` mode spells out step by step and `read`
+  mode answers with the one sentence that sends the user to the mode that can run it. It closes on the mode: what
   `read` refuses, and what `edit` owes the canvas after an edit — a format, a rebuilt index,
   and cards laid out over the code as it now is.
   """
@@ -41,7 +39,7 @@ defmodule Grasp.Agent.Command do
   @read_tools "Read,Grep,Glob"
   @read_allowed_tools "mcp__grasp,Read,Grep,Glob"
   @edit_tools "Read,Grep,Glob,Edit,Write,Bash"
-  @edit_allowed_tools "mcp__grasp,Read,Grep,Glob,Edit,Write,Bash(mix:*),Bash(git status:*),Bash(git diff:*),Bash(git fetch:*),Bash(git switch:*),Bash(gh pr view:*),Bash(gh pr checkout:*)"
+  @edit_allowed_tools "mcp__grasp,Read,Grep,Glob,Edit,Write,Bash(mix:*),Bash(git status:*),Bash(git diff:*),Bash(git fetch:*),Bash(gh pr view:*)"
 
   @type option ::
           {:command, String.t()}
@@ -146,24 +144,6 @@ defmodule Grasp.Agent.Command do
   end
 
   @doc """
-  `reindex` rebuilt against `base` instead of the ref the index carries.
-
-  The `--out` the viewer's own reindex command names is kept, so a rebuild for a pull
-  request still writes the file the viewer watches; only the base ref changes, and a
-  command with no `--base` at all gains one.
-  """
-  @spec reindex_against(String.t(), String.t()) :: String.t()
-  def reindex_against(reindex, base) when is_binary(reindex) and is_binary(base) do
-    out =
-      case Regex.run(~r/--out\s+(\S+)/, reindex) do
-        [_match, path] -> " --out #{path}"
-        nil -> ""
-      end
-
-    "mix grasp.index --base #{base}" <> out
-  end
-
-  @doc """
   The URL of the standalone viewer's MCP endpoint, on the loopback address it serves.
 
   It is the address to use when nothing else names one — a run started outside a request,
@@ -200,23 +180,20 @@ defmodule Grasp.Agent.Command do
   defp allowed_tools("edit"), do: @edit_allowed_tools
   defp allowed_tools(_read), do: @read_allowed_tools
 
-  defp pull_request("edit", reindex) do
+  defp pull_request("edit", _reindex) do
     """
     When the user asks you to open, review or look at a pull request by number:
-    1. Run `gh pr view N --json baseRefName,headRefName,title,url` to learn the base branch the pull request targets and its title.
-    2. Run `git status --porcelain` and remember what it lists: uncommitted changes and untracked files travel with you across a checkout and are not lost, but git refuses a checkout that would overwrite a modified file, and that refusal is final. Never stash, reset, pass `--discard-changes`, `-f` or `--force` to git, or otherwise touch the user's work.
-    3. Run `gh pr checkout N`. The branch is checked out in the user's own working tree, not a copy. If git refuses because local changes would be overwritten, stop: tell the user which files it named and do nothing else.
-    4. Run `git fetch origin <base>` for the base branch you read in step 1, so the ref the index compares against is on this machine.
-    5. Rebuild the index from the project root with `#{reindex_against(reindex, "origin/<base>")}`. If mix reports that the task does not exist, the checked-out branch does not carry grasp as a dependency: stop and tell the user, since the cards cannot follow a branch that cannot be indexed.
-    6. Call reload_index, so what you read next is the index the rebuild wrote rather than the one it replaced.
-    7. Call list_changes, trace each changed function back to its entry points with find_paths, then call set_cards with the roots at the entry points and one group per flow, each group titled after what that flow does. Reply in two sentences that name the pull request's title.
-    Comments stay in `.grasp/comments.json` until they are resolved, so list_comments can answer with threads left on a branch other than the one now checked out.
+    1. Run `mix grasp.pr N` from the project root. It reads the pull request with `gh`, fetches its base and head branches, checks the head out in a worktree of its own under `.grasp/worktrees/pr-N`, and builds the index of that worktree against the pull request's base, writing it to the index file the viewer watches. The user's own working tree is untouched, so never check a branch out yourself. The task prints the worktree, the branches and the pull request's title; if it fails, report what it printed and stop.
+    2. Call reload_index, so what you read next is the index the task wrote rather than the one it replaced.
+    3. Call list_changes, trace each changed function back to its entry points with find_paths, then call set_cards with the roots at the entry points and one group per flow, each group titled after what that flow does. Reply in two sentences that name the pull request's title.
+    The pull request's code is in the worktree, which is what the index now names as its project root: read, edit and format files there, and rebuild from there with `mix grasp.index --base origin/<base> --out <host>/.grasp/index.json`, where `<host>` is the directory you started in.
+    Comments stay in `.grasp/comments.json` under the directory you started in, whatever tree is being reviewed, so list_comments can answer with threads left on another branch.
     """
     |> String.trim_trailing()
   end
 
   defp pull_request(_read, _reindex) do
-    "When the user asks you to open, review or look at a pull request by number: the chat has to be switched to edit mode before a branch can be checked out, so say that, and offer to review whatever branch is already indexed."
+    "When the user asks you to open, review or look at a pull request by number: the chat has to be switched to edit mode before a pull request can be opened in a worktree, so say that, and offer to review whatever branch is already indexed."
   end
 
   defp closing("edit", reindex) do

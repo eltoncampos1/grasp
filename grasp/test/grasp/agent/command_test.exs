@@ -48,7 +48,7 @@ defmodule Grasp.Agent.CommandTest do
 
     assert [
              "--allowedTools",
-             "mcp__grasp,Read,Grep,Glob,Edit,Write,Bash(mix:*),Bash(git status:*),Bash(git diff:*),Bash(git fetch:*),Bash(git switch:*),Bash(gh pr view:*),Bash(gh pr checkout:*)"
+             "mcp__grasp,Read,Grep,Glob,Edit,Write,Bash(mix:*),Bash(git status:*),Bash(git diff:*),Bash(git fetch:*),Bash(gh pr view:*)"
              | _rest
            ] = rest
 
@@ -122,46 +122,35 @@ defmodule Grasp.Agent.CommandTest do
     refute prompt =~ "this chat is in read mode"
   end
 
-  test "system_prompt/3 in edit mode spells out how a pull request is checked out" do
+  test "system_prompt/3 in edit mode opens a pull request through the worktree task" do
     prompt = Command.system_prompt("s1", "edit", "mix grasp.index --base main")
 
     assert prompt =~ "When the user asks you to open, review or look at a pull request by number:"
-    assert prompt =~ "gh pr view N --json baseRefName,headRefName,title,url"
-    assert prompt =~ "git status --porcelain"
-    assert prompt =~ "gh pr checkout"
-    assert prompt =~ "If git refuses because local changes would be overwritten, stop"
-    assert prompt =~ "Never stash, reset, pass `--discard-changes`, `-f` or `--force` to git"
-    assert prompt =~ "mix grasp.index --base origin/<base>"
+    assert prompt =~ "Run `mix grasp.pr N` from the project root."
+    assert prompt =~ ".grasp/worktrees/pr-N"
+
+    assert prompt =~
+             "The user's own working tree is untouched, so never check a branch out yourself."
+
     assert prompt =~ "reload_index"
+    assert prompt =~ "list_changes"
+    assert prompt =~ "mix grasp.index --base origin/<base> --out <host>/.grasp/index.json"
     assert prompt =~ ".grasp/comments.json"
+    refute prompt =~ "gh pr checkout"
+    refute prompt =~ "git switch"
   end
 
-  test "system_prompt/3 in read mode sends a pull request to edit mode instead of checking it out" do
+  test "system_prompt/3 in read mode sends a pull request to edit mode instead of opening it" do
     prompt = Command.system_prompt("s1", "read", "mix grasp.index")
 
     assert prompt =~ "When the user asks you to open, review or look at a pull request by number:"
 
     assert prompt =~
-             "the chat has to be switched to edit mode before a branch can be checked out"
+             "the chat has to be switched to edit mode before a pull request can be opened in a worktree"
 
     assert prompt =~ "offer to review whatever branch is already indexed"
+    refute prompt =~ "mix grasp.pr"
     refute prompt =~ "gh pr checkout"
-    refute prompt =~ "git status --porcelain"
-  end
-
-  test "reindex_against/2 keeps the out path and swaps the base ref" do
-    assert Command.reindex_against("mix grasp.index --base main --out x.json", "origin/main") ==
-             "mix grasp.index --base origin/main --out x.json"
-  end
-
-  test "reindex_against/2 gives a base ref to a command that had none" do
-    assert Command.reindex_against("mix grasp.index", "origin/develop") ==
-             "mix grasp.index --base origin/develop"
-  end
-
-  test "reindex_against/2 keeps the out path of a command that had no base ref" do
-    assert Command.reindex_against("mix grasp.index --out tmp/index.json", "origin/main") ==
-             "mix grasp.index --base origin/main --out tmp/index.json"
   end
 
   test "reindex_command/2 repeats the base ref the index was built against" do

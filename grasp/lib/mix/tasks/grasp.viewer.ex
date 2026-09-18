@@ -11,9 +11,11 @@ defmodule Mix.Tasks.Grasp.Viewer do
   code mounts Grasp in its router instead and reaches it on its own dev server.
 
   The index is the file `mix grasp.index` wrote in the target project. The viewer binds
-  to 127.0.0.1 and reloads the index whenever the file changes. Review comments live
-  beside it, in `.grasp/comments.json` under the indexed project's root, and are read on
-  boot and rewritten after every change so they persist across restarts.
+  to 127.0.0.1 and reloads the index whenever the file changes. Review comments belong to
+  the reader rather than to the tree being read, so they live in `.grasp/comments.json`
+  under the directory the viewer was started in, and are read on boot and rewritten after
+  every change so they persist across restarts. `:grasp, :comments_path` and
+  `:grasp, :sessions_dir` name other files when the indexed project is where they belong.
 
   ## Options
 

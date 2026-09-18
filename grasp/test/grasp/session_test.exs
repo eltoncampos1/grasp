@@ -345,6 +345,12 @@ defmodule Grasp.SessionTest do
       assert File.ls!(locked) == [name <> ".json"]
     end
 
+    test "with no override the sessions live under the directory Grasp started in" do
+      Application.put_env(:grasp, :sessions_dir, nil)
+
+      assert Disk.dir() == Path.join(Grasp.Application.home(), ".grasp/sessions")
+    end
+
     test "a session that started with nowhere to write never writes", %{tmp_dir: tmp_dir} do
       name = "late-#{System.unique_integer([:positive])}"
       path = Path.join(tmp_dir, name <> ".json")
@@ -352,12 +358,16 @@ defmodule Grasp.SessionTest do
       :ok = Disk.write(name, forest)
       saved = File.read!(path)
 
-      # The fixture index names a project root that is not on this machine, so with the
-      # override gone there is nowhere to write at all.
+      # With the override gone and no home directory recorded, there is nowhere to write
+      # at all — which is what a viewer running outside a started application has.
+      home = Application.get_env(:grasp, :home)
+      on_exit(fn -> Application.put_env(:grasp, :home, home) end)
+      Application.put_env(:grasp, :home, nil)
       Application.put_env(:grasp, :sessions_dir, nil)
       assert Disk.dir() == nil
 
       name = start_session(name)
+      Application.put_env(:grasp, :home, home)
       Application.put_env(:grasp, :sessions_dir, tmp_dir)
 
       Session.open_root(name, "SampleApp.Formatter.wrap/1")

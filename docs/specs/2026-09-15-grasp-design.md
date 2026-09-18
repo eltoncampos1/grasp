@@ -842,11 +842,9 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 - **Frames overlap when cards are dragged across.** A frame follows its cards wherever they
   go, so two frames can cover the same ground; nothing pushes them apart, and a drop inside
   both joins the later section. Reset layout untangles them.
-- **Opening a pull request switches the working tree.** `gh pr checkout` runs in the
-  reader's checkout, so the branch they had is gone from disk until they switch back; uncommitted work
-  rides along, and a checkout git refuses stops the recipe rather than being forced. `gh` has to be installed
-  and signed in. A worktree per pull request would leave the tree alone, but the viewer is
-  started on one index path and cannot yet follow a root that moves.
+- **Opening a pull request switches the working tree.** Closed in milestone 7: `mix grasp.pr N`
+  reads the pull request in a worktree of its own and the reader's checkout is left alone
+  (see [Part 4](#pull-requests-from-worktrees)). `gh` still has to be installed and signed in.
 - **Edit mode trusts the CLI's allowlist.** `Bash(mix:*)` admits every mix task, including
   ones that write outside the project; there is no sandbox beyond what Claude Code applies.
   The mode is off unless the reader turns it on, and per viewer session.
@@ -1202,11 +1200,14 @@ beams.
 
 "Open PR 1251" no longer switches the reader's working tree. `mix grasp.pr N` does the
 whole recipe deterministically: reads the pull request with `gh pr view` (base branch,
-head branch, title, URL), fetches both branches, adds or updates a worktree at
-`.grasp/worktrees/pr-N` on the head branch, symlinks the host's `deps/` into it, seeds its
-build path from the host's `_build/dev` when missing, and runs the index build inside it
-against `origin/<base>`, writing the index to the host's `.grasp/index.json` with the
-worktree as `project.root`. `mix grasp.pr --close N` removes the worktree. The agent's
+head branch, title, URL), fetches both branches, adds a worktree at
+`.grasp/worktrees/pr-N` detached at the fetched head — or detaches the one already there at
+it, so a pull request pushed to since the last review is re-read rather than left where it
+was — symlinks the host's `deps/` into it, seeds its build path from the host's `_build/dev`
+when missing, and runs the index build inside it against `origin/<base>`, writing the index
+to the host's `.grasp/index.json` with the worktree as `project.root`. `--base REF` reviews
+against a ref other than the one the pull request targets, and `mix grasp.pr N --close`
+removes the worktree. The agent's
 edit-mode recipe becomes: `mix grasp.pr N`, then `reload_index`, then `list_changes` and
 `set_cards` one group per flow; the allowlist drops `git switch` and `gh pr checkout` and
 gains nothing, since the task does the git work. In edit mode the agent's edits land in the

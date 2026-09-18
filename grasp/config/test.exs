@@ -23,6 +23,11 @@ config :grasp, GraspWeb.MountedEndpoint,
 
 config :grasp, index_path: "test/fixtures/index.json"
 
+# Comments and sessions are kept under the home directory, so the suite gives it a temporary
+# one: a test that drops its own override must not write inside the repository.
+config :grasp,
+  home: Path.join(System.tmp_dir!(), "grasp-test-home-#{System.os_time(:millisecond)}")
+
 # The fixture index names a project root that need not exist, and the suite must never write
 # inside the repository: comments go to one temporary file per run.
 config :grasp,

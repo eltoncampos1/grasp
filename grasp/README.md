@@ -53,6 +53,20 @@ out. Each module record also carries the `behaviours` it declares.
 The document shape is described in `docs/specs/2026-09-15-grasp-design.md` at the repo
 root under "Index JSON".
 
+## Pull requests
+
+```
+mix grasp.pr N [--close] [--base REF]
+```
+
+Reads pull request `N` with `gh`, checks its head out in a worktree of its own under
+`.grasp/worktrees/pr-N`, lends that worktree the project's `deps/` and a copy of its
+`_build/dev`, and builds the index inside it against the pull request's base, writing it to
+the `.grasp/index.json` the viewer watches. The working tree the task is run from is left
+where it is, so the dev server keeps running the code it started with. `--close` removes the
+worktree again. Review comments and sessions are kept under the directory Grasp was started
+in rather than in the worktree, so they outlive it.
+
 ## Serving
 
 Grasp mounts in the host application's router, with `Grasp.Plug` in the host's own endpoint

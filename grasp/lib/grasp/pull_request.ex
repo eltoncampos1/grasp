@@ -1,0 +1,296 @@
+defmodule Grasp.PullRequest do
+  @moduledoc """
+  Puts a pull request under review without touching the reader's working tree.
+
+  A review needs the pull request's code on disk and an index of it built against the base
+  branch. Checking the branch out where the reader works would take their dev server with
+  it — the code reloader would recompile the pull request's code into the server they are
+  running, and whatever they had in progress would have to be put aside first. A worktree
+  is the same checkout seen twice: `open/2` adds one per pull request under
+  `.grasp/worktrees/pr-N`, detached at the fetched head, and everything the review touches
+  happens inside it. The reader's own tree is never read from and never written to.
+
+  The worktree is a bare checkout of the source, so two things are lent to it rather than
+  rebuilt: `deps/` is symlinked to the host's, and the build directory the index compiles
+  in starts as a copy of the host's `_build/dev`. That is what makes the second pull
+  request of an afternoon a compile of the project rather than of every dependency it
+  carries. The lending is also the limit — a pull request that changes `mix.lock` is
+  indexed against the host's dependencies until `mix deps.get` is run in the worktree.
+
+  The index is written to the host's `.grasp/index.json`, the file the reader's viewer
+  watches, and names the worktree as its project root: the cards are the pull request's
+  code, read from where that code actually is. Comments and sessions are unaffected — they
+  live under `Grasp.Application.home/0`, so a review survives `close/2` removing the tree
+  it was written against.
+
+  Every external command goes through a `runner`, so a test can run the real `git` against
+  a temporary repository while recording the index build instead of compiling one. A
+  command that fails stops the recipe with its output, on the grounds that what `git` or
+  `gh` printed is what the reader needs to read.
+  """
+
+  @typedoc """
+  Runs `argv` in `cwd` and answers its output and exit status.
+
+  `opts` carries `:env`, the environment variables the command is given on top of the ones
+  it inherits. Output is the command's stdout and stderr together.
+  """
+  @type runner :: ([String.t()], Path.t(), keyword() -> {String.t(), non_neg_integer()})
+
+  @typedoc "An opened pull request: where its code is, what it is, and the index built of it."
+  @type t :: %{
+          worktree: Path.t(),
+          base: String.t(),
+          head: String.t(),
+          title: String.t(),
+          url: String.t(),
+          index: Path.t()
+        }
+
+  @type option ::
+          {:root, Path.t()}
+          | {:runner, runner()}
+          | {:gh, String.t()}
+          | {:base_override, String.t()}
+          | {:log, (String.t() -> any())}
+
+  @fields "baseRefName,headRefName,title,url"
+
+  @doc """
+  Opens pull request `number` for review: a worktree of its head and an index of it.
+
+  The steps, each stopping the recipe with the command's output when it fails: read the
+  pull request with `gh pr view`; fetch its base and head branches; add the worktree, or
+  detach an existing one at the newly fetched head; lend it `deps/` and a build directory;
+  and build the index inside it against `origin/<base>`, writing it to `.grasp/index.json`
+  under `root`.
+
+  `:root` is the reader's checkout, the working directory by default; `:runner` runs the
+  commands, `System.cmd/3` by default; `:gh` is the GitHub CLI; `:base_override` reviews
+  against a ref other than the branch the pull request targets; and `:log` is called with a
+  sentence for each step, so a task can print the recipe as it runs.
+  """
+  @spec open(pos_integer(), [option()]) :: {:ok, t()} | {:error, String.t()}
+  def open(number, opts \\ []) when is_integer(number) and number > 0 do
+    root = Path.expand(Keyword.get(opts, :root) || File.cwd!())
+    runner = Keyword.get(opts, :runner, &run/3)
+    log = logger(opts)
+    worktree = worktree(root, number)
+    index = Path.join(root, ".grasp/index.json")
+
+    with {:ok, pull_request} <- view(number, root, runner, opts),
+         base = Keyword.get(opts, :base_override) || pull_request.base,
+         head = pull_request.head,
+         :ok <- log.("Reading pull request #{number}: #{pull_request.title}"),
+         :ok <- fetch(root, base, head, runner),
+         :ok <- log.("Fetched origin/#{base} and origin/#{head}"),
+         :ok <- place(root, worktree, head, runner, log),
+         :ok <- lend_deps(root, worktree, log),
+         {:ok, build} <- lend_build(root, worktree, log),
+         :ok <- log.("Indexing #{Path.relative_to(worktree, root)} against origin/#{base}"),
+         :ok <- index(worktree, base, index, build, runner) do
+      {:ok,
+       %{
+         worktree: worktree,
+         base: base,
+         head: head,
+         title: pull_request.title,
+         url: pull_request.url,
+         index: index
+       }}
+    end
+  end
+
+  @doc """
+  Removes the worktree pull request `number` was opened in.
+
+  The removal is forced, because a worktree is Grasp's to throw away: the agent edits the
+  pull request's code there, and a reader who wants to keep an edit commits or copies it
+  before closing. A pull request that was never opened, or whose directory is already
+  gone, is closed by pruning alone. Takes `:root`, `:runner` and `:log` as `open/2` does.
+  """
+  @spec close(pos_integer(), [option()]) :: :ok | {:error, String.t()}
+  def close(number, opts \\ []) when is_integer(number) and number > 0 do
+    root = Path.expand(Keyword.get(opts, :root) || File.cwd!())
+    runner = Keyword.get(opts, :runner, &run/3)
+    log = logger(opts)
+    worktree = worktree(root, number)
+
+    with :ok <- remove(root, worktree, runner, log),
+         {_output, 0} <- runner.(["git", "worktree", "prune"], root, []) do
+      log.("Closed pull request #{number}")
+      :ok
+    else
+      {:error, message} -> {:error, message}
+      {output, status} -> {:error, failure(["git", "worktree", "prune"], output, status)}
+    end
+  end
+
+  @doc """
+  The directory pull request `number` is reviewed in, under `root`.
+
+  One per pull request, named after its number, so a second review of the same one reuses
+  the checkout rather than adding another.
+  """
+  @spec worktree(Path.t(), pos_integer()) :: Path.t()
+  def worktree(root, number) when is_integer(number) and number > 0,
+    do: Path.join([Path.expand(root), ".grasp", "worktrees", "pr-#{number}"])
+
+  # Every step answers `:ok` whatever the caller's `:log` returns, so a printer that
+  # answers something else cannot break the chain it is only narrating.
+  defp logger(opts) do
+    log = Keyword.get(opts, :log, fn _step -> :ok end)
+
+    fn step ->
+      log.(step)
+      :ok
+    end
+  end
+
+  defp view(number, root, runner, opts) do
+    gh = Keyword.get(opts, :gh) || Application.get_env(:grasp, :gh_command, "gh")
+    argv = [gh, "pr", "view", Integer.to_string(number), "--json", @fields]
+
+    with {:ok, output} <- command(argv, root, [], runner),
+         {:ok, json} <- decode(output),
+         %{"baseRefName" => base, "headRefName" => head} <- json do
+      {:ok,
+       %{
+         base: base,
+         head: head,
+         title: Map.get(json, "title", "pull request #{number}"),
+         url: Map.get(json, "url", "")
+       }}
+    else
+      {:error, message} -> {:error, message}
+      _incomplete -> {:error, "gh pr view #{number} did not name a base and a head branch"}
+    end
+  end
+
+  defp decode(output) do
+    case Jason.decode(output) do
+      {:ok, json} when is_map(json) -> {:ok, json}
+      _undecodable -> {:error, "gh pr view did not answer with JSON: #{String.trim(output)}"}
+    end
+  end
+
+  defp fetch(root, base, head, runner) do
+    with {:ok, _output} <- command(["git", "fetch", "origin", base, head], root, [], runner),
+         do: :ok
+  end
+
+  # An existing worktree is moved to the head that was just fetched rather than left where
+  # the last review put it: a pull request pushed to since then is a different commit.
+  defp place(root, worktree, head, runner, log) do
+    argv =
+      if File.dir?(worktree) do
+        ["git", "-C", worktree, "checkout", "--detach", "origin/#{head}"]
+      else
+        File.mkdir_p!(Path.dirname(worktree))
+        ["git", "worktree", "add", "--detach", worktree, "origin/#{head}"]
+      end
+
+    with {:ok, _output} <- command(argv, root, [], runner) do
+      log.("Worktree #{Path.relative_to(worktree, root)} is at origin/#{head}")
+      :ok
+    end
+  end
+
+  defp lend_deps(root, worktree, log) do
+    source = Path.join(root, "deps")
+    target = Path.join(worktree, "deps")
+
+    cond do
+      # The link itself, not what it points at: a link left dangling by a removed `deps/`
+      # is still a name `File.ln_s/2` would refuse to take.
+      match?({:ok, _stat}, File.lstat(target)) ->
+        :ok
+
+      not File.dir?(source) ->
+        :ok
+
+      true ->
+        case File.ln_s(source, target) do
+          :ok ->
+            log.("Linked deps to #{Path.relative_to(source, root)}")
+            :ok
+
+          {:error, reason} ->
+            {:error, "could not link #{target} to #{source}: #{:file.format_error(reason)}"}
+        end
+    end
+  end
+
+  # The build directory is seeded here rather than left to `mix grasp.index`, which seeds
+  # from the build of the project it runs in: a fresh worktree has none to seed from.
+  defp lend_build(root, worktree, log) do
+    build = Path.join([worktree, "_build", "grasp"])
+    source = Path.join([root, "_build", "dev"])
+
+    if File.dir?(build) or not File.dir?(source) do
+      {:ok, build}
+    else
+      log.("Seeding #{Path.relative_to(build, root)} from #{Path.relative_to(source, root)}")
+      File.mkdir_p!(Path.dirname(build))
+
+      case File.cp_r(source, build) do
+        {:ok, _copied} -> {:ok, build}
+        {:error, reason, path} -> {:error, "could not copy #{source} to #{path}: #{reason}"}
+      end
+    end
+  end
+
+  defp index(worktree, base, out, build, runner) do
+    argv = [
+      "mix",
+      "grasp.index",
+      "--base",
+      "origin/#{base}",
+      "--out",
+      out,
+      "--build-path",
+      build
+    ]
+
+    with {:ok, _output} <- command(argv, worktree, [env: [{"MIX_ENV", "dev"}]], runner), do: :ok
+  end
+
+  defp remove(root, worktree, runner, log) do
+    if File.dir?(worktree) do
+      argv = ["git", "worktree", "remove", "--force", worktree]
+
+      with {:ok, _output} <- command(argv, root, [], runner) do
+        log.("Removed #{Path.relative_to(worktree, root)}")
+        :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  defp command(argv, cwd, opts, runner) do
+    case runner.(argv, cwd, opts) do
+      {output, 0} -> {:ok, output}
+      {output, status} -> {:error, failure(argv, output, status)}
+    end
+  end
+
+  # A command that failed silently is reported by what it was and how it ended, so the
+  # caller is never handed an empty string to explain.
+  defp failure(argv, output, status) do
+    case String.trim(output) do
+      "" -> "#{Enum.join(argv, " ")} exited with status #{status}"
+      message -> message
+    end
+  end
+
+  defp run([command | args], cwd, opts) do
+    System.cmd(command, args,
+      cd: cwd,
+      stderr_to_stdout: true,
+      env: Keyword.get(opts, :env, [])
+    )
+  rescue
+    ErlangError -> {"#{command} is not installed or not on PATH", 127}
+  end
+end

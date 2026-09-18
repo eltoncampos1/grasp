@@ -19,11 +19,14 @@ defmodule Grasp.Comments do
   freed by a delete is never handed out again and a client holding a stale id cannot
   address someone else's comment.
 
-  Persistence is a single JSON document beside the index, `.grasp/comments.json` under
-  the project root, chosen so comments travel with the checkout and can be read and
-  reviewed like any other file. The path can be overridden by `start_link/1` or by the
-  `:grasp, :comments_path` setting, and when neither is given and no project root exists
-  on disk the store keeps its threads in memory only. The whole document is rewritten
+  Persistence is a single JSON document, `.grasp/comments.json` under `Grasp.Application.home/0`
+  — the checkout Grasp was started in — chosen so comments travel with that checkout and can
+  be read and reviewed like any other file. The home directory is the reader's, not the
+  reviewed tree's: a pull request read from a worktree names that worktree as the index's
+  project root, and threads left on it still belong to the reader who wrote them and are
+  still there once the worktree is gone. The path can be overridden by `start_link/1` or by
+  the `:grasp, :comments_path` setting, and before Grasp has started there is no home and
+  the store keeps its threads in memory only. The whole document is rewritten
   after every mutation: it is small, and a full rewrite cannot leave a half-applied edit
   behind. A file that cannot be read, parsed or written is a warning and never a crash —
   losing the viewer over a comment file would be a worse failure than losing the file.
@@ -76,7 +79,7 @@ defmodule Grasp.Comments do
   Starts the store.
 
   `:path` overrides the file to read and write, taking precedence over the
-  `:grasp, :comments_path` setting and over the path derived from the project root, and
+  `:grasp, :comments_path` setting and over the path under the home directory, and
   `:name` registers the store under a name other than the module, for a second store
   running beside the application's, which `list/2` and `add/2` address by that name.
   """
@@ -203,12 +206,10 @@ defmodule Grasp.Comments do
 
   @impl true
   def init(opts) do
-    :ok = Grasp.IndexStore.subscribe()
     override = Keyword.get(opts, :path) || Application.get_env(:grasp, :comments_path)
 
     state = %{
       path: override || derived_path(),
-      override: not is_nil(override),
       threads: %{},
       next_id: 1,
       corrupt: false
@@ -325,20 +326,6 @@ defmodule Grasp.Comments do
   end
 
   @impl true
-  def handle_info(:index_reloaded, %{override: true} = state), do: {:noreply, state}
-
-  def handle_info(:index_reloaded, state) do
-    case derived_path() do
-      path when path == state.path ->
-        {:noreply, state}
-
-      path ->
-        state = read(%{state | path: path})
-        Phoenix.PubSub.broadcast(Grasp.PubSub, @topic, :comments_changed)
-        {:noreply, state}
-    end
-  end
-
   def handle_info(_message, state), do: {:noreply, state}
 
   defp commit(state) do
@@ -423,12 +410,9 @@ defmodule Grasp.Comments do
   end
 
   defp derived_path do
-    with %Grasp.Index{} = index <- Grasp.IndexStore.get(),
-         root when is_binary(root) <- index.project["root"],
-         true <- File.dir?(root) do
-      Path.join(root, ".grasp/comments.json")
-    else
-      _no_project_on_disk -> nil
+    case Grasp.Application.home() do
+      home when is_binary(home) -> Path.join(home, ".grasp/comments.json")
+      _not_started -> nil
     end
   end
 

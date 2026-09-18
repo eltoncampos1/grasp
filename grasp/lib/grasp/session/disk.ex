@@ -3,10 +3,12 @@ defmodule Grasp.Session.Disk do
   The file a review session is written to and read back from.
 
   A session is an arrangement of cards the reviewer built by hand, so it outlives the
-  viewer process that drew it: each one is a JSON document under `.grasp/sessions/` in the
-  indexed project, named after the session. The directory sits beside the index and the
-  comments file, so a session travels with the checkout it describes and can be read like
-  any other file in it. `Grasp.Session.Forest.dump/1` writes version 2 of that document, in
+  viewer process that drew it: each one is a JSON document under `.grasp/sessions/` in
+  `Grasp.Application.home/0` — the checkout Grasp was started in — named after the session.
+  The directory sits beside the comments file, so a session travels with the reader's own
+  checkout and can be read like any other file in it. Home is the reader's directory rather
+  than the project root the index names, so an arrangement built over a pull request read
+  from a worktree is still there once that worktree is removed. `Grasp.Session.Forest.dump/1` writes version 2 of that document, in
   which a card holds its position on the stage; a version 1 file, which held a displacement
   from a layout the canvas no longer draws, still opens, with its cards laid out afresh.
   `:grasp, :sessions_dir` overrides the directory, and when neither
@@ -42,8 +44,8 @@ defmodule Grasp.Session.Disk do
   @doc """
   The directory session files are written to, or nil when they are held in memory only.
 
-  `:grasp, :sessions_dir` wins when it is set; otherwise it is `.grasp/sessions` under the
-  root the loaded index names, and nil when that root is not a directory on this machine.
+  `:grasp, :sessions_dir` wins when it is set; otherwise it is `.grasp/sessions` under
+  `Grasp.Application.home/0`, and nil before Grasp has started and recorded one.
   """
   @spec dir() :: Path.t() | nil
   def dir do
@@ -167,12 +169,9 @@ defmodule Grasp.Session.Disk do
   def name_rule, do: "session names are letters, digits, - and _, up to 40 characters"
 
   defp derived_dir do
-    with %Grasp.Index{} = index <- Grasp.IndexStore.get(),
-         root when is_binary(root) <- index.project["root"],
-         true <- File.dir?(root) do
-      Path.join(root, ".grasp/sessions")
-    else
-      _no_project_on_disk -> nil
+    case Grasp.Application.home() do
+      home when is_binary(home) -> Path.join(home, ".grasp/sessions")
+      _not_started -> nil
     end
   end
 

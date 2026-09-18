@@ -4,8 +4,10 @@ defmodule Grasp.Application do
   session and agent registries and supervisors, the MCP server the `/mcp` route forwards
   to, and — only when standalone — the viewer's own endpoint.
 
-  The comments store follows the index store, whose project root it derives its file from
-  and whose reloads it subscribes to.
+  The review comments and the saved sessions are the reader's own, so they are kept under
+  the directory Grasp started in rather than under the project root the index names — a
+  pull request reviewed from a worktree writes its threads beside the checkout the reader
+  opened, and they outlive that worktree. `home/0` is that directory.
 
   The MCP server starts explicitly rather than following the endpoint, so it also runs
   under `mix test` and inside a host application, where Grasp serves no endpoint of its
@@ -37,11 +39,23 @@ defmodule Grasp.Application do
   def start(_type, _args) do
     mix? = mix_running?()
     if mix?, do: Lumis.Languages.async_load(@languages)
+    record_home()
 
     mix?
     |> children(standalone?())
     |> Supervisor.start_link(strategy: :one_for_one, name: Grasp.Supervisor)
   end
+
+  @doc """
+  The directory Grasp keeps the reader's own files under, in a `.grasp/` inside it.
+
+  It is `:grasp, :home` when that is set and the working directory Grasp started in
+  otherwise, recorded at start so a later `File.cd/1` cannot move the comments file or the
+  sessions directory out from under a running viewer. Nil before Grasp has started, which
+  the stores read as: keep everything in memory.
+  """
+  @spec home() :: Path.t() | nil
+  def home, do: Application.get_env(:grasp, :home)
 
   @doc """
   The processes Grasp starts, given whether Mix is running and whether it serves its own
@@ -84,6 +98,14 @@ defmodule Grasp.Application do
   def config_change(changed, _new, removed) do
     if Process.whereis(GraspWeb.Endpoint), do: GraspWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  # A host starts its dev server from its project root, which is the checkout the reader is
+  # reviewing from and the one their comments belong to.
+  defp record_home do
+    if is_nil(Application.get_env(:grasp, :home)) do
+      Application.put_env(:grasp, :home, File.cwd!())
+    end
   end
 
   defp mix_running?, do: not is_nil(Application.spec(:mix, :vsn))

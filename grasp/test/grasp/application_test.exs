@@ -30,6 +30,20 @@ defmodule Grasp.ApplicationTest do
     refute {Grasp.Reindexer, []} in children
   end
 
+  test "home/0 is where the reader's own comments and sessions are kept" do
+    home = Grasp.Application.home()
+
+    assert is_binary(home)
+    assert home == Application.get_env(:grasp, :home)
+
+    # The index names a project root that is not on this machine, and the comments file
+    # still lands somewhere: it belongs to the checkout Grasp was started in, not to the
+    # reviewed tree.
+    assert Grasp.IndexStore.get().project["root"] == "/tmp/sample_app"
+    assert File.dir?("/tmp/sample_app") == false
+    assert is_binary(Grasp.Comments.path())
+  end
+
   test "without Mix there is nothing to start" do
     log = capture_log(fn -> assert Grasp.Application.children(false, true) == [] end)
 

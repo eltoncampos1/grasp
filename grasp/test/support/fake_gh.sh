@@ -2,7 +2,9 @@
 # Stands in for the GitHub CLI in tests: answers the handful of `gh` calls the publisher
 # makes with canned JSON about pull 42 of acme/sample_app, so the suite never reaches the
 # network. Pull 99 answers a different head sha, for the head-mismatch warning, and pull
-# 404 fails the way gh fails on a branch with no pull request. An `api` call whose argv
+# 404 fails the way gh fails on a branch with no pull request. A `pr view` asking for the
+# branch fields answers pull 7, whose feature branch is open against main, for the worktree
+# recipe. An `api` call whose argv
 # carries GHFAIL answers GitHub's validation error. With FAKE_GH_LOG set it appends each
 # argv as one line to that file, so a test can read back the flags it was called with.
 if [ -n "$FAKE_GH_LOG" ]; then
@@ -14,6 +16,21 @@ args="$*"
 case "$1 $2" in
   "pr view")
     number=$3
+    case "$args" in
+      *baseRefName,headRefName*)
+        case "$number" in
+          404)
+            echo 'no pull requests found for branch "review/publish"' 1>&2
+            exit 1
+            ;;
+        esac
+
+        printf '{"baseRefName":"main","headRefName":"feature","title":"Add greeting","url":"https://github.com/acme/sample_app/pull/%s"}\n' \
+          "$number"
+        exit 0
+        ;;
+    esac
+
     case "$number" in
       ""|-*) number=42 ;;
       404)
