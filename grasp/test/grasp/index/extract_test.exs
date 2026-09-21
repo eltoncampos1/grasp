@@ -282,8 +282,8 @@ defmodule Grasp.Index.ExtractTest do
     assert Extract.expression_sites(" end ", 1, 1) == []
   end
 
-  # `@name` is the module-attribute node the walk has always produced a site for; the
-  # compiler reports no call there, so nothing ever lands on it.
+  # The walk makes a one-column site for an `@` node, in an interpolation as in a clause
+  # body; the compiler reports no call there, so nothing ever lands on it.
   test "reads a module attribute the way a clause body does" do
     assert Extract.expression_sites("@name", 1, 1) == [
              %{
@@ -294,6 +294,11 @@ defmodule Grasp.Index.ExtractTest do
                callee: %{module: nil, name: :@, arity: 1}
              }
            ]
+  end
+
+  test "records no written module for a receiver that is not a module" do
+    assert [%{callee: %{module: nil, name: :foo, arity: 1}}] =
+             Extract.expression_sites("nil.foo(1)", 1, 1)
   end
 
   @interpolated ~S'''

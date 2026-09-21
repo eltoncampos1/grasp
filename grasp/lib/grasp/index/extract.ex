@@ -440,24 +440,34 @@ defmodule Grasp.Index.Extract do
     end
   end
 
-  defp callee({{:., _, [receiver, name]}, _meta, args}, arity) when is_atom(name),
-    do: %{module: receiver_name(receiver), name: name, arity: arity || argument_count(args)}
+  # The arity is the argument list's length, except for a capture, where the caller reads
+  # it off the `/2` the source wrote and the name carries no arguments at all.
+  defp callee({{:., _, [receiver, name]}, _meta, args}, nil) when is_atom(name) and is_list(args),
+    do: %{module: receiver_name(receiver), name: name, arity: length(args)}
 
-  defp callee({name, _meta, args}, arity) when is_atom(name),
-    do: %{module: nil, name: name, arity: arity || argument_count(args)}
+  defp callee({{:., _, [receiver, name]}, _meta, _args}, arity)
+       when is_atom(name) and is_integer(arity),
+       do: %{module: receiver_name(receiver), name: name, arity: arity}
+
+  defp callee({name, _meta, args}, nil) when is_atom(name) and is_list(args),
+    do: %{module: nil, name: name, arity: length(args)}
+
+  defp callee({name, _meta, _args}, arity) when is_atom(name) and is_integer(arity),
+    do: %{module: nil, name: name, arity: arity}
 
   defp callee(_node, _arity), do: nil
 
-  defp argument_count(args) when is_list(args), do: length(args)
-  defp argument_count(_args), do: 0
-
-  # Only a receiver the source spells out is recorded. `mod.f(x)` names a module no parser
-  # can know, and a call placed by name against it would match anything.
+  # Only a receiver the source spells out as a module is recorded. `mod.f(x)` names a
+  # module no parser can know, and a call placed by name against it would match anything;
+  # `nil`, `true` and `false` are values, not the modules their text would name.
   defp receiver_name({:__aliases__, _meta, parts}) do
     if Enum.all?(parts, &is_atom/1), do: Enum.map_join(parts, ".", &Atom.to_string/1)
   end
 
-  defp receiver_name({:__block__, _meta, [atom]}) when is_atom(atom), do: inspect(atom)
+  defp receiver_name({:__block__, _meta, [atom]})
+       when is_atom(atom) and atom not in [nil, true, false],
+       do: inspect(atom)
+
   defp receiver_name(_expression), do: nil
 
   # `~H"""` content reaches the compiler with the heredoc's indentation stripped, starting on

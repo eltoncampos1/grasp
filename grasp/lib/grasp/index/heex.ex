@@ -34,13 +34,18 @@ defmodule Grasp.Index.Heex do
   and the body of a `<script>` or `<style>` element, which HEEx treats as raw text where a
   brace is a brace and a `<` opens nothing.
 
-  A `{...}` body is found by counting brace depth, not by parsing Elixir: a brace inside a
-  string (`{"{"}`) is counted like any other, so an unbalanced one swallows the rest of the
-  template, as an unterminated `<%!--`, `<!--`, `<script>` or `<style>` does. A body whose
-  closing delimiter never arrives is yielded by neither function. An expression tag is read
-  before a brace inside it is, so the map in `<%= %{a: 1} %>` belongs to the tag; a
-  tag-shaped pattern inside a plain attribute string (`title="<.badge />"`) is still
-  reported as a tag, which is harmless, since the compiler reports no call there and
+  A `{...}` body is found by counting brace depth, not by parsing Elixir. A double-quoted
+  string inside the body is read as a string, so the braces in `{String.replace(x, "}", "")}`
+  are left uncounted, and a `\\"` inside one does not end it. Two kinds of brace are still
+  counted: one inside a single-quoted charlist (`{f('}')}`), and one inside a string nested
+  in a `#{}` interpolation, whose opening `"` reads as the end of the string it is written
+  in; either ends the body early, where the truncated text parses into nothing. An
+  unbalanced brace swallows the rest of the template, as an unterminated `<%!--`, `<!--`,
+  `<script>` or `<style>` does; an unterminated `<%` does not, since the scan resumes just
+  past it. A body whose closing delimiter never arrives is yielded by neither function. An
+  expression tag is read before a brace inside it is, so the map in `<%= %{a: 1} %>` belongs
+  to the tag; a tag-shaped pattern inside a plain attribute string (`title="<.badge />"`) is
+  still reported as a tag, which is harmless, since the compiler reports no call there and
   nothing lands on the site.
   """
 
@@ -113,13 +118,19 @@ defmodule Grasp.Index.Heex do
     scan(rest, state, found)
   end
 
-  defp scan(<<"<%=", rest::binary>>, state, found), do: expression(rest, state, found, 3)
-  defp scan(<<"<%", rest::binary>>, state, found), do: expression(rest, state, found, 2)
+  defp scan(<<"<%=", rest::binary>> = binary, state, found),
+    do: expression(binary, rest, state, found, 3)
+
+  defp scan(<<"<%", rest::binary>> = binary, state, found),
+    do: expression(binary, rest, state, found, 2)
 
   defp scan(<<"{", rest::binary>>, state, found) do
     body = advance(state, 1)
-    {rest, state, text, closed?} = read_braces(rest, body, 1, [])
-    scan(rest, state, collect(found, body, text, closed?))
+
+    case read_braces(rest, body, 1, false, []) do
+      {rest, state, text, true} -> scan(rest, state, [collect(body, text) | found])
+      {rest, state, _text, false} -> scan(rest, state, found)
+    end
   end
 
   defp scan(<<"<script", rest::binary>>, state, found) when raw_boundary(rest) do
@@ -146,22 +157,29 @@ defmodule Grasp.Index.Heex do
   defp scan(<<_::utf8, rest::binary>>, state, found), do: scan(rest, advance(state, 1), found)
   defp scan(<<_, rest::binary>>, state, found), do: scan(rest, advance(state, 1), found)
 
-  defp expression(rest, state, found, delimiter_size) do
+  # A tag whose `%>` never arrives is no body at all, and the scan takes it as the two
+  # characters it read, so the markup after it is still scanned for tags.
+  defp expression(binary, rest, state, found, delimiter_size) do
     body = advance(state, delimiter_size)
-    {rest, state, text, closed?} = read_until(rest, body, "%>", [])
-    scan(rest, state, collect(found, body, text, closed?))
+
+    case read_until(rest, body, "%>", []) do
+      {rest, state, text, true} ->
+        scan(rest, state, [collect(body, text) | found])
+
+      {_rest, _state, _text, false} ->
+        <<_delimiter::binary-size(2), unread::binary>> = binary
+        scan(unread, advance(state, 2), found)
+    end
   end
 
-  defp collect(found, _body, _text, false), do: found
-
-  defp collect(found, body, text, true) do
+  defp collect(body, text) do
     interpolation = %{
       line: body.line,
       column: body.column,
       text: text |> Enum.reverse() |> IO.iodata_to_binary()
     }
 
-    [{:interpolation, interpolation} | found]
+    {:interpolation, interpolation}
   end
 
   # Returns the site and the byte size of the name it matched, so the scan resumes past the
@@ -240,28 +258,36 @@ defmodule Grasp.Index.Heex do
   end
 
   # The body of a `{...}`: everything up to the brace that closes the one already opened.
-  defp read_braces(<<>>, state, _depth, text), do: {<<>>, state, text, false}
+  # `string?` is whether the scan is inside a double-quoted string, where a brace is text.
+  defp read_braces(<<>>, state, _depth, _string?, text), do: {<<>>, state, text, false}
 
-  defp read_braces(<<"}", rest::binary>>, state, 1, text),
+  defp read_braces(<<"\\", character::utf8, rest::binary>>, state, depth, true, text)
+       when character != ?\n,
+       do: read_braces(rest, advance(state, 2), depth, true, [<<?\\, character::utf8>> | text])
+
+  defp read_braces(<<"\"", rest::binary>>, state, depth, string?, text),
+    do: read_braces(rest, advance(state, 1), depth, not string?, ["\"" | text])
+
+  defp read_braces(<<"}", rest::binary>>, state, 1, false, text),
     do: {rest, advance(state, 1), text, true}
 
-  defp read_braces(<<"}", rest::binary>>, state, depth, text),
-    do: read_braces(rest, advance(state, 1), depth - 1, ["}" | text])
+  defp read_braces(<<"}", rest::binary>>, state, depth, false, text),
+    do: read_braces(rest, advance(state, 1), depth - 1, false, ["}" | text])
 
-  defp read_braces(<<"{", rest::binary>>, state, depth, text),
-    do: read_braces(rest, advance(state, 1), depth + 1, ["{" | text])
+  defp read_braces(<<"{", rest::binary>>, state, depth, false, text),
+    do: read_braces(rest, advance(state, 1), depth + 1, false, ["{" | text])
 
-  defp read_braces(<<"\r\n", rest::binary>>, state, depth, text),
-    do: read_braces(rest, newline(state), depth, [break(state, "\r\n") | text])
+  defp read_braces(<<"\r\n", rest::binary>>, state, depth, string?, text),
+    do: read_braces(rest, newline(state), depth, string?, [break(state, "\r\n") | text])
 
-  defp read_braces(<<"\n", rest::binary>>, state, depth, text),
-    do: read_braces(rest, newline(state), depth, [break(state, "\n") | text])
+  defp read_braces(<<"\n", rest::binary>>, state, depth, string?, text),
+    do: read_braces(rest, newline(state), depth, string?, [break(state, "\n") | text])
 
-  defp read_braces(<<character::utf8, rest::binary>>, state, depth, text),
-    do: read_braces(rest, advance(state, 1), depth, [<<character::utf8>> | text])
+  defp read_braces(<<character::utf8, rest::binary>>, state, depth, string?, text),
+    do: read_braces(rest, advance(state, 1), depth, string?, [<<character::utf8>> | text])
 
-  defp read_braces(<<byte, rest::binary>>, state, depth, text),
-    do: read_braces(rest, advance(state, 1), depth, [<<byte>> | text])
+  defp read_braces(<<byte, rest::binary>>, state, depth, string?, text),
+    do: read_braces(rest, advance(state, 1), depth, string?, [<<byte>> | text])
 
   # A heredoc reaches this module with its indentation stripped, so a continuation line of
   # a body opens `indent` columns to the left of where the file has it; writing the spaces

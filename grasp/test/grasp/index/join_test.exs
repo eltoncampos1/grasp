@@ -129,6 +129,28 @@ defmodule Grasp.Index.JoinTest do
     assert Enum.map(run.calls, & &1.range) == [@named_range, second.range]
   end
 
+  test "leaves a site a column-bearing event lands on out of the named placement",
+       %{defs: defs} do
+    events = [
+      event(:run, 2, 6, 18, {Grasp.JoinTest.Sample, :helper, 1}, :local),
+      event(:run, 2, 6, nil, {Grasp.JoinTest.Sample, :helper, 1}, :remote)
+    ]
+
+    [run] = defs |> Join.join(events) |> Enum.filter(&(&1.name == :run))
+
+    assert run.calls == [
+             %{
+               target: "Grasp.JoinTest.Sample.helper/1",
+               kind: :local,
+               range: %{start: {6, 18}, end: {6, 24}}
+             }
+           ]
+
+    assert run.hidden_calls == [
+             %{target: "Grasp.JoinTest.Sample.helper/1", kind: :remote, line: 6}
+           ]
+  end
+
   test "never places a column-less event on a site with no callee", %{defs: defs} do
     defs = with_site(defs, :run, %{named_site("Greeter") | callee: nil})
     events = [event(:run, 2, 6, nil, {SampleApp.Greeter, :greet, 1}, :remote)]

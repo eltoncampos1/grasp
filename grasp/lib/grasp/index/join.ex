@@ -32,10 +32,10 @@ defmodule Grasp.Index.Join do
       column — a call written inside a `{...}` interpolation is the common case. Outside a
       `defdelegate` (which turns its one column-less delegated call into a visible call),
       such an event is first offered to the call sites the extractor parsed out of the
-      definition's interpolations: an unclaimed site on the event's line whose written name
-      and arity are the event's, and whose written module, where the source spells one out,
-      is the target module or a suffix of it, claims the event and makes it a visible call
-      over that site's range. Two identical calls on one line are handed to their two sites
+      definition's interpolations: a site no column-bearing event claims, on the event's
+      line, whose written name and arity are the event's, and whose written module, where
+      the source spells one out, is the target module or a suffix of it, claims the event
+      and makes it a visible call over that site's range. Two identical calls on one line are handed to their two sites
       in document order. Only what no site claims reaches the rule below it, where an event
       becomes a hidden call when its line falls inside the definition's span *and* its
       target is a definition the index holds. A macro that expands into a dependency — a
@@ -187,7 +187,9 @@ defmodule Grasp.Index.Join do
   # The site that wrote the call an event reports with no column: the first one left on
   # that line whose name and arity are the event's, and whose module, where the source
   # names one, is the module the compiler resolved or the tail of it — a call written
-  # through an alias (`Greeter.greet(@name)`) reports `SampleApp.Greeter`.
+  # through an alias (`Greeter.greet(@name)`) reports `SampleApp.Greeter`. A site an event
+  # of its own lands on positionally is spoken for, so the same range is never handed out
+  # twice.
   defp named_site(sites, claimed, event) do
     {module, name, arity} = event.target
 
@@ -196,6 +198,16 @@ defmodule Grasp.Index.Join do
         written_module?(site.callee.module, module) and
         not MapSet.member?(claimed, {site.line, site.column})
     end)
+  end
+
+  # The positions the column-bearing events of this definition own.
+  defp positioned_sites(events, sites, heads) do
+    for event <- events,
+        event.column != nil,
+        not MapSet.member?(heads, {event.line, event.column}),
+        Map.has_key?(sites, {event.line, event.column}),
+        into: MapSet.new(),
+        do: {event.line, event.column}
   end
 
   defp written_module?(nil, _module), do: true
@@ -214,9 +226,10 @@ defmodule Grasp.Index.Join do
     heads = MapSet.new(definition.head_positions)
     delegate_range = if definition.kind == :defdelegate, do: List.first(definition.head_ranges)
     span = definition.start_line..definition.end_line
+    positioned = positioned_sites(events, sites, heads)
 
     {calls, hidden, _claimed} =
-      Enum.reduce(events, {[], [], MapSet.new()}, fn event, {calls, hidden, claimed} ->
+      Enum.reduce(events, {[], [], positioned}, fn event, {calls, hidden, claimed} ->
         {module, name, arity} = event.target
         target = function_id(module, name, arity)
         call = fn range -> %{target: target, kind: event.kind, range: range} end

@@ -156,7 +156,44 @@ defmodule Grasp.Index.HeexTest do
   end
 
   test "yields nothing for a brace the depth count never closes" do
-    assert Heex.interpolations("{\"{\"}<p>{ok()}</p>", {1, 0}) == []
+    assert Heex.interpolations("{f(<p>{ok()}</p>", {1, 0}) == []
+  end
+
+  test "counts a brace inside a single-quoted charlist, ending the body early" do
+    assert Heex.interpolations(~S|{f('}')}|, {1, 0}) == [
+             %{line: 1, column: 2, text: ~S|f('|}
+           ]
+  end
+
+  test "does not count a brace inside a double-quoted string" do
+    assert Heex.interpolations(~S|{f("}")}|, {1, 0}) == [
+             %{line: 1, column: 2, text: ~S|f("}")|}
+           ]
+  end
+
+  test "reads the interpolations after a body whose string holds a closing brace" do
+    assert Heex.interpolations(~S|{String.replace(x, "}", "")}<p>{g()}</p>|, {1, 0}) == [
+             %{line: 1, column: 2, text: ~S|String.replace(x, "}", "")|},
+             %{line: 1, column: 33, text: "g()"}
+           ]
+  end
+
+  test "reads a quote a backslash escapes as part of the string" do
+    assert Heex.interpolations(~S|{f("\"}")}|, {1, 0}) == [
+             %{line: 1, column: 2, text: ~S|f("\"}")|}
+           ]
+  end
+
+  test "resumes the scan after an expression tag that is never closed" do
+    assert Heex.tag_sites("<p>a <% b</p>\n<.badge />\n", {1, 0}) == [
+             %{
+               line: 2,
+               column: 1,
+               range: %{start: {2, 2}, end: {2, 8}},
+               template: nil,
+               callee: nil
+             }
+           ]
   end
 
   test "yields every interpolation on a line in document order" do
