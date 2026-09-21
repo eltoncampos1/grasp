@@ -11,6 +11,7 @@ defmodule SampleAppWeb.Router do
     pipe_through(:browser)
     get("/greet/:name", GreetController, :show)
     post("/greet", GreetController, :create)
+    get("/again", GreetController, :again)
     live("/hello", HelloLive)
     forward("/api", ApiRouter)
   end

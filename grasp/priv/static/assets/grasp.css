@@ -449,6 +449,9 @@ body.grasp-dragging .flow__title {
 .connectors .arrow {
   fill: var(--edge-color, var(--border));
 }
+.connectors .edge[data-kind=route] {
+  stroke-dasharray: 6 4;
+}
 .frames {
   position: absolute;
   inset: 0;
@@ -797,6 +800,9 @@ body.grasp-dragging .flow__title {
 .call[data-external=true] {
   border-bottom-color: var(--fg-muted);
   opacity: 0.8;
+}
+.call[data-kind=route] {
+  border-bottom-style: dotted;
 }
 .call[data-highlight=true] {
   box-shadow: 0 0 0 2px var(--accent);

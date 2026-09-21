@@ -16,7 +16,9 @@ defmodule Grasp.Highlight do
   file coordinates) may start or end inside a run and may span lines; run text is
   therefore split at range boundaries, and consecutive pieces inside the same range on the
   same line are wrapped together. Output is one `span.line` per source line so the viewer
-  can address lines, with Lumis' classes on highlighted runs and bare text elsewhere.
+  can address lines, with Lumis' classes on highlighted runs and bare text elsewhere. A call
+  the router resolved carries `data-kind="route"` and a `title` reading its verb and path, so
+  a hop over HTTP is told from a function call on the card and on the edge leaving it.
 
   `lines/2` and `diff_lines/2` hand those lines back one at a time as `%{side, line, html}`,
   the side telling a line of the current source from one the branch deleted, so a caller can
@@ -229,7 +231,13 @@ defmodule Grasp.Highlight do
 
     ranges =
       for call <- record["calls"], %{"start" => [sl, sc], "end" => [el, ec]} = call["range"] do
-        %{target: call["target"], start: {sl, sc}, end: {el, ec}}
+        %{
+          target: call["target"],
+          kind: call["kind"],
+          route: call["route"],
+          start: {sl, sc},
+          end: {el, ec}
+        }
       end
 
     by_line =
@@ -487,9 +495,10 @@ defmodule Grasp.Highlight do
         nil ->
           inner
 
-        %{target: target} ->
+        %{target: target} = range ->
           attrs =
             ~s( data-target="#{escape(target)}") <>
+              route_attrs(range) <>
               edge_attrs(open, target) <>
               ~s( data-external="#{escape(to_string(external?.(target)))}" phx-click="open_call" phx-value-card="#{escape(to_string(card_id))}" phx-value-target="#{escape(target)}") <>
               if target == highlighted_call, do: ~s( data-highlight="true"), else: ""
@@ -498,6 +507,14 @@ defmodule Grasp.Highlight do
       end
     end)
   end
+
+  # A hop the router resolved reads as an HTTP request rather than a function call, so the
+  # span says which kind it is and carries the verb and path the reader would otherwise have
+  # to look up in the router.
+  defp route_attrs(%{kind: "route", route: %{"verb" => verb, "path" => path}}),
+    do: ~s( data-kind="route" title="#{escape(verb)} #{escape(path)}")
+
+  defp route_attrs(_range), do: ""
 
   defp edge_attrs(open, target) do
     case Map.fetch(open, target) do

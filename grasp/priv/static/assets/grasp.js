@@ -812,9 +812,10 @@
           d = `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`;
         }
         const color = /^[0-7]$/.test(site.dataset.color || "") ? site.dataset.color : null;
+        const kind = site.dataset.kind;
         const from = card.id.replace("card-", "");
         paths.push(
-          `<path class="edge" vector-effect="non-scaling-stroke" data-from="${attr(from)}" data-to="${attr(site.dataset.edgeTo)}"` + (color === null ? "" : ` data-color="${color}" marker-end="url(#arrow-${color})"`) + ` d="${d}" />`
+          `<path class="edge" vector-effect="non-scaling-stroke" data-from="${attr(from)}" data-to="${attr(site.dataset.edgeTo)}"` + (color === null ? "" : ` data-color="${color}" marker-end="url(#arrow-${color})"`) + (kind ? ` data-kind="${attr(kind)}"` : "") + ` d="${d}" />`
         );
       }
       this.svg.setAttribute("width", String(this.extent.width));

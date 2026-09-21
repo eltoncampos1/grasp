@@ -256,17 +256,21 @@ defmodule Grasp.HighlightTest do
     test "a component tag and an interpolated call in a template are clickable call spans" do
       doc = fixture_lines("SampleAppWeb.GreetHTML.show/1")
 
-      assert doc |> LazyHTML.query("span.line") |> Enum.count() == 7
+      assert doc |> LazyHTML.query("span.line") |> Enum.count() == 9
 
       assert doc
              |> LazyHTML.query(~s(span.call[phx-click="open_call"]))
              |> LazyHTML.attribute("data-target") == [
                "SampleAppWeb.GreetHTML.badge/1",
                "SampleAppWeb.GreetingComponent.render/1",
+               "SampleAppWeb.GreetController.show/2",
                "SampleApp.Greeter.greet/1",
                "SampleApp.Greeter.greet/1",
                "SampleApp.Greeter.greet/1",
-               "SampleApp.Greeter.greet/1"
+               "SampleApp.Greeter.greet/1",
+               "SampleAppWeb.GreetController.create/2",
+               "Phoenix.Component.link/1",
+               "SampleAppWeb.HelloLive.mount/3"
              ]
 
       assert doc
@@ -276,6 +280,24 @@ defmodule Grasp.HighlightTest do
       assert doc
              |> LazyHTML.query(~s(span.line[data-line="4"] span.call))
              |> LazyHTML.text() == "SampleApp.Greeter.greet"
+    end
+
+    test "a route call carries its kind and reads its verb and path on hover" do
+      doc = fixture_lines("SampleAppWeb.GreetHTML.show/1")
+
+      route = LazyHTML.query(doc, ~s(span.line[data-line="3"] span.call[data-kind="route"]))
+
+      assert LazyHTML.attribute(route, "data-target") == ["SampleAppWeb.GreetController.show/2"]
+      assert LazyHTML.attribute(route, "title") == ["GET /greet/:name"]
+      assert LazyHTML.text(route) == ~s("/greet/bob")
+
+      assert doc
+             |> LazyHTML.query(~s(span.line[data-line="8"] span.call[data-kind="route"]))
+             |> LazyHTML.attribute("title") == ["POST /greet"]
+
+      assert doc
+             |> LazyHTML.query(~s(span.call[data-target="SampleAppWeb.GreetHTML.badge/1"]))
+             |> LazyHTML.attribute("data-kind") == []
     end
 
     test "a modified template's diff numbers its own lines and nothing past them" do

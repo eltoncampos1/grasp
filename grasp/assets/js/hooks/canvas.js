@@ -976,12 +976,16 @@ const Canvas = {
         d = `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`
       }
       const color = /^[0-7]$/.test(site.dataset.color || "") ? site.dataset.color : null
+      // The call site says what kind of hop it is; the path carries it so the stylesheet can
+      // draw an HTTP request differently from a function call.
+      const kind = site.dataset.kind
       // The path is drawn in stage units, which the zoom scales; `vector-effect` is what keeps
       // its stroke 2 screen pixels instead of thinning to under half a one at MIN_SCALE.
       const from = card.id.replace("card-", "")
       paths.push(
         `<path class="edge" vector-effect="non-scaling-stroke" data-from="${attr(from)}" data-to="${attr(site.dataset.edgeTo)}"` +
           (color === null ? "" : ` data-color="${color}" marker-end="url(#arrow-${color})"`) +
+          (kind ? ` data-kind="${attr(kind)}"` : "") +
           ` d="${d}" />`,
       )
     }

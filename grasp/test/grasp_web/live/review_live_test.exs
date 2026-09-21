@@ -18,6 +18,7 @@ defmodule GraspWeb.ReviewLiveTest do
   @render "SampleAppWeb.HelloLive.render/1"
   @badge "SampleAppWeb.GreetHTML.badge/1"
   @show_template "SampleAppWeb.GreetHTML.show/1"
+  @again "SampleAppWeb.GreetController.again/2"
 
   setup %{conn: conn} do
     name = "t-#{System.unique_integer([:positive])}"
@@ -529,6 +530,41 @@ defmodule GraspWeb.ReviewLiveTest do
     view |> element("#card-2 .card__callers-toggle") |> render_click()
 
     assert has_element?(view, "#card-2 .card__callers ul button.caller", @show_template)
+  end
+
+  test "a route a template links to opens the action, named by its verb and path",
+       %{view: view, name: name} do
+    Session.open_root(name, @show_template)
+
+    assert has_element?(
+             view,
+             "#card-1 .line[data-line='3'] span.call[data-kind='route'][data-target='#{@show}'][title='GET /greet/:name']"
+           )
+
+    assert has_element?(
+             view,
+             "#card-1 .line[data-line='8'] span.call[data-kind='route'][data-target='#{@create}'][title='POST /greet']"
+           )
+
+    view
+    |> element("#card-1 .line[data-line='3'] span.call[data-kind='route']")
+    |> render_click()
+
+    assert has_element?(view, "#node-2[data-depth='1'] #card-2[data-function-id='#{@show}']")
+
+    view |> element("#card-2 .card__callers-toggle") |> render_click()
+
+    assert has_element?(view, "#card-2 .card__callers ul button.caller", @show_template)
+  end
+
+  test "a ~p in a controller action is a route call the reader can follow",
+       %{view: view, name: name} do
+    Session.open_root(name, @again)
+
+    assert has_element?(
+             view,
+             "#card-1 span.call[data-kind='route'][data-target='#{@show}'][title='GET /greet/:name']"
+           )
   end
 
   test "a call made inside a ~H is clickable on the card holding it", %{view: view, name: name} do

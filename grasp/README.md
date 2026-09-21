@@ -2,7 +2,9 @@
 
 Call-chain code review for Elixir. Grasp draws each function as a card on a canvas: click a
 call inside a card and the callee opens beside it, joined by an edge, so a call chain reads
-left to right instead of as a series of editor jumps.
+left to right instead of as a series of editor jumps. A link, a form action or a `~p` sigil is
+a call too: the router resolves the path to the action or LiveView behind it and the hop is
+drawn as a dashed edge.
 
 Indexed against a base branch the same canvas reviews a pull request — changed functions lead
 the sidebar, a modified card swaps between its source and its diff, and review comments sit on

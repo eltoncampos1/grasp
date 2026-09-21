@@ -100,6 +100,11 @@ An edge runs from a call site to the card it reaches, takes that call site's col
 arrows into the callee. Double-click an arrow to jump to the card at its far end — the
 caller or the callee that is out of sight — which takes focus and pans into view.
 
+A dashed edge is a hop over HTTP rather than a function call: a link, a form action, an
+`hx-*` attribute or a `~p` sigil the router resolved to the action or LiveView it maps that
+path to. Its call site is underlined with dots instead of dashes, and hovering it reads the
+verb and path the router matched.
+
 ## Comments
 
 Click a line number to comment — hover it first for the `+` that marks it clickable. Drag

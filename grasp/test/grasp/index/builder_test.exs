@@ -138,7 +138,7 @@ defmodule Grasp.Index.BuilderTest do
 
     assert show["kind"] == "template"
     assert show["file"] == "lib/sample_app_web/greet_html/show.html.heex"
-    assert show["span"] == %{"start_line" => 1, "end_line" => 7}
+    assert show["span"] == %{"start_line" => 1, "end_line" => 9}
     assert show["source"] == File.read!(file)
 
     assert %{"range" => %{"start" => [1, 2], "end" => [1, 8]}} =
@@ -174,11 +174,53 @@ defmodule Grasp.Index.BuilderTest do
     assert hidden(show, "SampleApp.Greeter.greet/1") == nil
   end
 
+  test "a route written in a template is a call on the action the router maps it to",
+       %{index: index} do
+    {:ok, show} = Grasp.Index.fetch_function(index, "SampleAppWeb.GreetHTML.show/1")
+
+    assert %{
+             "kind" => "route",
+             "range" => %{"start" => [3, 9], "end" => [3, 21]},
+             "route" => %{"verb" => "GET", "path" => "/greet/:name"}
+           } = call(show, "SampleAppWeb.GreetController.show/2")
+
+    assert %{
+             "kind" => "route",
+             "range" => %{"start" => [8, 17], "end" => [8, 29]},
+             "route" => %{"verb" => "POST", "path" => "/greet"}
+           } = call(show, "SampleAppWeb.GreetController.create/2")
+
+    assert %{
+             "kind" => "route",
+             "range" => %{"start" => [9, 17], "end" => [9, 29]},
+             "route" => %{"verb" => "GET", "path" => "/hello"}
+           } = call(show, "SampleAppWeb.HelloLive.mount/3")
+
+    {:ok, again} = Grasp.Index.fetch_function(index, "SampleAppWeb.GreetController.again/2")
+
+    assert %{
+             "kind" => "route",
+             "route" => %{"verb" => "GET", "path" => "/greet/:name"}
+           } = call(again, "SampleAppWeb.GreetController.show/2")
+
+    assert %{"kind" => "imported"} = call(again, "Phoenix.Controller.redirect/2")
+
+    callers = Grasp.Index.callers(index, "SampleAppWeb.GreetController.show/2")
+
+    assert "SampleAppWeb.GreetHTML.show/1" in callers
+    assert "SampleAppWeb.GreetController.again/2" in callers
+
+    assert "SampleAppWeb.GreetHTML.show/1" in Grasp.Index.callers(
+             index,
+             "SampleAppWeb.HelloLive.mount/3"
+           )
+  end
+
   test "reaches the template a controller renders and the component a template calls",
        %{index: index} do
     {:ok, controller} = Grasp.Index.fetch_function(index, "SampleAppWeb.GreetController.show/2")
 
-    assert %{"kind" => "template", "range" => %{"start" => [7, 5], "end" => [7, 11]}} =
+    assert %{"kind" => "template", "range" => %{"start" => [8, 5], "end" => [8, 11]}} =
              call(controller, "SampleAppWeb.GreetHTML.show/1")
 
     {:ok, live} = Grasp.Index.fetch_function(index, "SampleAppWeb.HelloLive.render/1")
@@ -215,6 +257,7 @@ defmodule Grasp.Index.BuilderTest do
            } = find(entries, "SampleAppWeb.GreetController.show/2")
 
     assert labelled(entries, "POST /greet")["target"] == "SampleAppWeb.GreetController.create/2"
+    assert labelled(entries, "GET /again")["target"] == "SampleAppWeb.GreetController.again/2"
 
     assert %{
              "kind" => "route",

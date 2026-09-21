@@ -24,6 +24,9 @@ path from the route to the write on a canvas you can arrange, annotate and come 
   callbacks — so a review starts where the system starts.
 - **Templates.** A `.heex` file is a card too, and a component tag inside it is a call
   site, and so is a call written in `{…}` or `<%= … %>`.
+- **Routes are edges.** A link, a form action, an `hx-*` attribute or a `~p` sigil resolves
+  against the router, so a card joins the controller action or LiveView behind that path by a
+  dashed edge.
 - **Pull-request mode.** Index against a base ref and changed functions lead the sidebar, a
   modified card swaps between its source and its diff, and removed functions open from the
   base.

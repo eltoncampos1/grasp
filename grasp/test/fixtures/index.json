@@ -2,6 +2,17 @@
   "entry_points": [
     {
       "kind": "route",
+      "label": "GET /again",
+      "meta": {
+        "helper": "greet",
+        "path": "/again",
+        "router": "SampleAppWeb.Router",
+        "verb": "GET"
+      },
+      "target": "SampleAppWeb.GreetController.again/2"
+    },
+    {
+      "kind": "route",
       "label": "GET /greet/:name",
       "meta": {
         "helper": "greet",
@@ -542,11 +553,11 @@
           "kind": "template",
           "range": {
             "end": [
-              7,
+              8,
               11
             ],
             "start": [
-              7,
+              8,
               5
             ]
           },
@@ -556,11 +567,11 @@
           "kind": "remote",
           "range": {
             "end": [
-              7,
+              8,
               54
             ],
             "start": [
-              7,
+              8,
               31
             ]
           },
@@ -577,8 +588,8 @@
       "removed": false,
       "source": "  @doc \"Greets the named person.\"\n  def show(conn, %{\"name\" => name}) do\n    render(conn, :show, name: SampleApp.Greeter.greet(name))\n  end",
       "span": {
-        "end_line": 8,
-        "start_line": 5
+        "end_line": 9,
+        "start_line": 6
       }
     },
     {
@@ -592,11 +603,11 @@
           "kind": "imported",
           "range": {
             "end": [
-              11,
+              12,
               48
             ],
             "start": [
-              11,
+              12,
               44
             ]
           },
@@ -606,11 +617,11 @@
           "kind": "remote",
           "range": {
             "end": [
-              11,
+              12,
               78
             ],
             "start": [
-              11,
+              12,
               55
             ]
           },
@@ -627,8 +638,62 @@
       "removed": false,
       "source": "  @doc \"Greets loudly.\"\n  def create(conn, %{\"name\" => name}), do: text(conn, SampleApp.Greeter.greet(name, true))",
       "span": {
-        "end_line": 11,
-        "start_line": 10
+        "end_line": 12,
+        "start_line": 11
+      }
+    },
+    {
+      "arities": [
+        2
+      ],
+      "arity": 2,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "imported",
+          "range": {
+            "end": [
+              15,
+              41
+            ],
+            "start": [
+              15,
+              33
+            ]
+          },
+          "target": "Phoenix.Controller.redirect/2"
+        },
+        {
+          "kind": "route",
+          "range": {
+            "end": [
+              15,
+              66
+            ],
+            "start": [
+              15,
+              52
+            ]
+          },
+          "route": {
+            "path": "/greet/:name",
+            "verb": "GET"
+          },
+          "target": "SampleAppWeb.GreetController.show/2"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/greet_controller.ex",
+      "hidden_calls": [],
+      "id": "SampleAppWeb.GreetController.again/2",
+      "kind": "def",
+      "module": "SampleAppWeb.GreetController",
+      "name": "again",
+      "removed": false,
+      "source": "  @doc \"Sends the reader back to a greeting.\"\n  def again(conn, _params), do: redirect(conn, to: ~p\"/greet/bob\")",
+      "span": {
+        "end_line": 15,
+        "start_line": 14
       }
     },
     {
@@ -648,8 +713,8 @@
       "removed": false,
       "source": "  @doc \"A small label.\"\n  def badge(assigns) do\n    ~H\"\"\"\n    <span>{@label}</span>\n    \"\"\"\n  end",
       "span": {
-        "end_line": 13,
-        "start_line": 8
+        "end_line": 14,
+        "start_line": 9
       }
     },
     {
@@ -939,6 +1004,24 @@
           "target": "SampleAppWeb.GreetingComponent.render/1"
         },
         {
+          "kind": "route",
+          "range": {
+            "end": [
+              3,
+              21
+            ],
+            "start": [
+              3,
+              9
+            ]
+          },
+          "route": {
+            "path": "/greet/:name",
+            "verb": "GET"
+          },
+          "target": "SampleAppWeb.GreetController.show/2"
+        },
+        {
           "kind": "remote",
           "range": {
             "end": [
@@ -993,6 +1076,56 @@
             ]
           },
           "target": "SampleApp.Greeter.greet/1"
+        },
+        {
+          "kind": "route",
+          "range": {
+            "end": [
+              8,
+              29
+            ],
+            "start": [
+              8,
+              17
+            ]
+          },
+          "route": {
+            "path": "/greet",
+            "verb": "POST"
+          },
+          "target": "SampleAppWeb.GreetController.create/2"
+        },
+        {
+          "kind": "imported",
+          "range": {
+            "end": [
+              9,
+              7
+            ],
+            "start": [
+              9,
+              2
+            ]
+          },
+          "target": "Phoenix.Component.link/1"
+        },
+        {
+          "kind": "route",
+          "range": {
+            "end": [
+              9,
+              29
+            ],
+            "start": [
+              9,
+              17
+            ]
+          },
+          "route": {
+            "path": "/hello",
+            "verb": "GET"
+          },
+          "target": "SampleAppWeb.HelloLive.mount/3"
         }
       ],
       "change": "unchanged",
@@ -1003,9 +1136,9 @@
       "module": "SampleAppWeb.GreetHTML",
       "name": "show",
       "removed": false,
-      "source": "<.badge label=\"hi\" />\n<SampleAppWeb.GreetingComponent.render name={@name} />\n<a href=\"/greet/bob\">again</a>\n<p>{SampleApp.Greeter.greet(@name)}</p>\n<%= if Greeter.greet(@name) do %>\n  <span class={Greeter.greet(@name)}>{Greeter.greet(@name)}</span>\n<% end %>\n",
+      "source": "<.badge label=\"hi\" />\n<SampleAppWeb.GreetingComponent.render name={@name} />\n<a href=\"/greet/bob\">again</a>\n<p>{SampleApp.Greeter.greet(@name)}</p>\n<%= if Greeter.greet(@name) do %>\n  <span class={Greeter.greet(@name)}>{Greeter.greet(@name)}</span>\n<% end %>\n<button hx-post={~p\"/greet\"}>shout</button>\n<.link navigate={~p\"/hello\"}>live</.link>\n",
       "span": {
-        "end_line": 7,
+        "end_line": 9,
         "start_line": 1
       }
     },

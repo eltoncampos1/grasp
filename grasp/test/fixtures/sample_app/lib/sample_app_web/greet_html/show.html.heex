@@ -5,3 +5,5 @@
 <%= if Greeter.greet(@name) do %>
   <span class={Greeter.greet(@name)}>{Greeter.greet(@name)}</span>
 <% end %>
+<button hx-post={~p"/greet"}>shout</button>
+<.link navigate={~p"/hello"}>live</.link>
