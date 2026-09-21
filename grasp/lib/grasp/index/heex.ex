@@ -32,13 +32,14 @@ defmodule Grasp.Index.Heex do
   The same pass reads a tag's attributes. After the name of an element — a component tag,
   an ordinary `<div>`, a slot — the scan reads attribute after attribute until the `>` or
   `/>` that ends the tag: a name, and where one follows the `=`, a value in double quotes,
-  single quotes, braces or none at all. A `{...}` value is an interpolation like any other
-  and is yielded as one, and so is a nameless `{...}` root attribute (`<div {@rest}>`).
-  What `route_attributes/2,3` returns of all that is the attributes that name a route —
-  `href`, `action`, `navigate`, `patch` and the `hx-*` verbs — each carrying the tag it
-  was written on, its value as a string or an interpolation, the tag's literal `method`
-  where it has one, and the range of the value with its delimiters, which is what a reader
-  clicks. A tag whose `>` never arrives, or that a second `<` interrupts, yields no
+  single quotes, braces or none at all. A `{...}` written as an attribute's whole value
+  (`attr={...}`) is an interpolation and is yielded as one, and so is a nameless `{...}`
+  root attribute (`<div {@rest}>`); braces inside a quoted value are text, which is what
+  HEEx makes of them. What `route_attributes/2,3` returns of all that is the attributes
+  that name a route — `href`, `action`, `navigate`, `patch` and the `hx-*` verbs — each
+  carrying the tag it was written on, its value as a string or an interpolation, the tag's
+  literal `method` where it has one, and the range of the value with its delimiters, which
+  is what a reader clicks. A tag whose `>` never arrives, or that a second `<` interrupts, yields no
   attribute at all: the scan resumes at that `<`, where the markup makes sense again.
 
   Three kinds of text are skipped, because none of them is a component call or Elixir:
@@ -57,9 +58,9 @@ defmodule Grasp.Index.Heex do
   an unterminated `<%!--`, `<!--`, `<script>` or `<style>` does; an unterminated `<%` does
   not, since the scan resumes just past it. A body whose closing delimiter never arrives is
   yielded by neither function. An expression tag is read before a brace inside it is, so the
-  map in `<%= %{a: 1} %>` belongs to the tag; a tag-shaped pattern inside a plain attribute
-  string (`title="<.badge />"`) is still reported as a tag, which is harmless, since the
-  compiler reports no call there and nothing lands on the site.
+  map in `<%= %{a: 1} %>` belongs to the tag; a tag-shaped pattern inside a quoted
+  attribute value (`title="<.badge />"`) is reported as nothing at all, because the value
+  is read as the text it is.
   """
 
   alias Grasp.Index.Extract
@@ -82,7 +83,9 @@ defmodule Grasp.Index.Heex do
   # Any element name, so the attributes of a `<div>` are read like a component's.
   @element ~r/\A[A-Za-z.:][\w.:\-]*/
   @attribute ~r/\A[^\s=\/>{}"']+/
-  @unquoted ~r/\A[^\s>]+/
+  # An unquoted value runs to the whitespace or `>` that ends it, and stops short of the
+  # `/` of a `/>`, which closes the tag rather than belonging to the value.
+  @unquoted ~r/\A(?:[^\s>\/]|\/(?!>))+/
 
   # The attributes whose value is a path the router answers to.
   @route_attributes ~w(href action navigate patch hx-get hx-post hx-put hx-patch hx-delete)

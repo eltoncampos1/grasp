@@ -310,6 +310,20 @@ defmodule Grasp.Index.HeexTest do
       assert columns == [17]
     end
 
+    test "reads a brace inside a quoted value as the text HEEx makes of it" do
+      # HEEx interpolates an attribute written `attr={...}`; inside a quoted value the
+      # braces are literal characters of the string.
+      assert Heex.interpolations(~S|<div class="a {cls(@b)} c">|, {1, 0}) == []
+      assert Heex.tag_sites(~S|<div title="<.badge />">|, {1, 0}) == []
+    end
+
+    test "ends an unquoted value at the slash that closes the tag" do
+      assert [%{name: "href", value: {:string, "/x"}, range: %{start: {1, 13}, end: {1, 15}}}] =
+               Heex.route_attributes(~S|<input href=/x/>|, {1, 0})
+
+      assert [%{value: {:string, "/x/y"}}] = Heex.route_attributes(~S|<a href=/x/y>|, {1, 0})
+    end
+
     test "reads nothing inside a raw-text element" do
       assert Heex.route_attributes(~S|<script src="/js"></script>|, {1, 0}) == []
     end

@@ -600,17 +600,16 @@ defmodule Grasp.Index.Extract do
     end
   end
 
-  defp sigil_range({_name, meta, _args} = node) do
-    with line when is_integer(line) <- meta[:line],
-         column when is_integer(column) <- meta[:column],
-         %{
-           start: [line: start_line, column: start_column],
-           end: [line: end_line, column: end_column]
-         } <-
-           Sourceror.get_range(node) do
-      %{start: {start_line, start_column}, end: {end_line, end_column}}
-    else
-      _ -> nil
+  defp sigil_range(node) do
+    case Sourceror.get_range(node) do
+      %{
+        start: [line: start_line, column: start_column],
+        end: [line: end_line, column: end_column]
+      } ->
+        %{start: {start_line, start_column}, end: {end_line, end_column}}
+
+      _other ->
+        nil
     end
   end
 

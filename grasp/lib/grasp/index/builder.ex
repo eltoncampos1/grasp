@@ -58,7 +58,11 @@ defmodule Grasp.Index.Builder do
           skipped: [String.t()]
         }
 
-  @type rendered :: %{entry_points: [map()], behaviours: %{String.t() => [String.t()]}}
+  @type rendered :: %{
+          entry_points: [map()],
+          behaviours: %{String.t() => [String.t()]},
+          skipped: [String.t()]
+        }
 
   @doc """
   Traces, extracts, joins and writes the index. `:out` defaults to `.grasp/index.json`.

@@ -431,7 +431,7 @@ defmodule Grasp.Index.ExtractTest do
 
     @inline_routed ~S'''
     defmodule SampleWeb.Inline do
-      def badge(assigns), do: ~H"<a href=\"/x\">"
+      def badge(assigns), do: ~H"<a href='/x'>"
     end
     '''
 
@@ -441,6 +441,10 @@ defmodule Grasp.Index.ExtractTest do
       assert find(defs, "SampleWeb.Inline", :badge).route_sites == [
                %{verb: "GET", path: ["x"], range: %{start: {2, 38}, end: {2, 42}}}
              ]
+
+      # Those columns are the file's own: they cover the attribute's value, quotes and all.
+      line = @inline_routed |> String.split("\n") |> Enum.at(1)
+      assert String.slice(line, 37, 4) == "'/x'"
     end
 
     test "reads an htmx verb from the attribute that names it, counting the sigil once" do
