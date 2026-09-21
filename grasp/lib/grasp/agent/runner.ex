@@ -85,7 +85,7 @@ defmodule Grasp.Agent.Runner do
   def handle_call(:get, _from, state), do: {:reply, view(state), state}
 
   def handle_call({:prompt, prompt, _opts}, _from, %{running?: true} = state),
-    do: {:reply, {:ok, :queued}, broadcast(%{state | queue: state.queue ++ [prompt]})}
+    do: {:reply, {:ok, :queued}, broadcast(%{state | queue: state.queue ++ [queued(prompt)]})}
 
   def handle_call({:prompt, prompt, opts}, _from, state) do
     case start(state, prompt, opts) do
@@ -94,8 +94,8 @@ defmodule Grasp.Agent.Runner do
     end
   end
 
-  def handle_call({:dequeue, index}, _from, state) when is_integer(index),
-    do: {:reply, :ok, broadcast(%{state | queue: List.delete_at(state.queue, index)})}
+  def handle_call({:dequeue, id}, _from, state) when is_integer(id),
+    do: {:reply, :ok, broadcast(%{state | queue: Enum.reject(state.queue, &(&1.id == id))})}
 
   def handle_call(:stop, _from, state),
     do: {:reply, :ok, broadcast(%{halt(state, "stopped") | queue: []})}
@@ -144,16 +144,36 @@ defmodule Grasp.Agent.Runner do
 
   # The prompt at the head of the queue, started under the options the run that has just
   # ended used: it was typed into the same conversation, so it belongs on the same endpoint.
-  # A command that has gone missing between the two leaves the queue as it stands, for the
-  # reader to withdraw or clear, rather than swallowing what it holds.
   defp next(%{queue: []} = state), do: state
 
-  defp next(%{queue: [prompt | rest]} = state) do
+  defp next(%{queue: [%{text: prompt} | rest]} = state) do
     case start(%{state | queue: rest}, prompt, state.opts) do
       {:ok, state} -> state
-      {:error, :no_command} -> state
+      {:error, :no_command} -> drop_queue(state)
     end
   end
+
+  # A command that went missing between the run that ended and the prompt behind it takes
+  # the whole queue with it, said once in the transcript. A queue left standing would start
+  # behind whatever the reader types next, answering the older question after the newer one
+  # and in the wrong place in the conversation.
+  defp drop_queue(%{queue: queue} = state) do
+    dropped = length(queue)
+    noun = if dropped == 1, do: "prompt", else: "prompts"
+
+    stream =
+      Stream.error(
+        state.stream,
+        "the agent command is missing: #{dropped} queued #{noun} dropped"
+      )
+
+    %{state | queue: [], stream: stream}
+  end
+
+  # A queued prompt is held under an id of its own rather than at a position, so the row a
+  # reader clicks × on is the prompt that is withdrawn even when another tab has changed the
+  # list under them since it was drawn.
+  defp queued(prompt), do: %{id: System.unique_integer([:positive]), text: prompt}
 
   defp start(state, prompt, opts) do
     {command, argv} =

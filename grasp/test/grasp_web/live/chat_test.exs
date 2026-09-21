@@ -38,6 +38,7 @@ defmodule GraspWeb.ChatTest do
     assert has_element?(view, ~s(#chat .tool[data-status="error"] pre), "no such function")
     assert has_element?(view, ~s(#chat .msg[data-type="done"]), "$0.01 · 2 turns · 4.2 s")
     refute has_element?(view, "#chat .chat__status")
+    assert has_element?(view, ~s(#chat button[type="submit"]), "Send")
     refute has_element?(view, "#chat button[disabled]", "Send")
   end
 
@@ -74,7 +75,9 @@ defmodule GraspWeb.ChatTest do
     assert has_element?(view, ~s(#chat button.fn[data-fn="#{@greeter}"]), @greeter)
     assert has_element?(view, ~s(#chat .msg[data-type="assistant"] button.copy[data-copy="msg"]))
     assert has_element?(view, "#chat code", "Nope.Missing.fun/1")
-    refute has_element?(view, "#chat-log [phx-click]")
+
+    # The panel's own buttons inside the log carry events; nothing the model wrote does.
+    refute has_element?(view, ~s(#chat-log .msg[data-type="assistant"] [phx-click]))
 
     log = view |> element("#chat-log") |> render()
     refute log =~ "script"
@@ -156,6 +159,7 @@ defmodule GraspWeb.ChatTest do
     :ok = Grasp.Agent.subscribe(name)
     view |> form("#chat-form", %{"prompt" => "SLOW one"}) |> render_submit()
 
+    assert has_element?(view, ~s(#chat button[type="submit"]), "Send")
     refute has_element?(view, "#chat button[disabled]", "Send")
     view |> form("#chat-form", %{"prompt" => "then this"}) |> render_submit()
     assert has_element?(view, ~s(#chat .msg[data-type="queued"]), "then this")
@@ -195,6 +199,12 @@ defmodule GraspWeb.ChatTest do
     :ok = Grasp.Agent.subscribe(name)
     view |> form("#chat-form", %{"prompt" => "SLOW one"}) |> render_submit()
     view |> form("#chat-form", %{"prompt" => "then this"}) |> render_submit()
+
+    # The row names the prompt it withdraws, not the position it is drawn at.
+    assert has_element?(
+             view,
+             ~s(#chat .msg[data-type="queued"] button[phx-click="chat_dequeue"][phx-value-id])
+           )
 
     view
     |> element(~s(#chat .msg[data-type="queued"] button[phx-click="chat_dequeue"]))

@@ -1063,9 +1063,13 @@
       if (value === this.recalled && this.at > 0) return this.at - 1;
       return null;
     },
+    // A prompt resent as it was recalled is the entry already at the end of the history, and
+    // pushing it again would leave ArrowUp stepping over the same words twice.
     remember(prompt) {
       if (!prompt || !prompt.trim()) return;
-      this.history = this.history.concat([prompt]).slice(-HISTORY);
+      if (this.history[this.history.length - 1] !== prompt) {
+        this.history = this.history.concat([prompt]).slice(-HISTORY);
+      }
       this.recalled = null;
     },
     // The box is one line until what is in it needs more, and stops growing at six so the
@@ -1103,6 +1107,7 @@
         button.type = "button";
         button.className = "copy";
         button.dataset.copy = "pre";
+        button.setAttribute("aria-hidden", "true");
         button.textContent = "Copy";
         fence.prepend(button);
       });

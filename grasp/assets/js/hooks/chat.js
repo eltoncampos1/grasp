@@ -169,9 +169,13 @@ const Chat = {
     return null
   },
 
+  // A prompt resent as it was recalled is the entry already at the end of the history, and
+  // pushing it again would leave ArrowUp stepping over the same words twice.
   remember(prompt) {
     if (!prompt || !prompt.trim()) return
-    this.history = this.history.concat([prompt]).slice(-HISTORY)
+    if (this.history[this.history.length - 1] !== prompt) {
+      this.history = this.history.concat([prompt]).slice(-HISTORY)
+    }
     this.recalled = null
   },
 
@@ -221,6 +225,9 @@ const Chat = {
       button.type = "button"
       button.className = "copy"
       button.dataset.copy = "pre"
+      // Hidden from the log's live region, which announces the answer rather than the
+      // controls over it; the button keeps its place in the tab order.
+      button.setAttribute("aria-hidden", "true")
       button.textContent = "Copy"
       fence.prepend(button)
     })

@@ -13,8 +13,11 @@ defmodule GraspWeb.ChatMarkdown do
       whether it was written in backticks or bare in a sentence, so naming a function in an
       answer is the same gesture as clicking a call site. An id the index does not hold is
       left as the code span or the prose it was written as, since a button that opens
-      nothing is worse than no button; an id inside a link is left alone too, because a
-      link is already one.
+      nothing is worse than no button. An id inside a Markdown link or an autolink is left
+      alone too, because a link is already one, as is one in an image's alt text, which is
+      an attribute rather than markup by the time it is serialised. An `a` the model wrote
+      as raw HTML is not recognised as a link, so an id inside one is still drawn as a
+      button.
 
   Everything the model writes is untrusted, and the sanitiser is the boundary that holds it:
   the serialised HTML passes through MDEx's sanitiser with an explicit allow-list, which
@@ -103,6 +106,10 @@ defmodule GraspWeb.ChatMarkdown do
   # here rather than with `MDEx.traverse_and_update/2`, which rewrites a node's children
   # before the node itself and so cannot be told to stop.
   defp rewrite(%MDEx.Link{} = node, _known?), do: node
+
+  # An image's children are its alt text, and alt text is an attribute once serialised: a
+  # button written into one reaches the reader as escaped characters rather than as a link.
+  defp rewrite(%MDEx.Image{} = node, _known?), do: node
 
   defp rewrite(%MDEx.CodeBlock{info: info, literal: code}, _known?),
     do: %MDEx.HtmlBlock{literal: fence_html(info, code)}

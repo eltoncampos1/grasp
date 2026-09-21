@@ -100,7 +100,7 @@ defmodule Grasp.Agent.RunnerTest do
   } do
     :ok = Grasp.Agent.send_prompt(name, "SLOW one")
     assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "two")
-    assert %{running?: true, queue: ["two"]} = Grasp.Agent.get(name)
+    assert %{running?: true, queue: [%{text: "two"}]} = Grasp.Agent.get(name)
 
     assert_receive {:agent, ^name, %{running?: false, entries: entries, queue: []}}, 4_000
     texts = entries |> Enum.filter(&(&1.type == :user)) |> Enum.map(& &1.text)
@@ -130,18 +130,30 @@ defmodule Grasp.Agent.RunnerTest do
     assert %{running?: false, entries: []} = Grasp.Agent.get(name)
   end
 
-  test "dequeue/2 withdraws one queued prompt", %{name: name} do
+  test "dequeue/2 withdraws the queued prompt carrying the id it is given", %{name: name} do
     :ok = Grasp.Agent.send_prompt(name, "SLOW one")
-    assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "two")
-    assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "three")
-    assert %{queue: ["two", "three"]} = Grasp.Agent.get(name)
+    assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "a")
+    assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "b")
+    assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "c")
+    assert %{queue: [a, b, c]} = Grasp.Agent.get(name)
+    assert [a.text, b.text, c.text] == ["a", "b", "c"]
 
-    :ok = Grasp.Agent.dequeue(name, 0)
-    assert %{queue: ["three"]} = Grasp.Agent.get(name)
+    :ok = Grasp.Agent.dequeue(name, a.id)
+    assert [%{text: "b"}, %{text: "c"}] = Grasp.Agent.get(name).queue
+
+    # The id names the prompt wherever it has moved to, so a second tab rendering the list
+    # as it was withdraws what its reader clicked rather than what now stands in that row.
+    :ok = Grasp.Agent.dequeue(name, b.id)
+    assert [%{text: "c"}] = Grasp.Agent.get(name).queue
+
+    # And an id the queue no longer holds — one another tab has already withdrawn — is a
+    # click that changes nothing.
+    :ok = Grasp.Agent.dequeue(name, a.id)
+    assert [%{text: "c"}] = Grasp.Agent.get(name).queue
 
     assert_receive {:agent, ^name, %{running?: false, entries: entries, queue: []}}, 4_000
     texts = entries |> Enum.filter(&(&1.type == :user)) |> Enum.map(& &1.text)
-    assert texts == ["SLOW one", "three"]
+    assert texts == ["SLOW one", "c"]
   end
 
   test "stop/1 ends a live run", %{name: name} do

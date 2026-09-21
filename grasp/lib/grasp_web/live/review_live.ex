@@ -455,14 +455,14 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
-  def handle_event("chat_dequeue", %{"index" => index}, socket) do
-    case int(index) do
-      position when is_integer(position) and position >= 0 ->
-        :ok = Grasp.Agent.dequeue(socket.assigns.name, position)
-        {:noreply, refresh_agent(socket)}
-
-      _not_a_position ->
+  def handle_event("chat_dequeue", %{"id" => id}, socket) do
+    case int(id) do
+      nil ->
         {:noreply, socket}
+
+      queued_id ->
+        :ok = Grasp.Agent.dequeue(socket.assigns.name, queued_id)
+        {:noreply, refresh_agent(socket)}
     end
   end
 

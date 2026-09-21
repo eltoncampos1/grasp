@@ -968,11 +968,22 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 
 ### Known gaps (milestone 7.4)
 
-- **Rendering is per patch.** An assistant entry is re-rendered from Markdown on every line
-  of CLI output; long transcripts pay for it. A cache keyed by entry text is the fix if it
-  shows.
+- **A rendered answer is memoised, and the memo can be dropped.** An assistant entry is
+  re-rendered from Markdown on every line of CLI output, so the rendered HTML is cached in
+  an ETS table keyed by the entry's text and the ids that text resolves against the index.
+  The table is emptied when the index reloads, since the same words then resolve to a
+  different set of links, and again once it passes a few hundred entries, since a session
+  runs for hours and every answer is a new one. A dropped entry costs one re-render.
 - **Function links resolve against the live index.** A function the agent named that the
   index does not hold — one it read in a dependency — stays inline code.
+- **An id inside a raw HTML anchor is still linked.** An id written in a Markdown link or
+  an autolink is left as the link's own text; one written inside an `<a>` the model
+  authored is not detected as a link and is drawn as a button inside it, which is markup no
+  browser agrees on and a click that both opens the card and follows the href.
+- **A hand-written `data-fn` opens an empty card.** The sanitiser allows `data-fn` on a
+  button so that a function link survives it, so a button the model wrote carrying an id
+  the index does not hold reaches the hook like any other — and opens a card of nothing, as
+  every request to open an unknown id does.
 - **A queued prompt runs with the settings of the run before it.** Model and mode picked
   while a prompt waits apply to the run after it.
 - **The clipboard needs a secure context.** Copy buttons do nothing over plain HTTP on a
@@ -1206,7 +1217,8 @@ conversation.
   the panel shows a thinking row (three animated dots) whenever nothing is streaming, a
   spinner on the tool call under way, and a status line with the elapsed time (the runner
   publishes `started_at`; the hook ticks the seconds) and the number of tool calls this turn;
-  Send is a Stop button for the duration.
+  Send stays where it is and a Stop button appears beside it for the duration, so a prompt
+  can be queued while a run is live.
 - **Tool rows.** Consecutive tool calls fold into one group, "Used N tools", open while one is
   running and closed once all are done; each row carries a human label — "Searched “award”",
   "Read MyApp.Wallets.credit/3", "Arranged 4 cards", "Ran mix format" — its duration, and,

@@ -15,11 +15,14 @@ defmodule Grasp.Agent do
 
   @type name :: String.t()
 
+  @typedoc "A prompt waiting for the port, under the id `dequeue/2` withdraws it by."
+  @type queued :: %{id: integer(), text: String.t()}
+
   @type view :: %{
           entries: [Stream.entry()],
           running?: boolean(),
           started_at: integer() | nil,
-          queue: [String.t()],
+          queue: [queued()],
           claude_session_id: String.t() | nil,
           log: [String.t()],
           last_result: String.t() | nil,
@@ -63,14 +66,16 @@ defmodule Grasp.Agent do
     do: GenServer.call(Runner.via(name), {:prompt, prompt, opts})
 
   @doc """
-  Withdraws the queued prompt at `index`, counting from the head of `queue`.
+  Withdraws the queued prompt carrying `id`.
 
-  An index the queue does not hold leaves it as it is, so a click on a row another tab has
-  already withdrawn is not a prompt the reader loses.
+  A prompt is withdrawn by its own id rather than by where it sits, so a second tab still
+  rendering the queue as it was withdraws the row its reader clicked rather than whichever
+  prompt has since moved into that position. An id the queue no longer holds leaves it as
+  it is.
   """
-  @spec dequeue(name(), non_neg_integer()) :: :ok
-  def dequeue(name, index) when is_integer(index) and index >= 0,
-    do: GenServer.call(Runner.via(name), {:dequeue, index})
+  @spec dequeue(name(), integer()) :: :ok
+  def dequeue(name, id) when is_integer(id),
+    do: GenServer.call(Runner.via(name), {:dequeue, id})
 
   @doc "Ends a live run and empties the queue; a finished conversation is left alone."
   @spec stop(name()) :: :ok

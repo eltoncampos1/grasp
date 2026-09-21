@@ -82,6 +82,13 @@ defmodule GraspWeb.ChatMarkdownTest do
     assert html =~ "<a"
   end
 
+  test "a function id in image alt text stays alt text" do
+    html = render("![see Foo.bar/1](/i.png)", ["Foo.bar/1"])
+
+    refute html =~ "button"
+    assert html =~ ~s(alt="see Foo.bar/1")
+  end
+
   test "an inline function id the index does not hold stays code" do
     html = render("See `Nope.Missing.fun/1` for nothing.")
 

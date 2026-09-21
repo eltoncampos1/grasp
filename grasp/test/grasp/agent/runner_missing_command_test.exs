@@ -10,7 +10,7 @@ defmodule Grasp.Agent.RunnerMissingCommandTest do
 
     name = "t-#{System.unique_integer([:positive])}"
     :ok = Grasp.Agent.ensure(name)
-    %{name: name}
+    %{name: name, fake_cli: previous}
   end
 
   test "a command that resolves to nothing is reported rather than spawned", %{name: name} do
@@ -30,5 +30,32 @@ defmodule Grasp.Agent.RunnerMissingCommandTest do
     assert {:error, :no_command} = Grasp.Agent.send_prompt(name, "show me greet")
     assert Process.alive?(GenServer.whereis(Grasp.Agent.Runner.via(name)))
     assert %{entries: [], running?: false} = Grasp.Agent.get(name)
+  end
+
+  test "a command that goes missing mid-run drops the queue rather than stranding it", %{
+    name: name,
+    fake_cli: fake_cli
+  } do
+    Application.put_env(:grasp, :agent_command, fake_cli)
+    :ok = Grasp.Agent.subscribe(name)
+    :ok = Grasp.Agent.send_prompt(name, "SLOW one")
+    assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "two")
+    assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "three")
+
+    Application.put_env(:grasp, :agent_command, "/definitely/not/here")
+
+    assert_receive {:agent, ^name, %{running?: false, queue: [], entries: entries}}, 4_000
+    assert %{type: :error, text: text} = List.last(entries)
+    assert text =~ "2 queued prompts"
+
+    # Nothing is left to jump the prompt typed after it.
+    Application.put_env(:grasp, :agent_command, fake_cli)
+    :ok = Grasp.Agent.send_prompt(name, "typed later")
+    assert_receive {:agent, ^name, %{running?: false, queue: []}}, 4_000
+
+    texts =
+      Grasp.Agent.get(name).entries |> Enum.filter(&(&1.type == :user)) |> Enum.map(& &1.text)
+
+    assert texts == ["SLOW one", "typed later"]
   end
 end

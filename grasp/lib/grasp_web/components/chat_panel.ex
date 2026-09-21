@@ -33,9 +33,19 @@ defmodule GraspWeb.ChatPanel do
   with the CLI's own words in it, beside a Retry that asks the same question again.
 
   A prompt sent while a run is live is queued rather than refused, so Send is never closed
-  to the reader; the queue is drawn under the log, each row with the way to withdraw it. An
-  empty transcript offers the questions this index and this canvas make worth asking, and
-  each of them is sent exactly as it reads.
+  to the reader; the queue is drawn under the log, each row with the way to withdraw it,
+  and a row withdraws the prompt it names rather than the position it sits at. An empty
+  transcript offers the questions this index and this canvas make worth asking, and each of
+  them is sent exactly as it reads.
+
+  The log follows the newest line only while the reader is at the bottom of it: a run that
+  writes while they are reading further up leaves them where they are and raises the
+  "latest" pill under the transcript, which is drawn hidden here and unhidden by the hook,
+  since which way the reader has scrolled is not something the server can know. Every
+  assistant message carries a copy button, and the hook adds one to every code fence, for
+  the same reason it owns the function links: a fence is rendered from model output, so
+  nothing is written into that output. Both are hidden from the live region, whose subject
+  is the answer rather than the controls over it.
 
   The settings row carries the two choices a run is made under — which model the CLI runs,
   and whether the agent may only read or may also edit files and run mix. Both are the
@@ -73,7 +83,12 @@ defmodule GraspWeb.ChatPanel do
                 </details>
               <% %{kind: :msg, type: :assistant} = msg -> %>
                 <div class="msg" data-type="assistant">
-                  <button type="button" class="copy" data-copy="msg">Copy</button>{msg.body}
+                  <%!-- The log is a live region, and the label of a control in it is read
+                  out as part of the answer; the button stays focusable, so a keyboard
+                  still reaches it. --%>
+                  <button type="button" class="copy" data-copy="msg" aria-hidden="true">
+                    Copy
+                  </button>{msg.body}
                 </div>
               <% %{kind: :msg} = msg -> %>
                 <div class="msg" data-type={msg.type}>{msg.body}</div>
@@ -103,12 +118,12 @@ defmodule GraspWeb.ChatPanel do
         <button id="chat-jump" type="button" class="chat__jump" hidden>↓ latest</button>
       </div>
       <div :if={@agent.queue != []} class="chat__queue">
-        <div :for={{prompt, index} <- Enum.with_index(@agent.queue)} class="msg" data-type="queued">
-          {prompt}<button
+        <div :for={entry <- @agent.queue} class="msg" data-type="queued">
+          {entry.text}<button
             type="button"
             class="queued__drop"
             phx-click="chat_dequeue"
-            phx-value-index={index}
+            phx-value-id={entry.id}
             aria-label="Withdraw this prompt"
           >×</button>
         </div>
