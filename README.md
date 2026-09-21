@@ -78,12 +78,6 @@ so every request for it has to come from loopback — and serves the MCP endpoin
 `/grasp/mcp`, in front of the router. Its `at:` and the router's path must name the same
 mount.
 
-In `.formatter.exs`:
-
-```elixir
-import_deps: [:grasp]
-```
-
 In `.gitignore`:
 
 ```gitignore

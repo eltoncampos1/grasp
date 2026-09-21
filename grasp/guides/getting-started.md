@@ -61,6 +61,10 @@ environment), add the formatter export so it formats without parentheses:
 import_deps: [:grasp]
 ```
 
+A dev-only install must leave it out: `import_deps` is resolved for the current Mix
+environment, so naming a dependency that exists only in `:dev` makes `mix format` fail under
+`MIX_ENV=test`.
+
 And ignore the files Grasp derives from your code:
 
 ```gitignore

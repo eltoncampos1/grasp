@@ -56,13 +56,7 @@ The plug guards the mount — Grasp hands out your source and drives an agent th
 so every request for it has to come from loopback — and serves the MCP endpoint at
 `/grasp/mcp`. Its `at:` and the router's path must name the same mount.
 
-In `.formatter.exs`:
-
-```elixir
-import_deps: [:grasp]
-```
-
-And in `.gitignore`:
+In `.gitignore`:
 
 ```gitignore
 .grasp/index.json
