@@ -294,6 +294,26 @@ defmodule Grasp.Index.IncrementalTest do
     end
   end
 
+  describe "update/5 over a template that links to a route" do
+    test "resolves the link against the routes the document knows",
+         %{document: document, root: root} do
+      copy(root, @html)
+      write(root, @template, ~S|<a href="/greet/bob">again</a>|)
+
+      {:ok, updated} = update(document, root, [@template], [])
+
+      assert %{
+               "target" => "SampleAppWeb.GreetController.show/2",
+               "kind" => "route",
+               "route" => %{"verb" => "GET", "path" => "/greet/:name"}
+             } =
+               updated
+               |> fetch("SampleAppWeb.GreetHTML.show/1")
+               |> Map.fetch!("calls")
+               |> Enum.find(&(&1["kind"] == "route"))
+    end
+  end
+
   describe "update/5 over a template whose module will not parse" do
     test "keeps the template record too", %{document: document, root: root} do
       write(root, @html, "defmodule SampleAppWeb.GreetHTML do\n  def oops(\n")

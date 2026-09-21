@@ -58,6 +58,10 @@ defmodule Grasp.Index.Join do
       `use` — and is kept as a hidden call so the graph stays complete even though
       nothing in the source can be clicked.
 
+  A definition's route sites pass through untouched: nothing here knows what path the
+  router answers to, so `Grasp.Index.Routes` resolves them into calls of kind `:route`
+  once the project's routes have been detected.
+
   One call is rewritten rather than filtered. `render(conn, :show)` in a controller is
   reported as a call into `Phoenix.Controller`, which tells a reader nothing; under
   Phoenix 1.7's `use Phoenix.Controller, formats: [:html]` convention it renders the
@@ -76,7 +80,14 @@ defmodule Grasp.Index.Join do
   # the target tells it apart from the delegated call.
   @definition_bookkeeping {Module, :compile_definition_attributes, 6}
 
-  @type call :: %{target: String.t(), kind: Tracer.kind() | :template, range: Extract.range()}
+  @type call :: %{
+          required(:target) => String.t(),
+          required(:kind) => Tracer.kind() | :template | :route,
+          required(:range) => Extract.range(),
+          optional(:route) => %{verb: String.t(), path: String.t()}
+        }
+  # `:route` is written by `Grasp.Index.Routes` on a call of kind `:route` alone, and holds
+  # the router's own verb and path, which is what the reader is told the link reaches.
   @type hidden_call :: %{target: String.t(), kind: Tracer.kind(), line: pos_integer()}
 
   @type function_record :: %{
@@ -90,7 +101,8 @@ defmodule Grasp.Index.Join do
           span: %{start_line: pos_integer(), end_line: pos_integer()},
           source: String.t(),
           calls: [call()],
-          hidden_calls: [hidden_call()]
+          hidden_calls: [hidden_call()],
+          route_sites: [Extract.route_site()]
         }
 
   @doc """
@@ -298,7 +310,8 @@ defmodule Grasp.Index.Join do
       span: %{start_line: definition.start_line, end_line: definition.end_line},
       source: definition.source,
       calls: calls |> Enum.uniq() |> Enum.sort_by(&{&1.range.start, &1.target, &1.kind}),
-      hidden_calls: hidden |> Enum.uniq() |> Enum.sort_by(&{&1.line, &1.target, &1.kind})
+      hidden_calls: hidden |> Enum.uniq() |> Enum.sort_by(&{&1.line, &1.target, &1.kind}),
+      route_sites: definition.route_sites
     }
   end
 end

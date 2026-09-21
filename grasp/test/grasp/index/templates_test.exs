@@ -131,6 +131,22 @@ defmodule Grasp.Index.TemplatesTest do
              Templates.definitions(root, [embed], [])
   end
 
+  @tag :tmp_dir
+  test "carries the routes a HEEx template links to, and none for an EEx one", %{tmp_dir: root} do
+    write!(root, "lib/sample_app_web/greet_html.ex", "defmodule SampleAppWeb.GreetHTML do\nend\n")
+    link = ~S|<a href="/greet/bob">again</a>|
+    write!(root, "lib/sample_app_web/greet_html/show.html.heex", link)
+    write!(root, "lib/sample_app_web/greet_html/legacy.html.eex", link)
+
+    assert [legacy, show] = Templates.definitions(root, [embed()], [])
+
+    assert show.route_sites == [
+             %{verb: "GET", path: ["greet", "bob"], range: %{start: {1, 9}, end: {1, 21}}}
+           ]
+
+    assert legacy.route_sites == []
+  end
+
   defp embed do
     %{
       module: "SampleAppWeb.GreetHTML",

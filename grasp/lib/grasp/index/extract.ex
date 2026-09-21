@@ -41,6 +41,17 @@ defmodule Grasp.Index.Extract do
   the calls of a `{...}` interpolation with a line and no column at all: `Grasp.Index.Join`
   places those by name, arity and the module the source spells out.
 
+  A definition carries its **route sites** beside its call sites. A route site is a path a
+  template or an expression names — the value of an `href`, `action`, `navigate`, `patch`
+  or `hx-*` attribute, and every `~p` sigil the walk meets — read into the verb it implies
+  and the segments it is made of, with an interpolated segment reduced to `:dynamic`
+  because no parser can know what it will hold. A query string and a fragment are cut off:
+  they are not part of what the router matches. Nothing here knows the project's routes,
+  so nothing is resolved: `Grasp.Index.Routes` matches the sites against the router's own
+  paths once the entry points are known. A `~p` written inside a route attribute is the
+  same route twice, and the attribute's site is the one that survives, because it is the
+  one that knows the verb.
+
   Each definition also records where its clause heads are: `head_positions` is the
   `{line, column}` of the function name in every clause and `head_ranges` the matching
   ranges over that name. `Grasp.Index.Join` uses the positions to drop the events the
@@ -67,6 +78,11 @@ defmodule Grasp.Index.Extract do
           template: String.t() | nil,
           callee: callee() | nil
         }
+  @type segment :: String.t() | :dynamic
+  # A path the source names, split the way a router splits its own: `"/greet/bob"` is
+  # `["greet", "bob"]`, `"/"` is `[]`, and a segment an interpolation reaches into is
+  # `:dynamic`, which matches whatever the route writes in that position.
+  @type route_site :: %{verb: String.t(), path: [segment()], range: range()}
   # `:template` is not a kind this module reads: `Grasp.Index.Templates` builds a definition
   # of that kind, in this same shape, for every file an `embed_templates` pattern matches.
   @type kind ::
@@ -90,6 +106,7 @@ defmodule Grasp.Index.Extract do
           end_line: pos_integer(),
           source: String.t(),
           call_sites: [call_site()],
+          route_sites: [route_site()],
           head_positions: [position()],
           head_ranges: [range()]
         }
@@ -255,7 +272,7 @@ defmodule Grasp.Index.Extract do
           Sourceror.get_range(first, include_comments: true)
 
         %{end: [line: end_line, column: _]} = Sourceror.get_range(node)
-        sites = call_sites(node)
+        sites = clause_sites(node)
         {head_positions, head_ranges} = head_location(head, name)
 
         clause = %{
@@ -268,7 +285,8 @@ defmodule Grasp.Index.Extract do
           start_line: start_line,
           end_line: end_line,
           source: nil,
-          call_sites: sites,
+          call_sites: sites.call_sites,
+          route_sites: sites.route_sites,
           head_positions: head_positions,
           head_ranges: head_ranges
         }
@@ -288,6 +306,7 @@ defmodule Grasp.Index.Extract do
             end_line: max(existing.end_line, clause.end_line),
             arities: Enum.uniq(Enum.sort(existing.arities ++ clause.arities)),
             call_sites: existing.call_sites ++ clause.call_sites,
+            route_sites: existing.route_sites ++ clause.route_sites,
             head_positions: Enum.uniq(existing.head_positions ++ clause.head_positions),
             head_ranges: Enum.uniq(existing.head_ranges ++ clause.head_ranges)
         }
@@ -337,7 +356,7 @@ defmodule Grasp.Index.Extract do
   # a site would put those events on the function name. Guards are searched because custom
   # guards (`when is_pos(x)`) are real calls, and so are default arguments, whose
   # expressions the compiler reports at their own position inside the head.
-  defp call_sites({_kind, _meta, [head | rest]}) do
+  defp clause_sites({_kind, _meta, [head | rest]}) do
     {signature, guard} =
       case head do
         {:when, _, [signature, guard]} -> {signature, [guard]}
@@ -358,6 +377,23 @@ defmodule Grasp.Index.Extract do
   @spec expression_sites(String.t(), pos_integer(), pos_integer()) :: [call_site()]
   def expression_sites(text, line, column)
       when is_binary(text) and is_integer(line) and is_integer(column) do
+    expression(text, line, column).call_sites
+  end
+
+  @doc """
+  Route sites for the Elixir written inside one interpolation body: its `~p` sigils.
+
+  The arguments are `expression_sites/3`'s, and so is the parse: a body that only becomes
+  an expression once an `end` is added is read that way, and one no parse can make sense
+  of yields nothing.
+  """
+  @spec route_sites(String.t(), pos_integer(), pos_integer()) :: [route_site()]
+  def route_sites(text, line, column)
+      when is_binary(text) and is_integer(line) and is_integer(column) do
+    expression(text, line, column).route_sites
+  end
+
+  defp expression(text, line, column) do
     options = [line: line, column: column]
 
     case Sourceror.parse_string(text, options) do
@@ -367,7 +403,7 @@ defmodule Grasp.Index.Extract do
       {:error, _reason} ->
         case Sourceror.parse_string(text <> "\nend", options) do
           {:ok, ast} -> collect_sites(ast)
-          {:error, _reason} -> []
+          {:error, _reason} -> %{call_sites: [], route_sites: []}
         end
     end
   end
@@ -393,33 +429,189 @@ defmodule Grasp.Index.Extract do
     |> Enum.uniq_by(&{&1.line, &1.column})
   end
 
+  @doc """
+  Every route a template's text names: its route attributes and the `~p` sigils inside it.
+
+  The position arguments are `Grasp.Index.Heex.tag_sites/3`'s. A `~p` written as the value
+  of a route attribute is dropped in favour of the attribute's own site, which covers the
+  same text and knows the verb; a `~p` anywhere else in an interpolation is a route site
+  of its own, read as a GET.
+  """
+  @spec template_route_sites(String.t(), {pos_integer(), non_neg_integer()}, pos_integer() | nil) ::
+          [route_site()]
+  def template_route_sites(text, first_line_and_indent, first_line_column \\ nil) do
+    attributes = Heex.route_attributes(text, first_line_and_indent, first_line_column)
+    covered = Enum.map(attributes, & &1.range)
+
+    interpolated =
+      text
+      |> Heex.interpolations(first_line_and_indent, first_line_column)
+      |> Enum.flat_map(&route_sites(&1.text, &1.line, &1.column))
+      |> Enum.reject(fn site -> Enum.any?(covered, &inside?(site.range.start, &1)) end)
+
+    (Enum.flat_map(attributes, &attribute_route_site/1) ++ interpolated)
+    |> Enum.sort_by(& &1.range.start)
+  end
+
+  defp inside?(position, range), do: position >= range.start and position < range.end
+
+  defp attribute_route_site(%{value: {:string, path}} = attribute) do
+    case path_segments(path) do
+      nil -> []
+      segments -> [%{verb: verb(attribute), path: segments, range: attribute.range}]
+    end
+  end
+
+  # The verb belongs to the attribute and the path to the sigil inside it, so the two are
+  # read from either side of the same value. A value holding no `~p` — an assign, a helper
+  # call — names a path only the running application knows.
+  defp attribute_route_site(%{value: {:expr, body}} = attribute) do
+    case route_sites(body.text, body.line, body.column) do
+      [] -> []
+      [site | _rest] -> [%{verb: verb(attribute), path: site.path, range: attribute.range}]
+    end
+  end
+
+  # `hx-post` says what it is, and `href`, `navigate` and `patch` are followed by a GET.
+  # A form's `action` is whatever its `method` says; with none, a component form is a POST,
+  # since `<.form>` sends everything but a GET as one and writes the real verb into a
+  # hidden `_method` field, while a plain `<form>` is the GET HTML makes it.
+  defp verb(%{name: "hx-" <> verb}), do: String.upcase(verb)
+
+  defp verb(%{name: "action"} = attribute) do
+    cond do
+      attribute.method -> attribute.method
+      component_tag?(attribute.tag) -> "POST"
+      true -> "GET"
+    end
+  end
+
+  defp verb(_attribute), do: "GET"
+
+  defp component_tag?("." <> _rest), do: true
+  defp component_tag?(<<first::utf8, _rest::binary>>), do: first in ?A..?Z
+  defp component_tag?(_tag), do: false
+
+  @doc """
+  The segments of a path, or `nil` for text no router could match.
+
+  Takes a literal string or the parts of a `~p` sigil's `<<>>` node. A path must start
+  with `/`; everything from the first `?` or `#` on is dropped, as is the empty text
+  between two slashes, so `"/"` is the empty list. A segment an interpolation reaches into
+  is `:dynamic` whole, because the text around the interpolation is no more knowable than
+  the interpolation itself.
+  """
+  @spec path_segments(String.t() | [String.t() | term()]) :: [segment()] | nil
+  def path_segments(path) when is_binary(path), do: path_segments([path])
+
+  def path_segments(parts) when is_list(parts) do
+    items = path_items(parts, [])
+
+    if match?([<<"/", _rest::binary>> | _], items), do: segments(items)
+  end
+
+  # Everything up to the first `?` or `#`, with each interpolation standing in for text
+  # that is only known when the page is rendered.
+  defp path_items([], items), do: Enum.reverse(items)
+
+  defp path_items([piece | rest], items) when is_binary(piece) do
+    case String.split(piece, ~r/[?#]/, parts: 2) do
+      [^piece] -> path_items(rest, [piece | items])
+      [before | _after] -> Enum.reverse([before | items])
+    end
+  end
+
+  defp path_items([_interpolation | rest], items), do: path_items(rest, [:dynamic | items])
+
+  defp segments(items) do
+    {done, current} = Enum.reduce(items, {[], nil}, &segment_item/2)
+    done |> close(current) |> Enum.reverse()
+  end
+
+  defp segment_item(:dynamic, {done, current}), do: {done, mark(current)}
+
+  defp segment_item(text, {done, current}) when is_binary(text) do
+    [first | rest] = String.split(text, "/")
+
+    Enum.reduce(rest, {done, append(current, first)}, fn piece, {done, current} ->
+      {close(done, current), append(nil, piece)}
+    end)
+  end
+
+  defp append(nil, ""), do: nil
+  defp append(nil, text), do: {false, text}
+  defp append({dynamic?, read}, text), do: {dynamic?, read <> text}
+
+  defp mark(nil), do: {true, ""}
+  defp mark({_dynamic?, read}), do: {true, read}
+
+  defp close(done, nil), do: done
+  defp close(done, {true, _read}), do: [:dynamic | done]
+  defp close(done, {false, read}), do: [read | done]
+
   # One walk reads a clause body and an interpolation body alike, so a call written in a
-  # template is the same kind of site as a call written in Elixir.
+  # template is the same kind of site as a call written in Elixir. Both kinds of site come
+  # out of the one walk, because a `~H` sigil holds both and reading it twice would mean
+  # scanning the same template twice.
   defp collect_sites(ast) do
-    {_, sites} =
-      Macro.prewalk(ast, [], fn
-        {:&, _, [{:/, _, [target, arity]}]} = node, sites ->
-          {node, add_site(sites, target, written_arity(arity))}
+    {_, {calls, routes}} =
+      Macro.prewalk(ast, {[], []}, fn
+        {:&, _, [{:/, _, [target, arity]}]} = node, {calls, routes} ->
+          {node, {add_site(calls, target, written_arity(arity)), routes}}
 
-        {:sigil_H, _meta, [{:<<>>, _str_meta, [content]}, _modifiers]} = node, sites
+        {:sigil_H, _meta, [{:<<>>, _str_meta, [content]}, _modifiers]} = node, {calls, routes}
         when is_binary(content) ->
-          {node, Enum.reverse(sigil_sites(node)) ++ sites}
+          sites = sigil_sites(node)
 
-        {:|>, _meta, [_left, right]} = node, sites ->
-          {node, sites |> add_site(node) |> piped_site(right)}
+          {node,
+           {Enum.reverse(sites.call_sites) ++ calls, Enum.reverse(sites.route_sites) ++ routes}}
 
-        {{:., _, _}, _, args} = node, sites when is_list(args) ->
-          {node, add_site(sites, node)}
+        {:sigil_p, _meta, [{:<<>>, _str_meta, parts}, _modifiers]} = node, {calls, routes} ->
+          {node, {calls, sigil_route_site(routes, node, parts)}}
 
-        {name, _, args} = node, sites
+        {:|>, _meta, [_left, right]} = node, {calls, routes} ->
+          {node, {calls |> add_site(node) |> piped_site(right), routes}}
+
+        {{:., _, _}, _, args} = node, {calls, routes} when is_list(args) ->
+          {node, {add_site(calls, node), routes}}
+
+        {name, _, args} = node, {calls, routes}
         when is_atom(name) and is_list(args) and name not in @not_calls ->
-          {node, if(sigil?(name), do: sites, else: add_site(sites, node))}
+          {node, {if(sigil?(name), do: calls, else: add_site(calls, node)), routes}}
 
         node, sites ->
           {node, sites}
       end)
 
-    sites |> Enum.reverse() |> Enum.uniq_by(&{&1.line, &1.column})
+    %{
+      call_sites: calls |> Enum.reverse() |> Enum.uniq_by(&{&1.line, &1.column}),
+      route_sites: Enum.reverse(routes)
+    }
+  end
+
+  # A `~p` names a path and nothing else: the router decides what it reaches, and a GET is
+  # what a path written on its own means until an attribute says otherwise.
+  defp sigil_route_site(routes, node, parts) do
+    with segments when is_list(segments) <- path_segments(parts),
+         range when is_map(range) <- sigil_range(node) do
+      [%{verb: "GET", path: segments, range: range} | routes]
+    else
+      _ -> routes
+    end
+  end
+
+  defp sigil_range({_name, meta, _args} = node) do
+    with line when is_integer(line) <- meta[:line],
+         column when is_integer(column) <- meta[:column],
+         %{
+           start: [line: start_line, column: start_column],
+           end: [line: end_line, column: end_column]
+         } <-
+           Sourceror.get_range(node) do
+      %{start: {start_line, start_column}, end: {end_line, end_column}}
+    else
+      _ -> nil
+    end
   end
 
   defp written_arity({:__block__, _meta, [arity]}) when is_integer(arity), do: arity
@@ -504,11 +696,21 @@ defmodule Grasp.Index.Extract do
          column when is_integer(column) <- meta[:column] do
       delimiter = meta[:delimiter] || str_meta[:delimiter]
 
-      if delimiter in ~w(""" '''),
-        do: template_sites(content, {line + 1, str_meta[:indentation] || 0}),
-        else: inline_sigil_sites(content, line, column)
+      if delimiter in ~w(""" ''') do
+        position = {line + 1, str_meta[:indentation] || 0}
+
+        %{
+          call_sites: template_sites(content, position),
+          route_sites: template_route_sites(content, position)
+        }
+      else
+        %{
+          call_sites: inline_sigil_sites(content, line, column),
+          route_sites: template_route_sites(content, {line, 0}, column + 3)
+        }
+      end
     else
-      _ -> []
+      _ -> %{call_sites: [], route_sites: []}
     end
   end
 

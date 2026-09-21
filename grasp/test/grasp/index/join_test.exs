@@ -475,6 +475,26 @@ defmodule Grasp.Index.JoinTest do
            ]
   end
 
+  @routed ~S'''
+  defmodule Grasp.JoinTest.Routed do
+    def render(assigns) do
+      ~H"""
+      <a href="/greet/bob">again</a>
+      """
+    end
+  end
+  '''
+
+  test "copies the route sites of a definition onto its record, untouched" do
+    {:ok, %{definitions: definitions}} = Extract.extract(@routed, "lib/routed.ex")
+
+    assert Join.join(definitions, [])
+           |> record("Grasp.JoinTest.Routed", :render)
+           |> Map.fetch!(:route_sites) == [
+             %{verb: "GET", path: ["greet", "bob"], range: %{start: {4, 13}, end: {4, 25}}}
+           ]
+  end
+
   defp named_site(module) do
     %{
       line: 6,

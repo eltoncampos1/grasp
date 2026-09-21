@@ -216,4 +216,106 @@ defmodule Grasp.Index.HeexTest do
   test "yields nothing for an unterminated expression tag" do
     assert Heex.interpolations("<%= ok?(@u)", {1, 0}) == []
   end
+
+  describe "route_attributes/2,3" do
+    test "reads a quoted attribute value with its delimiters" do
+      assert Heex.route_attributes(~S|<a href="/greet/bob">again</a>|, {1, 0}) == [
+               %{
+                 tag: "a",
+                 name: "href",
+                 method: nil,
+                 value: {:string, "/greet/bob"},
+                 range: %{start: {1, 9}, end: {1, 21}}
+               }
+             ]
+    end
+
+    test "carries the tag's literal method, uppercased, on every route attribute it reads" do
+      assert Heex.route_attributes(~S|<.form for={@f} action={~p"/greet"} method="put">|, {1, 0}) ==
+               [
+                 %{
+                   tag: ".form",
+                   name: "action",
+                   method: "PUT",
+                   value: {:expr, %{line: 1, column: 25, text: ~S|~p"/greet"|}},
+                   range: %{start: {1, 24}, end: {1, 36}}
+                 }
+               ]
+    end
+
+    test "reads an htmx attribute" do
+      assert Heex.route_attributes(~S|<button hx-post={~p"/greet"}>go</button>|, {1, 0}) == [
+               %{
+                 tag: "button",
+                 name: "hx-post",
+                 method: nil,
+                 value: {:expr, %{line: 1, column: 18, text: ~S|~p"/greet"|}},
+                 range: %{start: {1, 17}, end: {1, 29}}
+               }
+             ]
+    end
+
+    test "places an attribute on a later line at its file line and column" do
+      assert Heex.route_attributes("<div>\n  <a href=\"/y\">\n", {10, 4}) == [
+               %{
+                 tag: "a",
+                 name: "href",
+                 method: nil,
+                 value: {:string, "/y"},
+                 range: %{start: {11, 15}, end: {11, 19}}
+               }
+             ]
+    end
+
+    test "reads a single-quoted value and still yields the interpolation beside it" do
+      text = ~S|<a href='/x' class={cls(@a)}>|
+
+      assert Heex.route_attributes(text, {1, 0}) == [
+               %{
+                 tag: "a",
+                 name: "href",
+                 method: nil,
+                 value: {:string, "/x"},
+                 range: %{start: {1, 9}, end: {1, 13}}
+               }
+             ]
+
+      assert Heex.interpolations(text, {1, 0}) == [%{line: 1, column: 21, text: "cls(@a)"}]
+    end
+
+    test "yields a nameless attribute as an interpolation and reads the attributes after it" do
+      text = ~S|<div {@rest} href="/x">|
+
+      assert Heex.route_attributes(text, {1, 0}) == [
+               %{
+                 tag: "div",
+                 name: "href",
+                 method: nil,
+                 value: {:string, "/x"},
+                 range: %{start: {1, 19}, end: {1, 23}}
+               }
+             ]
+
+      assert Heex.interpolations(text, {1, 0}) == [%{line: 1, column: 7, text: "@rest"}]
+    end
+
+    test "reads nothing from a tag whose closing angle bracket never arrives" do
+      assert Heex.route_attributes(~S|<a href="/x"|, {1, 0}) == []
+    end
+
+    test "abandons a tag a second opening bracket interrupts and scans on from there" do
+      assert Heex.route_attributes(~S|<a href="/x" <b>|, {1, 0}) == []
+      columns = ~S|<a href="/x" <b><.badge />| |> Heex.tag_sites({1, 0}) |> Enum.map(& &1.column)
+
+      assert columns == [17]
+    end
+
+    test "reads nothing inside a raw-text element" do
+      assert Heex.route_attributes(~S|<script src="/js"></script>|, {1, 0}) == []
+    end
+
+    test "reads nothing from an expression tag, which opens no element" do
+      assert Heex.route_attributes(~S|<%= link("x", to: "/y") %>|, {1, 0}) == []
+    end
+  end
 end

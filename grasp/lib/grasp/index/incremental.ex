@@ -49,7 +49,9 @@ defmodule Grasp.Index.Incremental do
 
   Entry points and module behaviours are recomputed from the modules the VM has loaded. A
   VM that cannot see the application at all keeps what the document already held, so
-  reading a document built elsewhere does not empty its sidebar.
+  reading a document built elsewhere does not empty its sidebar. Either way they are
+  known before the rebuilt records are written out, because `Grasp.Index.Routes` resolves
+  a template's links against the routes among them.
 
   ## What it cannot see
 
@@ -77,7 +79,7 @@ defmodule Grasp.Index.Incremental do
 
   require Logger
 
-  alias Grasp.Index.{Builder, Changes, EntryPoints, Join, Templates}
+  alias Grasp.Index.{Builder, Changes, EntryPoints, Join, Routes, Templates}
 
   @type base_context :: %{root: String.t(), base_sha: String.t(), paths: [String.t()]}
 
@@ -125,9 +127,16 @@ defmodule Grasp.Index.Incremental do
       )
       |> classify(rebuilt, base_ctx, paths, document)
 
-    functions = sort_functions(kept ++ Enum.map(records, &Builder.function_json/1))
     kept_modules = Enum.reject(document["modules"] || [], &MapSet.member?(rebuilt, &1["file"]))
-    {entry_points, behaviours} = detect(document, project["app"], functions)
+
+    {entry_points, behaviours} =
+      detect(document, project["app"], MapSet.union(ids(kept), record_ids(records)))
+
+    functions =
+      records
+      |> Routes.resolve(entry_points)
+      |> Enum.map(&Builder.function_json/1)
+      |> then(&sort_functions(kept ++ &1))
 
     modules =
       sort_modules(
@@ -148,11 +157,11 @@ defmodule Grasp.Index.Incremental do
   # modules are not in the code path — has nothing to say about entry points, which is not
   # the same as a project whose routers lost their routes. The document keeps what the full
   # build found there.
-  defp detect(document, app, functions) do
+  defp detect(document, app, identifiers) do
     app = app_name(app)
 
     if EntryPoints.available?(app) do
-      detected = EntryPoints.detect(app, ids(functions))
+      detected = EntryPoints.detect(app, identifiers)
       report_skipped(detected.skipped)
       {Enum.map(detected.entry_points, &Builder.entry_point_json/1), detected.behaviours}
     else
@@ -178,6 +187,17 @@ defmodule Grasp.Index.Incremental do
         arity <- record["arities"],
         into: MapSet.new(),
         do: Join.function_id(record["module"], record["name"], arity)
+  end
+
+  # The same set, read off the records this update has just built, which are still maps
+  # with atom keys: entry points are detected before those records become JSON, because
+  # resolving their route sites needs the routes detection found.
+  defp record_ids(records) do
+    for record <- records,
+        not Map.get(record, :removed, false),
+        arity <- record.arities,
+        into: MapSet.new(),
+        do: Join.function_id(record.module, record.name, arity)
   end
 
   # A template is compiled into the module that embeds it and reported under its own path,

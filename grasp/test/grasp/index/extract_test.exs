@@ -392,6 +392,85 @@ defmodule Grasp.Index.ExtractTest do
     assert %{template: nil} = site(find(defs, "Sample", :greet), 6, 22)
   end
 
+  describe "route sites" do
+    test "reads the path of a ~p sigil, with an interpolated segment as :dynamic" do
+      assert Extract.route_sites(~S|~p"/greet/#{@name}?x=1"|, 1, 1) == [
+               %{verb: "GET", path: ["greet", :dynamic], range: %{start: {1, 1}, end: {1, 24}}}
+             ]
+    end
+
+    test "reads the root path as no segments at all" do
+      assert [%{path: []}] = Extract.route_sites(~S|~p"/"|, 1, 1)
+    end
+
+    test "reads a segment an interpolation only part of as dynamic whole" do
+      assert [%{path: [:dynamic, "b"]}] = Extract.route_sites(~S|~p"/a-#{x}/b"|, 1, 1)
+    end
+
+    test "reads no route from a sigil whose path is relative" do
+      assert Extract.route_sites(~S|~p"greet"|, 1, 1) == []
+    end
+
+    @routed ~S'''
+    defmodule SampleWeb.Page do
+      def render(assigns) do
+        ~H"""
+        <a href="/greet/bob">again</a>
+        """
+      end
+    end
+    '''
+
+    test "carries the route a ~H heredoc links to on the definition" do
+      {:ok, %{definitions: defs}} = Extract.extract(@routed, "lib/sample_web/page.ex")
+
+      assert find(defs, "SampleWeb.Page", :render).route_sites == [
+               %{verb: "GET", path: ["greet", "bob"], range: %{start: {4, 13}, end: {4, 25}}}
+             ]
+    end
+
+    @inline_routed ~S'''
+    defmodule SampleWeb.Inline do
+      def badge(assigns), do: ~H"<a href=\"/x\">"
+    end
+    '''
+
+    test "ranges a single-line ~H sigil's route where the reader sees it" do
+      {:ok, %{definitions: defs}} = Extract.extract(@inline_routed, "lib/sample_web/inline.ex")
+
+      assert find(defs, "SampleWeb.Inline", :badge).route_sites == [
+               %{verb: "GET", path: ["x"], range: %{start: {2, 38}, end: {2, 42}}}
+             ]
+    end
+
+    test "reads an htmx verb from the attribute that names it, counting the sigil once" do
+      assert Extract.template_route_sites(~S|<button hx-post={~p"/greet"}>|, {1, 0}) == [
+               %{verb: "POST", path: ["greet"], range: %{start: {1, 17}, end: {1, 29}}}
+             ]
+    end
+
+    test "reads a component form's action as a post and a plain form's as a get" do
+      assert [%{verb: "POST", path: ["greet"]}] =
+               Extract.template_route_sites(~S|<.form action={~p"/greet"}>|, {1, 0})
+
+      assert [%{verb: "GET", path: ["search"]}] =
+               Extract.template_route_sites(~S|<form action="/search">|, {1, 0})
+
+      assert [%{verb: "POST", path: ["x"]}] =
+               Extract.template_route_sites(~S|<form action="/x" method="post">|, {1, 0})
+    end
+
+    test "reads no route from a path no parse can know or no router can answer" do
+      assert Extract.template_route_sites(~S|<a href={@path}>|, {1, 0}) == []
+      assert Extract.template_route_sites(~S|<a href="https://example.com/">|, {1, 0}) == []
+      assert Extract.template_route_sites(~S|<a href="#top">|, {1, 0}) == []
+    end
+
+    test "cuts a query string and a fragment off the path" do
+      assert [%{path: ["x"]}] = Extract.template_route_sites(~S|<a href="/x?q=1#frag">|, {1, 0})
+    end
+  end
+
   defp find(defs, module, name), do: Enum.find(defs, &(&1.module == module and &1.name == name))
 
   defp site(def, line, column),

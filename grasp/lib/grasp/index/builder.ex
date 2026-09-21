@@ -23,13 +23,17 @@ defmodule Grasp.Index.Builder do
   holds: entry-point detection and the set of ids a call can resolve to see only the
   functions the compile produced.
 
+  Entry-point detection runs before the records are finished, because the routes it finds
+  are what `Grasp.Index.Routes` resolves a template's links and `~p` sigils against.
+
   `run/1` is the full build, and every stage it walks — `source_files/2`, `extract/2`,
-  `Grasp.Index.Join.join/3`, `entry_points/2`, `classify/3`, `document/5` — is a function
-  of its own, because `Grasp.Index.Incremental` runs the same stages over the handful of
-  files a save touched and has to produce records of exactly the same shape.
+  `Grasp.Index.Join.join/3`, `entry_points/2`, `classify/3`, `Grasp.Index.Routes.resolve/2`,
+  `document/5` — is a function of its own, because `Grasp.Index.Incremental` runs the same
+  stages over the handful of files a save touched and has to produce records of exactly the
+  same shape.
   """
 
-  alias Grasp.Index.{BaseRef, Changes, EntryPoints, Extract, Join, Templates, Tracer}
+  alias Grasp.Index.{BaseRef, Changes, EntryPoints, Extract, Join, Routes, Templates, Tracer}
 
   @type summary :: %{
           path: String.t(),
@@ -53,6 +57,8 @@ defmodule Grasp.Index.Builder do
           behaviours: %{String.t() => [String.t()]},
           skipped: [String.t()]
         }
+
+  @type rendered :: %{entry_points: [map()], behaviours: %{String.t() => [String.t()]}}
 
   @doc """
   Traces, extracts, joins and writes the index. `:out` defaults to `.grasp/index.json`.
@@ -78,15 +84,16 @@ defmodule Grasp.Index.Builder do
         Templates.definitions(root, extracted.embeds, extracted.definitions)
 
     functions = Join.join(definitions, events)
-    records = classify(functions, base, paths)
     detected = entry_points(config[:app], functions)
     report_skipped(detected.skipped)
+    entries = Enum.map(detected.entry_points, &entry_point_json/1)
+    records = functions |> classify(base, paths) |> Routes.resolve(entries)
 
     document =
       document(
         records,
         extracted.modules,
-        detected,
+        %{detected | entry_points: entries},
         %{"app" => to_string(config[:app]), "root" => root, "elixirc_paths" => paths},
         git_info(root, base)
       )
@@ -186,14 +193,16 @@ defmodule Grasp.Index.Builder do
   @doc """
   Assembles the JSON document, with the string keys `Grasp.Index.load/1` reads.
 
-  `project` and `git` are passed whole so a caller rewriting part of an index — the
-  incremental update after a save — keeps the blocks the full build wrote rather than
-  recomputing facts that did not change.
+  The entry points in `detected` are the JSON `entry_point_json/1` writes rather than the
+  detected entries themselves, because the route sites are resolved against that same list
+  before a record reaches this function. `project` and `git` are passed whole so a caller
+  rewriting part of an index — the incremental update after a save — keeps the blocks the
+  full build wrote rather than recomputing facts that did not change.
   """
   @spec document(
           [Changes.classified_record()],
           [Extract.module_info()],
-          detected(),
+          rendered(),
           map(),
           map() | nil
         ) ::
@@ -206,7 +215,7 @@ defmodule Grasp.Index.Builder do
       "git" => git,
       "modules" => Enum.map(modules, &module_json(&1, detected.behaviours)),
       "functions" => Enum.map(records, &function_json/1),
-      "entry_points" => Enum.map(detected.entry_points, &entry_point_json/1)
+      "entry_points" => detected.entry_points
     }
   end
 
@@ -234,17 +243,7 @@ defmodule Grasp.Index.Builder do
       "file" => record.file,
       "span" => %{"start_line" => record.span.start_line, "end_line" => record.span.end_line},
       "source" => record.source,
-      "calls" =>
-        Enum.map(record.calls, fn call ->
-          %{
-            "target" => call.target,
-            "kind" => Atom.to_string(call.kind),
-            "range" => %{
-              "start" => Tuple.to_list(call.range.start),
-              "end" => Tuple.to_list(call.range.end)
-            }
-          }
-        end),
+      "calls" => Enum.map(record.calls, &call_json/1),
       "hidden_calls" =>
         Enum.map(
           record.hidden_calls,
@@ -254,6 +253,27 @@ defmodule Grasp.Index.Builder do
       "base_source" => Map.get(record, :base_source),
       "removed" => Map.get(record, :removed, false)
     }
+  end
+
+  # A call of kind `:route` carries the route it reaches, so a reader is told which one of
+  # a controller's actions the link goes to without opening the router.
+  defp call_json(call) do
+    json = %{
+      "target" => call.target,
+      "kind" => Atom.to_string(call.kind),
+      "range" => %{
+        "start" => Tuple.to_list(call.range.start),
+        "end" => Tuple.to_list(call.range.end)
+      }
+    }
+
+    case call do
+      %{route: %{verb: verb, path: path}} ->
+        Map.put(json, "route", %{"verb" => verb, "path" => path})
+
+      _call ->
+        json
+    end
   end
 
   @doc "The JSON shape of one entry point."

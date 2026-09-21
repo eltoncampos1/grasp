@@ -194,6 +194,7 @@ defmodule Grasp.Index.ChangesTest do
       end_line: 1,
       source: source,
       call_sites: [],
+      route_sites: [],
       head_positions: [],
       head_ranges: []
     }

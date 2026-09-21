@@ -15,10 +15,11 @@ defmodule Grasp.Index.Templates do
   The whole file is the definition: it spans line 1 to its last line and its source is the
   file's text.
 
-  Only a `.heex` template carries call sites, for its tags and its interpolations alike.
-  HEEx is the engine whose tags compile to component calls and whose `{...}` and
-  `<%= ... %>` bodies are Elixir, so an `.eex` template is a record with no sites: the
-  calls the tracer reports inside it still land on it, and nothing in it is clickable.
+  Only a `.heex` template carries call sites and route sites, for its tags, its
+  interpolations and the links and forms it writes alike. HEEx is the engine whose tags
+  compile to component calls and whose `{...}` and `<%= ... %>` bodies are Elixir, so an
+  `.eex` template is a record with no sites: the calls the tracer reports inside it still
+  land on it, and nothing in it is clickable.
 
   A pattern may reach out of the directory it is written in (`"../shared_html/*"`) but not
   out of the project: every match is expanded to a canonical path, one outside the root is
@@ -119,11 +120,16 @@ defmodule Grasp.Index.Templates do
       start_line: 1,
       end_line: line_count(source),
       source: source,
-      # HEEx is the engine whose tags compile to component calls and whose interpolations
-      # are Elixir; an EEx template has neither.
+      # HEEx is the engine whose tags compile to component calls, whose interpolations are
+      # Elixir and whose attributes name routes; an EEx template has none of the three.
       call_sites:
         if(Path.extname(file) == ".heex",
           do: Extract.template_sites(source, {1, 0}, nil),
+          else: []
+        ),
+      route_sites:
+        if(Path.extname(file) == ".heex",
+          do: Extract.template_route_sites(source, {1, 0}, nil),
           else: []
         ),
       head_positions: [],
