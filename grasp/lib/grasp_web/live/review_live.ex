@@ -441,6 +441,31 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
+  # A starting prompt is sent as it reads on its button: the reader picked those words, and
+  # the agent is being asked the question they saw.
+  def handle_event("chat_suggest", %{"prompt" => prompt}, socket) when is_binary(prompt),
+    do: {:noreply, ask(socket, prompt)}
+
+  # Retrying sends the last thing the reader asked for, which is what a run that failed
+  # before answering was asked.
+  def handle_event("chat_retry", _params, socket) do
+    case last_prompt(socket.assigns.agent.entries) do
+      nil -> {:noreply, socket}
+      prompt -> {:noreply, ask(socket, prompt)}
+    end
+  end
+
+  def handle_event("chat_dequeue", %{"index" => index}, socket) do
+    case int(index) do
+      position when is_integer(position) and position >= 0 ->
+        :ok = Grasp.Agent.dequeue(socket.assigns.name, position)
+        {:noreply, refresh_agent(socket)}
+
+      _not_a_position ->
+        {:noreply, socket}
+    end
+  end
+
   # An empty pick returns to the configured default; anything the facade does not know is
   # ignored rather than reported, since the select cannot offer it.
   def handle_event("chat_model", %{"model" => model}, socket) when is_binary(model) do
@@ -652,16 +677,69 @@ defmodule GraspWeb.ReviewLive do
   # message must be dropped rather than take the whole page down with it.
   def handle_event(_event, _params, socket), do: {:noreply, socket}
 
-  # A prompt sent while a run is live is the Send button having been pressed from a stale
-  # DOM, where it was still enabled; the panel already says what is happening, so the refusal
-  # needs nothing said about it.
+  # A prompt sent while a run is live is queued rather than refused, and the panel draws the
+  # queue from the same view, so both answers land the same way.
   defp ask(socket, prompt) do
     case Grasp.Agent.send_prompt(socket.assigns.name, prompt, mcp_url: socket.assigns.mcp_url) do
-      :ok -> socket |> assign(chat_error: nil) |> refresh_agent()
-      {:error, :running} -> socket
-      {:error, :no_command} -> assign(socket, chat_error: @no_command)
+      sent when sent in [:ok, {:ok, :queued}] ->
+        socket |> assign(chat_error: nil) |> refresh_agent()
+
+      {:error, :no_command} ->
+        assign(socket, chat_error: @no_command)
     end
   end
+
+  defp last_prompt(entries) do
+    entries
+    |> Enum.reverse()
+    |> Enum.find_value(fn
+      %{type: :user, text: text} -> text
+      _other -> nil
+    end)
+  end
+
+  # The prompts an empty transcript offers, in the order they are worth asking: what this
+  # branch changed, the card the reader is looking at, the threads waiting to be published,
+  # and the first route in the index. Each is a whole question, because clicking it sends
+  # exactly the words on the button.
+  defp chat_suggestions(%{entries: [], running?: false}, index, forest, comments) do
+    Enum.concat([
+      if(pull_request?(index), do: ["Show me what changed"], else: []),
+      case focused_function(forest) do
+        nil -> []
+        function_id -> ["Explain #{function_id}"]
+      end,
+      if(comments == %{}, do: [], else: ["Publish the comments"]),
+      case first_route(index) do
+        nil -> []
+        label -> ["Where does #{label} lead?"]
+      end
+    ])
+  end
+
+  defp chat_suggestions(_agent, _index, _forest, _comments), do: []
+
+  defp pull_request?(%Index{git: %{"base_ref" => base_ref}}) when is_binary(base_ref), do: true
+  defp pull_request?(%Index{} = index), do: Index.changed_functions(index) != []
+  defp pull_request?(nil), do: false
+
+  defp focused_function(%Forest{focus: focus} = forest) when is_integer(focus) do
+    case Map.fetch(forest.cards, focus) do
+      {:ok, card} -> card.function_id
+      :error -> nil
+    end
+  end
+
+  defp focused_function(%Forest{}), do: nil
+
+  defp first_route(%Index{} = index) do
+    case Enum.find(Index.entry_points(index), &(&1["kind"] == "route")) do
+      %{"label" => label} when is_binary(label) -> label
+      _no_route -> nil
+    end
+  end
+
+  defp first_route(nil), do: nil
 
   defp refresh_agent(socket), do: assign(socket, agent: Grasp.Agent.get(socket.assigns.name))
 
@@ -1101,7 +1179,13 @@ defmodule GraspWeb.ReviewLive do
         <p :if={@forest.cards == %{}} class="empty">
           Pick a function from the sidebar or press <kbd>⌘K</kbd>.
         </p>
-        <.chat_panel open?={@chat_open?} agent={@agent} index={@index} error={@chat_error} />
+        <.chat_panel
+          open?={@chat_open?}
+          agent={@agent}
+          index={@index}
+          error={@chat_error}
+          suggestions={chat_suggestions(@agent, @index, @forest, @comments)}
+        />
         <div id="stage" class="stage">
           <%!-- A group's frame is measured from the cards inside it and so cannot be a box the
           server renders: the hook owns this layer and fills it on every draw. --%>

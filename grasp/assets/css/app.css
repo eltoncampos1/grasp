@@ -344,12 +344,23 @@ body.grasp-signatures #stage .badge { padding: 0 calc(var(--space-s) / var(--zoo
 /* A display of its own outranks the user agent's [hidden] rule, so the closed panel needs
    its own. */
 .chat[hidden] { display: none; }
+/* The pill sits over the bottom of the log rather than after it, so the transcript keeps
+   its whole height while the way back down is offered. */
+.chat__transcript { position: relative; display: flex; flex-direction: column; min-height: 0; }
 .chat__log { overflow-y: auto; padding: var(--space-s) var(--space-m); display: flex; flex-direction: column; gap: var(--space-xs); }
+.chat__jump { position: absolute; inset-block-end: var(--space-xs); inset-inline-start: 50%; translate: -50% 0; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 999px; box-shadow: var(--shadow); padding: 2px var(--space-s); font-size: 12px; color: var(--fg-muted); }
+.chat__jump[hidden] { display: none; }
 .msg[data-type="user"] { align-self: flex-end; background: var(--accent-soft); border-radius: var(--radius); padding: var(--space-xs) var(--space-s); white-space: pre-wrap; }
 /* An assistant turn is rendered Markdown and brings its own blocks, so the first and last
-   of them sit flush against the row and only the space between them is the panel's. */
-.msg[data-type="assistant"] > :first-child { margin-block-start: 0; }
+   of them sit flush against the row and only the space between them is the panel's. The
+   copy button is drawn over the row rather than in it, so the first block is the one after
+   it. */
+.msg[data-type="assistant"] { position: relative; }
+.msg[data-type="assistant"] > .copy + * { margin-block-start: 0; }
 .msg[data-type="assistant"] > :last-child { margin-block-end: 0; }
+.copy { position: absolute; inset-block-start: 2px; inset-inline-end: 2px; font-size: 11px; padding: 0 var(--space-xs); border-radius: 4px; background: var(--bg-raised); border: 1px solid var(--border); color: var(--fg-muted); opacity: 0; }
+.msg:hover > .copy, .fence:hover > .copy, .copy:focus-visible { opacity: 1; }
+.copy:hover { color: var(--accent); }
 .msg p { margin: var(--space-s) 0; }
 .msg ul, .msg ol { margin: var(--space-s) 0; padding-inline-start: var(--space-l); }
 .msg li { margin: 2px 0; }
@@ -359,7 +370,7 @@ body.grasp-signatures #stage .badge { padding: 0 calc(var(--space-s) / var(--zoo
 .msg table { border-collapse: collapse; display: block; overflow-x: auto; margin: var(--space-s) 0; }
 .msg th, .msg td { border: 1px solid var(--border); padding: 2px var(--space-xs); text-align: start; }
 .msg hr { border: 0; border-block-start: 1px solid var(--border); margin: var(--space-s) 0; }
-.fence { font-family: var(--mono); font-size: 12px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-s); margin: var(--space-s) 0; overflow-x: auto; }
+.fence { position: relative; font-family: var(--mono); font-size: 12px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-s); margin: var(--space-s) 0; overflow-x: auto; }
 .fence code { background: none; padding: 0; font-size: inherit; }
 /* A named function reads as the code span it was written as and behaves like a call site:
    the same dashed accent underline, and a click that opens the card. */
@@ -389,14 +400,29 @@ body.grasp-signatures #stage .badge { padding: 0 calc(var(--space-s) / var(--zoo
 .chat__status { padding: 0 var(--space-m) var(--space-xs); color: var(--fg-subtle); font-size: 12px; }
 .msg[data-type="error"] { color: var(--danger); }
 .msg[data-type="done"] { color: var(--fg-subtle); font-size: 12px; }
-.chat__debug { margin: 0 var(--space-m) var(--space-s); color: var(--fg-muted); font-family: var(--mono); font-size: 12px; }
+/* A failed run's own words, under the error that ended it, beside the way to ask again. */
+.chat__failure { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-xs); }
+.chat__failure > .chat__debug { align-self: stretch; }
+.chat__failure button { border: 1px solid var(--border); border-radius: 4px; padding: 2px var(--space-s); }
+.chat__suggest { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+.chat__suggest button { text-align: start; border: 1px solid var(--border); border-radius: 999px; padding: 2px var(--space-s); }
+.chat__suggest button:hover { border-color: var(--accent); }
+/* A prompt waiting for the port reads as the message it is about to become, drawn as an
+   outline of one. */
+.chat__queue { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-xs); padding: var(--space-xs) var(--space-m) 0; }
+.msg[data-type="queued"] { display: flex; align-items: baseline; gap: var(--space-xs); background: var(--bg-sunken); border: 1px dashed var(--border); border-radius: var(--radius); padding: 2px var(--space-s); color: var(--fg-muted); white-space: pre-wrap; }
+.queued__drop { color: var(--fg-faint); padding: 0 2px; }
+.queued__drop:hover { color: var(--danger); }
+.chat__debug { margin: 0; color: var(--fg-muted); font-family: var(--mono); font-size: 12px; }
 .chat__debug p { margin: var(--space-xs) 0 0; white-space: pre-wrap; }
 .chat__debug summary { cursor: pointer; }
-.chat form { display: flex; gap: var(--space-xs); padding: var(--space-s); border-top: 1px solid var(--border); }
+.chat form { display: flex; align-items: flex-end; gap: var(--space-xs); padding: var(--space-s); border-top: 1px solid var(--border); }
 .chat__settings { display: flex; align-items: center; gap: var(--space-m); padding: var(--space-s); border-top: 1px solid var(--border); font-size: 12px; color: var(--fg-muted); }
 .chat__settings form { align-items: center; padding: 0; border-top: 0; }
 .chat__settings select { font: inherit; color: var(--fg); background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 4px; padding: 2px var(--space-xs); }
-.chat input { flex: 1; font: inherit; padding: var(--space-xs) var(--space-s); border: 1px solid var(--border); border-radius: 4px; background: var(--bg-sunken); color: var(--fg); }
+/* The box is sized by the hook, a line at a time up to six of them, so it neither wraps
+   out of sight nor grows over the transcript. */
+.chat textarea { flex: 1; font: inherit; line-height: 1.4; resize: none; overflow-y: auto; padding: var(--space-xs) var(--space-s); border: 1px solid var(--border); border-radius: 4px; background: var(--bg-sunken); color: var(--fg); }
 .chat button { color: var(--fg-muted); padding: var(--space-xs) var(--space-s); }
 .chat button:hover:not(:disabled) { color: var(--accent); }
 .chat button:disabled { color: var(--fg-faint); cursor: default; }

@@ -28,6 +28,12 @@ defmodule Grasp.Agent.Runner do
   `started_at`, the wall-clock millisecond the port opened on, so a page that joins
   mid-run can count the elapsed seconds itself instead of being told them a render at a
   time; it is nil whenever no run is live.
+
+  The CLI takes one prompt per run, so a prompt sent while one is live joins a queue and
+  starts the moment the port is free, under the options the run before it used. The queue
+  is the reader's follow-up to a run they are watching, so ending that run on purpose —
+  Stop, or a new conversation — throws it away rather than sending it into a context the
+  reader has just abandoned.
   """
 
   use GenServer
@@ -65,6 +71,8 @@ defmodule Grasp.Agent.Runner do
        buffer: "",
        running?: false,
        started_at: nil,
+       queue: [],
+       opts: [],
        model: nil,
        mode: "read"
      }}
@@ -76,53 +84,21 @@ defmodule Grasp.Agent.Runner do
   @impl true
   def handle_call(:get, _from, state), do: {:reply, view(state), state}
 
-  def handle_call({:prompt, _prompt, _opts}, _from, %{running?: true} = state),
-    do: {:reply, {:error, :running}, state}
+  def handle_call({:prompt, prompt, _opts}, _from, %{running?: true} = state),
+    do: {:reply, {:ok, :queued}, broadcast(%{state | queue: state.queue ++ [prompt]})}
 
   def handle_call({:prompt, prompt, opts}, _from, state) do
-    {command, argv} =
-      Command.build(prompt,
-        # A host never evaluates Grasp's own `config/config.exs`, so every `:grasp` key read
-        # outside the standalone viewer carries its default here.
-        command: Application.get_env(:grasp, :agent_command, "claude"),
-        session: state.name,
-        mcp_url: Keyword.get(opts, :mcp_url) || Command.mcp_url(),
-        resume: state.stream.claude_session_id,
-        model: state.model || Application.get_env(:grasp, :agent_model),
-        mode: state.mode,
-        reindex: Command.reindex_command(IndexStore.get(), IndexStore.path())
-      )
-
-    case executable(command) do
-      nil ->
-        {:reply, {:error, :no_command}, state}
-
-      exe ->
-        port =
-          Port.open({:spawn_executable, exe}, [
-            :binary,
-            :exit_status,
-            :stderr_to_stdout,
-            {:line, 1_048_576},
-            {:args, argv},
-            {:cd, Command.cwd()}
-          ])
-
-        stream = Stream.prompt(state.stream, prompt)
-
-        {:reply, :ok,
-         broadcast(%{
-           state
-           | stream: stream,
-             port: port,
-             buffer: "",
-             running?: true,
-             started_at: System.system_time(:millisecond)
-         })}
+    case start(state, prompt, opts) do
+      {:ok, state} -> {:reply, :ok, broadcast(state)}
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
-  def handle_call(:stop, _from, state), do: {:reply, :ok, broadcast(halt(state, "stopped"))}
+  def handle_call({:dequeue, index}, _from, state) when is_integer(index),
+    do: {:reply, :ok, broadcast(%{state | queue: List.delete_at(state.queue, index)})}
+
+  def handle_call(:stop, _from, state),
+    do: {:reply, :ok, broadcast(%{halt(state, "stopped") | queue: []})}
 
   def handle_call({:set_model, model}, _from, state),
     do: {:reply, :ok, broadcast(%{state | model: model})}
@@ -132,7 +108,7 @@ defmodule Grasp.Agent.Runner do
 
   def handle_call(:reset, _from, state) do
     state = halt(state, nil)
-    {:reply, :ok, broadcast(%{state | stream: Stream.new()})}
+    {:reply, :ok, broadcast(%{state | stream: Stream.new(), queue: []})}
   end
 
   @impl true
@@ -154,15 +130,9 @@ defmodule Grasp.Agent.Runner do
         stream
       end
 
-    {:noreply,
-     broadcast(%{
-       state
-       | stream: stream,
-         port: nil,
-         buffer: "",
-         running?: false,
-         started_at: nil
-     })}
+    state = %{state | stream: stream, port: nil, buffer: "", running?: false, started_at: nil}
+
+    {:noreply, broadcast(next(state))}
   end
 
   # Trapping exits turns a linked process's death into a message; only a port's is routine.
@@ -171,6 +141,61 @@ defmodule Grasp.Agent.Runner do
 
   # A port that was closed by `stop/1` can still have output or its exit status in flight.
   def handle_info({port, _payload}, state) when is_port(port), do: {:noreply, state}
+
+  # The prompt at the head of the queue, started under the options the run that has just
+  # ended used: it was typed into the same conversation, so it belongs on the same endpoint.
+  # A command that has gone missing between the two leaves the queue as it stands, for the
+  # reader to withdraw or clear, rather than swallowing what it holds.
+  defp next(%{queue: []} = state), do: state
+
+  defp next(%{queue: [prompt | rest]} = state) do
+    case start(%{state | queue: rest}, prompt, state.opts) do
+      {:ok, state} -> state
+      {:error, :no_command} -> state
+    end
+  end
+
+  defp start(state, prompt, opts) do
+    {command, argv} =
+      Command.build(prompt,
+        # A host never evaluates Grasp's own `config/config.exs`, so every `:grasp` key read
+        # outside the standalone viewer carries its default here.
+        command: Application.get_env(:grasp, :agent_command, "claude"),
+        session: state.name,
+        mcp_url: Keyword.get(opts, :mcp_url) || Command.mcp_url(),
+        resume: state.stream.claude_session_id,
+        model: state.model || Application.get_env(:grasp, :agent_model),
+        mode: state.mode,
+        reindex: Command.reindex_command(IndexStore.get(), IndexStore.path())
+      )
+
+    case executable(command) do
+      nil ->
+        {:error, :no_command}
+
+      exe ->
+        port =
+          Port.open({:spawn_executable, exe}, [
+            :binary,
+            :exit_status,
+            :stderr_to_stdout,
+            {:line, 1_048_576},
+            {:args, argv},
+            {:cd, Command.cwd()}
+          ])
+
+        {:ok,
+         %{
+           state
+           | stream: Stream.prompt(state.stream, prompt),
+             port: port,
+             buffer: "",
+             running?: true,
+             started_at: System.system_time(:millisecond),
+             opts: opts
+         }}
+    end
+  end
 
   defp halt(%{port: nil} = state, _reason), do: state
 
@@ -200,6 +225,7 @@ defmodule Grasp.Agent.Runner do
       entries: state.stream.entries,
       running?: state.running?,
       started_at: state.started_at,
+      queue: state.queue,
       claude_session_id: state.stream.claude_session_id,
       log: state.stream.log,
       last_result: state.stream.result_text,

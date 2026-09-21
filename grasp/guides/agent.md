@@ -10,10 +10,30 @@ Press ⌘I, or the `ask` button in the toolbar. Type what you want to understand
 opens the cards that answer it.
 
 The panel runs the [Claude Code](https://claude.com/claude-code) CLI headless, with the
-indexed project's root as its working directory and Grasp as its only MCP server. The
-transcript shows each tool call as it happens; Stop kills the run, and New conversation
-starts over. An answer is rendered Markdown: its code fences are highlighted as the cards
-are, and every `Mod.fun/arity` the index holds is a button that opens that function's card.
+indexed project's root as its working directory and Grasp as its only MCP server. Stop kills
+the run, and New conversation starts over.
+
+### The panel
+
+An answer is rendered Markdown: its code fences are highlighted as the cards are, and every
+`Mod.fun/arity` the index holds is a button that opens that function's card. The words
+arrive as the model writes them, and while a run is live the panel carries a thinking row,
+the elapsed time and the number of tool calls this turn. Consecutive tool calls fold into
+one group — "Used 4 tools" — each row naming in plain words what the agent did and how long
+it took, open while one is running; a call that failed shows the tool's own words under it.
+A turn ends with its cost, its number of turns and its wall time.
+
+The prompt box grows to six lines: Enter sends, Shift+Enter breaks a line, and ArrowUp on an
+empty box recalls what was sent before. A prompt sent while a run is live is queued — it is
+drawn under the log with an × that withdraws it, and starts when the run ends; Stop and New
+throw the queue away. An empty transcript offers a few prompts to start from, drawn from
+what the index and the canvas hold: the branch's changes, the focused card, the open comment
+threads, the first route.
+
+The log follows the newest line only while you are at the bottom of it; read further up and
+a "↓ latest" pill offers the way back down. A run that fails shows the CLI's output under
+the error, with a Retry that asks the same question again. Every answer and every code fence
+has a copy button.
 
 ### Read and edit mode
 
@@ -45,8 +65,8 @@ and `fable`, or `default` to leave the CLI on whatever `agent_model` set, or on 
 default when nothing did. A pick takes effect on the next prompt rather than interrupting a
 live run, and survives New conversation.
 
-One run at a time per session: a second prompt while one is in flight is refused rather than
-queued. A follow-up continues the same CLI conversation, so the agent remembers what it just
+One run at a time per session: a second prompt while one is in flight waits in the queue. A
+follow-up continues the same CLI conversation, so the agent remembers what it just
 opened. A single run is capped at 60 agent turns; one that reaches the cap stops there and
 says so in the transcript. Transcripts live in memory and are gone when the viewer stops.
 

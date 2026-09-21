@@ -18,6 +18,8 @@ defmodule Grasp.Agent do
   @type view :: %{
           entries: [Stream.entry()],
           running?: boolean(),
+          started_at: integer() | nil,
+          queue: [String.t()],
           claude_session_id: String.t() | nil,
           log: [String.t()],
           last_result: String.t() | nil,
@@ -45,19 +47,32 @@ defmodule Grasp.Agent do
   @doc """
   Runs `prompt`, continuing the CLI session the previous prompt opened.
 
-  The CLI takes one prompt per run, so this returns `{:error, :running}` while a run is
-  live, and `{:error, :no_command}` when the configured agent command is not an executable
-  on this machine.
+  The CLI takes one prompt per run, so a prompt sent while one is live answers
+  `{:ok, :queued}`: it joins the conversation's queue and starts when the port is free.
+  `{:error, :no_command}` says the configured agent command is not an executable on this
+  machine, and nothing was queued or run.
 
   `:mcp_url` is the URL the CLI connects its `grasp` MCP server to. It is the caller's to
   give because Grasp answers under whatever prefix its host mounted it at, on the host's own
-  port; without it the run is pointed at the standalone viewer.
+  port; without it the run is pointed at the standalone viewer. A queued prompt is run under
+  the options of the prompt before it.
   """
-  @spec send_prompt(name(), String.t(), keyword()) :: :ok | {:error, :running | :no_command}
+  @spec send_prompt(name(), String.t(), keyword()) ::
+          :ok | {:ok, :queued} | {:error, :no_command}
   def send_prompt(name, prompt, opts \\ []),
     do: GenServer.call(Runner.via(name), {:prompt, prompt, opts})
 
-  @doc "Ends a live run; a finished conversation is left alone."
+  @doc """
+  Withdraws the queued prompt at `index`, counting from the head of `queue`.
+
+  An index the queue does not hold leaves it as it is, so a click on a row another tab has
+  already withdrawn is not a prompt the reader loses.
+  """
+  @spec dequeue(name(), non_neg_integer()) :: :ok
+  def dequeue(name, index) when is_integer(index) and index >= 0,
+    do: GenServer.call(Runner.via(name), {:dequeue, index})
+
+  @doc "Ends a live run and empties the queue; a finished conversation is left alone."
   @spec stop(name()) :: :ok
   def stop(name), do: GenServer.call(Runner.via(name), :stop)
 
@@ -96,7 +111,7 @@ defmodule Grasp.Agent do
 
   def set_mode(_name, _mode), do: {:error, :unknown_mode}
 
-  @doc "Ends a live run and clears the transcript, the log and the CLI session id."
+  @doc "Ends a live run and clears the queue, the transcript, the log and the CLI session id."
   @spec reset(name()) :: :ok
   def reset(name), do: GenServer.call(Runner.via(name), :reset)
 

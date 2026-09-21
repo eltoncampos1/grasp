@@ -1193,7 +1193,7 @@ conversation.
   session id and reports when the `grasp` MCP server is not connected, and `result`
   closes the run with its cost. Lines that are not JSON (stderr is merged) are kept as a
   log shown when the run fails. Stop kills the OS process. One run at a time per session;
-  a second prompt while running is refused.
+  a second prompt while running is queued.
 - **Rendering.** An assistant entry is Markdown. `GraspWeb.ChatMarkdown` renders it
   server-side with MDEx — GitHub-flavoured (tables, strikethrough, task lists, autolinks),
   raw HTML sanitised against an explicit allow-list, so model output can never inject markup

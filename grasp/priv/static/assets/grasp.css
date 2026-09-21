@@ -1119,12 +1119,34 @@ body.grasp-signatures #stage .badge {
 .chat[hidden] {
   display: none;
 }
+.chat__transcript {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 .chat__log {
   overflow-y: auto;
   padding: var(--space-s) var(--space-m);
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
+}
+.chat__jump {
+  position: absolute;
+  inset-block-end: var(--space-xs);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  padding: 2px var(--space-s);
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.chat__jump[hidden] {
+  display: none;
 }
 .msg[data-type=user] {
   align-self: flex-end;
@@ -1133,11 +1155,34 @@ body.grasp-signatures #stage .badge {
   padding: var(--space-xs) var(--space-s);
   white-space: pre-wrap;
 }
-.msg[data-type=assistant] > :first-child {
+.msg[data-type=assistant] {
+  position: relative;
+}
+.msg[data-type=assistant] > .copy + * {
   margin-block-start: 0;
 }
 .msg[data-type=assistant] > :last-child {
   margin-block-end: 0;
+}
+.copy {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: 2px;
+  font-size: 11px;
+  padding: 0 var(--space-xs);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  opacity: 0;
+}
+.msg:hover > .copy,
+.fence:hover > .copy,
+.copy:focus-visible {
+  opacity: 1;
+}
+.copy:hover {
+  color: var(--accent);
 }
 .msg p {
   margin: var(--space-s) 0;
@@ -1190,6 +1235,7 @@ body.grasp-signatures #stage .badge {
   margin: var(--space-s) 0;
 }
 .fence {
+  position: relative;
   font-family: var(--mono);
   font-size: 12px;
   background: var(--bg-sunken);
@@ -1330,8 +1376,61 @@ body.grasp-signatures #stage .badge {
   color: var(--fg-subtle);
   font-size: 12px;
 }
+.chat__failure {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+}
+.chat__failure > .chat__debug {
+  align-self: stretch;
+}
+.chat__failure button {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px var(--space-s);
+}
+.chat__suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+.chat__suggest button {
+  text-align: start;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px var(--space-s);
+}
+.chat__suggest button:hover {
+  border-color: var(--accent);
+}
+.chat__queue {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-m) 0;
+}
+.msg[data-type=queued] {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  background: var(--bg-sunken);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 2px var(--space-s);
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+}
+.queued__drop {
+  color: var(--fg-faint);
+  padding: 0 2px;
+}
+.queued__drop:hover {
+  color: var(--danger);
+}
 .chat__debug {
-  margin: 0 var(--space-m) var(--space-s);
+  margin: 0;
   color: var(--fg-muted);
   font-family: var(--mono);
   font-size: 12px;
@@ -1345,6 +1444,7 @@ body.grasp-signatures #stage .badge {
 }
 .chat form {
   display: flex;
+  align-items: flex-end;
   gap: var(--space-xs);
   padding: var(--space-s);
   border-top: 1px solid var(--border);
@@ -1371,9 +1471,12 @@ body.grasp-signatures #stage .badge {
   border-radius: 4px;
   padding: 2px var(--space-xs);
 }
-.chat input {
+.chat textarea {
   flex: 1;
   font: inherit;
+  line-height: 1.4;
+  resize: none;
+  overflow-y: auto;
   padding: var(--space-xs) var(--space-s);
   border: 1px solid var(--border);
   border-radius: 4px;

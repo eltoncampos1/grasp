@@ -947,27 +947,70 @@
   var canvas_default = Canvas;
 
   // js/hooks/chat.js
+  var BOTTOM_PX = 24;
+  var HISTORY = 20;
+  var COPIED_MS = 1500;
+  var MAX_ROWS = 6;
   var Chat = {
     mounted() {
       this.el.addEventListener("submit", () => {
+        const input = this.input();
+        this.remember(input && input.value);
+        this.atBottom = true;
         window.setTimeout(() => {
-          const input = this.input();
-          if (input) input.value = "";
+          const input2 = this.input();
+          if (input2) {
+            input2.value = "";
+            this.grow(input2);
+          }
+          this.scrollToBottom();
         }, 0);
       });
       this.el.addEventListener("click", (event) => {
         const link = event.target.closest(".msg .fn[data-fn]");
         if (link) this.pushEvent("open_root", { id: link.dataset.fn });
+        const copy = event.target.closest(".copy");
+        if (copy) this.copy(copy);
+        if (event.target.closest("#chat-jump")) {
+          this.atBottom = true;
+          this.scrollToBottom();
+          this.showPill();
+        }
       });
+      this.el.addEventListener("keydown", (event) => {
+        if (event.target.id === "chat-prompt") this.keydown(event);
+      });
+      this.el.addEventListener("input", (event) => {
+        if (event.target.id === "chat-prompt") {
+          this.recalled = null;
+          this.grow(event.target);
+        }
+      });
+      this.el.addEventListener(
+        "scroll",
+        (event) => {
+          if (event.target.id !== "chat-log") return;
+          this.atBottom = this.isAtBottom(event.target);
+          this.showPill();
+        },
+        true
+      );
       this.wasOpen = false;
       this.timer = null;
+      this.atBottom = true;
+      this.history = [];
+      this.recalled = null;
+      this.at = null;
       this.scrollToBottom();
       this.focusWhenOpened();
+      this.fenceButtons();
       this.tick();
     },
     updated() {
-      this.scrollToBottom();
+      if (this.atBottom) this.scrollToBottom();
+      this.showPill();
       this.focusWhenOpened();
+      this.fenceButtons();
       this.tick();
     },
     destroyed() {
@@ -976,9 +1019,93 @@
     input() {
       return this.el.querySelector("#chat-prompt");
     },
+    log() {
+      return this.el.querySelector("#chat-log");
+    },
     scrollToBottom() {
-      const log = this.el.querySelector("#chat-log");
+      const log = this.log();
       if (log) log.scrollTop = log.scrollHeight;
+    },
+    isAtBottom(log) {
+      return log.scrollHeight - log.scrollTop - log.clientHeight <= BOTTOM_PX;
+    },
+    // The pill offers the way down to a reader who has scrolled away from it. The server
+    // renders it hidden, so every patch hides it again and this says whether it stays that
+    // way.
+    showPill() {
+      const pill = this.el.querySelector("#chat-jump");
+      if (pill) pill.hidden = this.atBottom;
+    },
+    // Enter sends, because the box is a prompt before it is a text editor; a line break is
+    // the shifted one. ArrowUp on an empty box recalls what was sent last, and pressing it
+    // again on a recalled prompt steps further back, so a question can be reworded rather
+    // than retyped. A composition in progress owns its own Enter.
+    keydown(event) {
+      const input = event.target;
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        if (input.form) input.form.requestSubmit();
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        const from = this.recallFrom(input.value);
+        if (from === null) return;
+        event.preventDefault();
+        input.value = this.history[from];
+        this.recalled = input.value;
+        this.at = from;
+        this.grow(input);
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    },
+    recallFrom(value) {
+      if (value === "") return this.history.length ? this.history.length - 1 : null;
+      if (value === this.recalled && this.at > 0) return this.at - 1;
+      return null;
+    },
+    remember(prompt) {
+      if (!prompt || !prompt.trim()) return;
+      this.history = this.history.concat([prompt]).slice(-HISTORY);
+      this.recalled = null;
+    },
+    // The box is one line until what is in it needs more, and stops growing at six so the
+    // transcript is never pushed off the panel by a long prompt.
+    grow(input) {
+      const style = window.getComputedStyle(input);
+      const line = parseFloat(style.lineHeight) || 18;
+      const around = input.offsetHeight - input.clientHeight + parseFloat(style.paddingBlockStart || 0) + parseFloat(style.paddingBlockEnd || 0);
+      input.style.height = "auto";
+      input.style.height = `${Math.min(input.scrollHeight, line * MAX_ROWS + around)}px`;
+    },
+    // What the reader sees, not what the markup says: a rendered answer is Markdown, so its
+    // text is read off the DOM. The copy buttons inside it are hidden for the reading, since
+    // `innerText` would otherwise hand back their labels as part of the answer.
+    copy(button) {
+      const target = button.dataset.copy === "pre" ? button.closest("pre") : button.closest(".msg");
+      if (!target) return;
+      const buttons = Array.from(target.querySelectorAll(".copy"));
+      buttons.forEach((each) => each.hidden = true);
+      const text = target.innerText;
+      buttons.forEach((each) => each.hidden = false);
+      if (!navigator.clipboard) return;
+      navigator.clipboard.writeText(text).then(() => {
+        const label = button.textContent;
+        button.textContent = "Copied";
+        window.setTimeout(() => {
+          if (button.isConnected) button.textContent = label;
+        }, COPIED_MS);
+      });
+    },
+    fenceButtons() {
+      this.el.querySelectorAll("#chat-log pre.fence").forEach((fence) => {
+        if (fence.querySelector(".copy")) return;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "copy";
+        button.dataset.copy = "pre";
+        button.textContent = "Copy";
+        fence.prepend(button);
+      });
     },
     // Only on the opening patch: later ones land while the user is typing here or reading a
     // card, and taking focus back on each of them would fight whatever they are doing.

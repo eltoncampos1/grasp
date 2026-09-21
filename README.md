@@ -34,7 +34,8 @@ path from the route to the write on a canvas you can arrange, annotate and come 
   cover a range; reply, resolve, and publish the lot to GitHub as review comments.
 - **An agent that drives it.** An MCP server with 25 tools: search the index, trace the paths
   into a function, lay the cards out, read and answer the comments. A chat panel over the
-  canvas runs that agent for you.
+  canvas runs that agent for you: rendered answers whose function ids open the card, folded
+  tool calls, a queue for the next question, and a Retry when a run fails.
 - **Live reindexing.** After the first build, the index follows your saves.
 - **Editor links.** Every card links its `file:line` into VS Code, Cursor, Zed or IntelliJ.
 

@@ -13,7 +13,7 @@ defmodule GraspWeb.ChatTest do
     assert has_element?(view, "#chat[hidden]")
     view |> element("#toggle-chat") |> render_click()
     refute has_element?(view, "#chat[hidden]")
-    assert has_element?(view, "#chat input#chat-prompt")
+    assert has_element?(view, ~s(#chat textarea#chat-prompt[phx-update="ignore"]))
     view |> element("#toggle-chat") |> render_click()
     assert has_element?(view, "#chat[hidden]")
   end
@@ -72,6 +72,7 @@ defmodule GraspWeb.ChatTest do
     # An id the fixture index holds is a button; one it does not stays as written. The button
     # carries the id and no event: the panel's hook, not the answer's markup, names the event.
     assert has_element?(view, ~s(#chat button.fn[data-fn="#{@greeter}"]), @greeter)
+    assert has_element?(view, ~s(#chat .msg[data-type="assistant"] button.copy[data-copy="msg"]))
     assert has_element?(view, "#chat code", "Nope.Missing.fun/1")
     refute has_element?(view, "#chat-log [phx-click]")
 
@@ -125,30 +126,107 @@ defmodule GraspWeb.ChatTest do
     refute has_element?(view, ~s(#chat .msg[data-type="user"]))
   end
 
-  test "a failed run shows the error and the log", %{view: view, name: name} do
+  test "a failed run shows its log under the error and retries the prompt", %{
+    view: view,
+    name: name
+  } do
     view |> element("#toggle-chat") |> render_click()
     :ok = Grasp.Agent.subscribe(name)
     view |> form("#chat-form", %{"prompt" => "FAIL please"}) |> render_submit()
     assert_receive {:agent, ^name, %{running?: false}}, 2_000
     eventually(view, fn -> not has_element?(view, ~s(#chat button[phx-click="chat_stop"])) end)
     assert has_element?(view, ~s(#chat .msg[data-type="error"]), "status 3")
-    assert has_element?(view, "#chat .chat__debug", "something went wrong on stderr")
+
+    assert has_element?(
+             view,
+             "#chat .chat__failure details[open]",
+             "something went wrong on stderr"
+           )
+
+    view |> element(~s(#chat button[phx-click="chat_retry"]), "Retry") |> render_click()
+    assert_receive {:agent, ^name, %{running?: false}}, 2_000
+    eventually(view, fn -> not has_element?(view, ~s(#chat button[phx-click="chat_stop"])) end)
+
+    log = view |> element("#chat-log") |> render()
+    assert length(String.split(log, "FAIL please")) == 3
   end
 
-  test "a live run disables Send, offers Stop, and New clears the transcript", %{
+  test "a live run keeps Send for the queue, and Stop empties it", %{view: view, name: name} do
+    view |> element("#toggle-chat") |> render_click()
+    :ok = Grasp.Agent.subscribe(name)
+    view |> form("#chat-form", %{"prompt" => "SLOW one"}) |> render_submit()
+
+    refute has_element?(view, "#chat button[disabled]", "Send")
+    view |> form("#chat-form", %{"prompt" => "then this"}) |> render_submit()
+    assert has_element?(view, ~s(#chat .msg[data-type="queued"]), "then this")
+
+    view |> element(~s(#chat button[phx-click="chat_stop"]), "Stop") |> render_click()
+    refute has_element?(view, ~s(#chat .msg[data-type="queued"]))
+
+    view |> element(~s(#chat button[phx-click="chat_reset"]), "New") |> render_click()
+    refute has_element?(view, ~s(#chat .msg[data-type="user"]))
+  end
+
+  test "a prompt typed during a run is queued and runs when the first one ends", %{
     view: view,
     name: name
   } do
     view |> element("#toggle-chat") |> render_click()
     :ok = Grasp.Agent.subscribe(name)
     view |> form("#chat-form", %{"prompt" => "SLOW one"}) |> render_submit()
+    view |> form("#chat-form", %{"prompt" => "then this"}) |> render_submit()
 
-    assert has_element?(view, "#chat button[disabled]", "Send")
-    view |> element(~s(#chat button[phx-click="chat_stop"]), "Stop") |> render_click()
-    refute has_element?(view, "#chat button[disabled]", "Send")
+    assert has_element?(view, ~s(#chat .msg[data-type="queued"]), "then this")
+    refute has_element?(view, ~s(#chat .msg[data-type="user"]), "then this")
 
-    view |> element(~s(#chat button[phx-click="chat_reset"]), "New") |> render_click()
-    refute has_element?(view, ~s(#chat .msg[data-type="user"]))
+    assert_receive {:agent, ^name, %{running?: false}}, 4_000
+    eventually(view, fn -> not has_element?(view, ~s(#chat button[phx-click="chat_stop"])) end)
+
+    refute has_element?(view, ~s(#chat .msg[data-type="queued"]))
+    assert has_element?(view, ~s(#chat .msg[data-type="user"]), "SLOW one")
+    assert has_element?(view, ~s(#chat .msg[data-type="user"]), "then this")
+
+    log = view |> element("#chat-log") |> render()
+    assert length(String.split(log, "Looking at the flow.")) == 3
+  end
+
+  test "a queued prompt is withdrawn by its own button", %{view: view, name: name} do
+    view |> element("#toggle-chat") |> render_click()
+    :ok = Grasp.Agent.subscribe(name)
+    view |> form("#chat-form", %{"prompt" => "SLOW one"}) |> render_submit()
+    view |> form("#chat-form", %{"prompt" => "then this"}) |> render_submit()
+
+    view
+    |> element(~s(#chat .msg[data-type="queued"] button[phx-click="chat_dequeue"]))
+    |> render_click()
+
+    refute has_element?(view, ~s(#chat .msg[data-type="queued"]))
+
+    assert_receive {:agent, ^name, %{running?: false}}, 4_000
+    eventually(view, fn -> not has_element?(view, ~s(#chat button[phx-click="chat_stop"])) end)
+    refute has_element?(view, ~s(#chat .msg[data-type="user"]), "then this")
+  end
+
+  test "an empty transcript offers prompts to start from", %{view: view, name: name} do
+    view |> element("#toggle-chat") |> render_click()
+
+    assert has_element?(view, ~s(#chat .chat__suggest button), "Show me what changed")
+    assert has_element?(view, ~s(#chat .chat__suggest button), "Where does GET /again lead?")
+    refute has_element?(view, ~s(#chat .chat__suggest button), "Explain #{@greeter}")
+
+    # The focused card is the subject the reader is already looking at.
+    view |> element("#chat") |> render_hook("open_root", %{"id" => @greeter})
+    assert has_element?(view, ~s(#chat .chat__suggest button), "Explain #{@greeter}")
+
+    :ok = Grasp.Agent.subscribe(name)
+
+    view
+    |> element(~s(#chat .chat__suggest button), "Show me what changed")
+    |> render_click()
+
+    assert has_element?(view, ~s(#chat .msg[data-type="user"]), "Show me what changed")
+    refute has_element?(view, "#chat .chat__suggest")
+    assert_receive {:agent, ^name, %{running?: false}}, 2_000
   end
 
   # A broadcast the test received is not a broadcast the LiveView has handled: PubSub

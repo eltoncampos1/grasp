@@ -4,10 +4,12 @@ defmodule GraspWeb.ChatPanel do
 
   Everything it draws comes from the agent view the LiveView holds — whether the panel is
   open, the entries, whether a run is live — so a reload or a second tab rejoins the
-  conversation mid-run rather than starting from an empty box. The one thing the client owns
-  is the text being typed: the prompt carries `phx-update="ignore"` so that a patch landing
-  while it is unfocused — one arrives per line of CLI output — cannot reset a half-written
-  draft, and the `Chat` hook, not a re-render, clears it after a submit.
+  conversation mid-run rather than starting from an empty box. What the client owns is what
+  no other tab has any business seeing: the text being typed, how far up the log it has been
+  scrolled, and the prompts sent from this browser. The prompt box carries
+  `phx-update="ignore"` so that a patch landing while it is unfocused — one arrives per line
+  of CLI output — cannot reset a half-written draft, and the `Chat` hook, not a re-render,
+  clears it after a submit, sizes it to what is in it and sends it on Enter.
 
   An assistant turn is Markdown: `GraspWeb.ChatMarkdown` renders it server-side, sanitised,
   with its code fences highlighted and every function id the index holds drawn as a button
@@ -27,7 +29,13 @@ defmodule GraspWeb.ChatPanel do
   seconds tick without a patch per second.
 
   A failed run is the one case where the transcript is not enough: the CLI explains itself
-  on stderr, which the runner collects into `log`, so the log is offered beside an error.
+  on stderr, which the runner collects into `log`, so the log stands open under the error
+  with the CLI's own words in it, beside a Retry that asks the same question again.
+
+  A prompt sent while a run is live is queued rather than refused, so Send is never closed
+  to the reader; the queue is drawn under the log, each row with the way to withdraw it. An
+  empty transcript offers the questions this index and this canvas make worth asking, and
+  each of them is sent exactly as it reads.
 
   The settings row carries the two choices a run is made under — which model the CLI runs,
   and whether the agent may only read or may also edit files and run mix. Both are the
@@ -43,36 +51,71 @@ defmodule GraspWeb.ChatPanel do
   attr :index, :map, default: nil
   attr :error, :string, default: nil
 
+  attr :suggestions, :list,
+    default: [],
+    doc: "prompts offered by an empty transcript, each sent as it reads"
+
   def chat_panel(assigns) do
     ~H"""
     <aside id="chat" class="chat" phx-hook="Chat" hidden={!@open?} aria-label="Agent chat">
-      <div class="chat__log" id="chat-log" aria-live="polite">
-        <%= for row <- rows(@agent.entries, @index) do %>
-          <%= case row do %>
-            <% %{kind: :tools} = group -> %>
-              <details class="tools" open={group.open?}>
-                <summary>{group.summary}</summary>
-                <div :for={tool <- group.tools} class="tool" data-status={tool.status}>
-                  <span class="tool__label">{tool.label}</span>
-                  <span :if={tool.duration} class="tool__ms">{tool.duration}</span>
-                  <pre :if={tool.detail}>{tool.detail}</pre>
+      <div class="chat__transcript">
+        <div class="chat__log" id="chat-log" aria-live="polite">
+          <%= for row <- rows(@agent.entries, @index) do %>
+            <%= case row do %>
+              <% %{kind: :tools} = group -> %>
+                <details class="tools" open={group.open?}>
+                  <summary>{group.summary}</summary>
+                  <div :for={tool <- group.tools} class="tool" data-status={tool.status}>
+                    <span class="tool__label">{tool.label}</span>
+                    <span :if={tool.duration} class="tool__ms">{tool.duration}</span>
+                    <pre :if={tool.detail}>{tool.detail}</pre>
+                  </div>
+                </details>
+              <% %{kind: :msg, type: :assistant} = msg -> %>
+                <div class="msg" data-type="assistant">
+                  <button type="button" class="copy" data-copy="msg">Copy</button>{msg.body}
                 </div>
-              </details>
-            <% %{kind: :msg} = msg -> %>
-              <div class="msg" data-type={msg.type}>{msg.body}</div>
+              <% %{kind: :msg} = msg -> %>
+                <div class="msg" data-type={msg.type}>{msg.body}</div>
+            <% end %>
           <% end %>
-        <% end %>
-        <div :if={thinking?(@agent)} class="msg" data-type="thinking" aria-label="Working">
-          <span></span><span></span><span></span>
+          <div :if={thinking?(@agent)} class="msg" data-type="thinking" aria-label="Working">
+            <span></span><span></span><span></span>
+          </div>
+          <div :if={failed?(@agent)} class="chat__failure">
+            <details :if={@agent.log != []} class="chat__debug" open>
+              <summary>output log</summary>
+              <p :for={line <- @agent.log}>{line}</p>
+            </details>
+            <button type="button" phx-click="chat_retry">Retry</button>
+          </div>
+          <div :if={@suggestions != []} class="chat__suggest">
+            <button
+              :for={suggestion <- @suggestions}
+              type="button"
+              phx-click="chat_suggest"
+              phx-value-prompt={suggestion}
+            >
+              {suggestion}
+            </button>
+          </div>
+        </div>
+        <button id="chat-jump" type="button" class="chat__jump" hidden>↓ latest</button>
+      </div>
+      <div :if={@agent.queue != []} class="chat__queue">
+        <div :for={{prompt, index} <- Enum.with_index(@agent.queue)} class="msg" data-type="queued">
+          {prompt}<button
+            type="button"
+            class="queued__drop"
+            phx-click="chat_dequeue"
+            phx-value-index={index}
+            aria-label="Withdraw this prompt"
+          >×</button>
         </div>
       </div>
       <div :if={@agent.running?} class="chat__status">
         Working · <span data-elapsed-from={@agent.started_at}>0s</span> · {tool_calls(@agent.entries)}
       </div>
-      <details :if={explain?(@agent)} class="chat__debug">
-        <summary>output log</summary>
-        <p :for={line <- @agent.log}>{line}</p>
-      </details>
       <p :if={@error} class="msg" data-type="error">{@error}</p>
       <div class="chat__settings">
         <form id="chat-model" phx-change="chat_model">
@@ -101,16 +144,16 @@ defmodule GraspWeb.ChatPanel do
         </form>
       </div>
       <form id="chat-form" phx-submit="chat_send">
-        <input
-          type="text"
+        <textarea
           name="prompt"
           id="chat-prompt"
+          rows="1"
           autocomplete="off"
           aria-label="Prompt"
-          placeholder="Ask about a flow…"
+          placeholder="Ask about a flow… (Enter to send, Shift+Enter for a new line)"
           phx-update="ignore"
-        />
-        <button type="submit" disabled={@agent.running?}>Send</button>
+        ></textarea>
+        <button type="submit">Send</button>
         <button :if={@agent.running?} type="button" phx-click="chat_stop">Stop</button>
         <button type="button" phx-click="chat_reset" disabled={@agent.running?}>New</button>
       </form>
@@ -234,8 +277,13 @@ defmodule GraspWeb.ChatPanel do
   defp count(1, noun), do: "1 #{noun}"
   defp count(n, noun), do: "#{n} #{noun}s"
 
-  defp explain?(agent) do
-    agent.log != [] and match?(%{type: :error}, List.last(agent.entries))
+  # A run that ended in an error is one the reader can ask again, and the CLI's own output is
+  # what usually says why it ended there, so the two are offered together.
+  defp failed?(%{running?: true}), do: false
+
+  defp failed?(agent) do
+    match?(%{type: :error}, List.last(agent.entries)) and
+      Enum.any?(agent.entries, &(&1.type == :user))
   end
 
   defp done_text(entry) do

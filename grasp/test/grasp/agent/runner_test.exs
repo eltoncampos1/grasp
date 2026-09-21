@@ -95,10 +95,53 @@ defmodule Grasp.Agent.RunnerTest do
     refute argv =~ "Bash"
   end
 
-  test "a prompt sent while a run is live is refused", %{name: name} do
+  test "a prompt sent while a run is live is queued and runs when the port is free", %{
+    name: name
+  } do
     :ok = Grasp.Agent.send_prompt(name, "SLOW one")
-    assert {:error, :running} = Grasp.Agent.send_prompt(name, "two")
-    assert_receive {:agent, ^name, %{running?: false}}, 2_000
+    assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "two")
+    assert %{running?: true, queue: ["two"]} = Grasp.Agent.get(name)
+
+    assert_receive {:agent, ^name, %{running?: false, entries: entries, queue: []}}, 4_000
+    texts = entries |> Enum.filter(&(&1.type == :user)) |> Enum.map(& &1.text)
+    assert texts == ["SLOW one", "two"]
+  end
+
+  test "the queue is emptied by a stop and nothing more is run", %{name: name} do
+    :ok = Grasp.Agent.send_prompt(name, "SLOW one")
+    assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "two")
+
+    :ok = Grasp.Agent.stop(name)
+    assert %{running?: false, queue: []} = Grasp.Agent.get(name)
+
+    Process.sleep(200)
+    assert %{running?: false, entries: entries} = Grasp.Agent.get(name)
+    assert Enum.count(entries, &(&1.type == :user)) == 1
+  end
+
+  test "reset/1 empties the queue", %{name: name} do
+    :ok = Grasp.Agent.send_prompt(name, "SLOW one")
+    assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "two")
+
+    :ok = Grasp.Agent.reset(name)
+    assert %{entries: [], queue: []} = Grasp.Agent.get(name)
+
+    Process.sleep(200)
+    assert %{running?: false, entries: []} = Grasp.Agent.get(name)
+  end
+
+  test "dequeue/2 withdraws one queued prompt", %{name: name} do
+    :ok = Grasp.Agent.send_prompt(name, "SLOW one")
+    assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "two")
+    assert {:ok, :queued} = Grasp.Agent.send_prompt(name, "three")
+    assert %{queue: ["two", "three"]} = Grasp.Agent.get(name)
+
+    :ok = Grasp.Agent.dequeue(name, 0)
+    assert %{queue: ["three"]} = Grasp.Agent.get(name)
+
+    assert_receive {:agent, ^name, %{running?: false, entries: entries, queue: []}}, 4_000
+    texts = entries |> Enum.filter(&(&1.type == :user)) |> Enum.map(& &1.text)
+    assert texts == ["SLOW one", "three"]
   end
 
   test "stop/1 ends a live run", %{name: name} do
