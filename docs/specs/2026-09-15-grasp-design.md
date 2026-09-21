@@ -181,7 +181,7 @@ mix grasp.index [--base main] [--out .grasp/index.json]
 
 ### Templates
 
-HEEx is code the graph knows, in four parts:
+HEEx is code the graph knows, in five parts:
 
 - **Component tags are call sites.** The compiler reports `<.badge>` and
   `<MyAppWeb.Components.badge>` as calls to the component function, inside inline `~H` bodies
@@ -229,6 +229,31 @@ HEEx is code the graph knows, in four parts:
   suffix of the event's target module. A call the index does not hold (`Enum.join/2`) is a
   visible external call, as it is in a clause body. Positions inside a single-line `~H"…"`
   follow the same key/range split component tags use.
+- **Routes are edges.** A template that links to a page, submits a form or fires an htmx
+  request names a route, and a route names a controller action or a LiveView, so the link is
+  a call the graph can draw: an edge of kind `route` from the template to the action, which
+  makes the template a caller of the action in the callers menu. `Grasp.Index.Heex` reads
+  the attributes of every tag — `href`, `action`, `navigate`, `patch`, `hx-get`, `hx-post`,
+  `hx-put`, `hx-patch`, `hx-delete` — and yields a **route site** for each whose value is a
+  string literal starting with `/` or a `{…}` whose expression is a `~p` sigil: the verb is
+  the `hx-*` name, `GET` for `href`, `navigate` and `patch`, and for `action` the tag's
+  literal `method` attribute, defaulting to `POST` on `<.form>` and `GET` on `<form>`; the
+  path is the literal's segments, or the sigil's with every `#{…}` interpolation read as one
+  dynamic segment (a segment that mixes text and interpolation is dynamic as a whole), the
+  query string and fragment dropped; the range is the attribute value with its quotes or
+  braces. A `~p` sigil written anywhere else — a `redirect(conn, to: ~p"/…")` in a clause
+  body, a bare `{~p"/…"}` — is a route site with verb `GET` ranged over the sigil, found by
+  the extractor's AST walk; a sigil that sits inside a route attribute is counted once, as
+  the attribute's site. Any other value (`{@path}`, a route helper, an external URL) yields
+  nothing. Route sites travel on the definition and through the join unchanged;
+  `Grasp.Index.Routes.resolve/2` turns them into calls once the entry points are known,
+  matching verb and segments against every `route` and `live_route` entry (a `:param`
+  segment matches any one site segment, a `*glob` the rest, a dynamic site segment any one
+  route segment) and, where several routes match, taking the most specific — fewest dynamic
+  route segments, a glob counting most — since the entry-point list is sorted and not in the
+  router's declaration order. A resolved site is a call `%{target, kind: :route, range,
+  route: %{verb, path}}` whose `path` is the route's own pattern; an unresolved one is
+  dropped. The same pass runs in the incremental update against the document's entry points.
 
 Against a base ref, a template's `change` compares the whole file with the base commit's
 copy (`git show <base>:<path>`): a template the base does not have is added, one whose text
@@ -257,6 +282,9 @@ touched is unchanged.
         { "target": "MyApp.Ledger.post/2", "kind": "remote",
           "range": { "start": [45, 5], "end": [45, 22] } }
       ],
+      // a route site the router resolved: a call of kind "route" carrying the route it matched
+      // { "target": "MyAppWeb.UserController.show/2", "kind": "route",
+      //   "range": { "start": [3, 9], "end": [3, 21] }, "route": { "verb": "GET", "path": "/users/:id" } }
       "hidden_calls": [ { "target": "MyAppWeb.CoreComponents.button/1", "kind": "remote", "line": 50 } ],
       "change": "modified", "base_source": "...", "removed": false
     }
@@ -636,7 +664,10 @@ conversation; any tab on it is sent to the default session.
 - Body: Lumis-highlighted source. Every resolved call is wrapped in a clickable span.
   The highlighted call gets a ring and is scrolled into view. Calls with an open child
   are marked. Calls to functions outside the index (deps, stdlib) render muted and open
-  a stub card linking to hexdocs.
+  a stub card linking to hexdocs. A route call's span carries `data-kind="route"` and the
+  route it matched as its `title` (`GET /users/:id`); it is underlined dotted rather than
+  dashed, and the edge it opens is drawn dashed, so a reader tells an HTTP hop from a
+  function call at a glance. Clicking it opens the action's card like any call.
 - Footer: "Also calls" for hidden calls, then the outdated comment threads (see
   [Comments](#comments)); the anchored ones sit under their lines in the body.
 
@@ -933,6 +964,18 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   other expression is a value no parser can know, and guessing it would name a function the
   compiler never defined, so the embed is globbed and named as if the option were not
   there.
+
+### Known gaps (milestone 7.3)
+
+- **Only literal paths and `~p` are followed.** A route written through a helper
+  (`Routes.user_path(conn, :show, id)`), an assign (`href={@path}`) or string concatenation
+  yields no route site. A `method` that is not a literal falls back to the tag's default.
+- **Specificity stands in for declaration order.** Two routes that both match a written
+  path are resolved to the one with fewer dynamic segments; a router that declares the less
+  specific route first and relies on it winning is resolved the other way.
+- **Attributes inherited by htmx (`hx-get:inherited`, `hx-boost`) are not read.**
+- **A `~p` outside a route attribute is a `GET`.** `redirect(conn, to: ~p"/…")` is one;
+  a `~p` handed to a `Req.post/2` is drawn as a `GET` too.
 
 ### Known gaps (milestone 5.8)
 
@@ -1378,6 +1421,9 @@ request switches the working tree" is closed.
    - Milestone 7.2: interpolations are code — a call written in `{…}` or `<%= … %>` inside
      a `~H` body or a `.heex` file is a clickable call, placed by name where the compiler
      reports no column.
+   - Milestone 7.3: routes are edges — `href`, `hx-*`, form actions and `~p` sigils resolve
+     against the router to calls of kind `route`, drawn dashed to the controller action or
+     LiveView they reach.
 7. In-app Grasp: one dev dependency mounted in the host's endpoint, the tracer riding the
    host's code reloader for incremental indexing, pull requests reviewed from worktrees
    (see [Part 4](#part-4--in-app-grasp)).
