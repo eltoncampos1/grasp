@@ -178,6 +178,10 @@ defmodule Grasp.Index.HeexTest do
            ]
   end
 
+  test "reads the quote of a character literal as the start of a string" do
+    assert Heex.interpolations(~S|{f(?")}|, {1, 0}) == []
+  end
+
   test "reads a quote a backslash escapes as part of the string" do
     assert Heex.interpolations(~S|{f("\"}")}|, {1, 0}) == [
              %{line: 1, column: 2, text: ~S|f("\"}")|}

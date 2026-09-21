@@ -17,9 +17,10 @@ document.
 Because the calls come from the compiler rather than from a text search, resolution is exact:
 an alias, an import and a fully qualified name all reach the same function, and a call through
 a default-argument arity resolves to the definition that carries it. A call the compiler
-resolved that has no clickable site in the source — a call a macro expanded — is kept as a
-*hidden call*, so the callers and callees graph stays complete even where nothing is
-clickable; the card lists those under "Also calls".
+reports at a position nothing in the source can be clicked — code a macro generated, or a
+call in an interpolation the extractor could not place — is kept as a *hidden call*, so the
+callers and callees graph stays complete even where nothing is clickable; the card lists
+those under "Also calls".
 
 The document also lists the project's **entry points** — the places its code starts
 executing. After compiling, the task loads the application's modules and reads what they

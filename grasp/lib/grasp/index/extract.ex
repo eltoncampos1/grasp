@@ -15,17 +15,20 @@ defmodule Grasp.Index.Extract do
   don't nest when rendered. A range can span lines: a receiver written on its own line
   (`Enum\n.map(list, f)`) starts the range one line above the name the compiler reports.
 
-  A `~H` sigil in a definition body contributes call sites too: `Grasp.Index.Heex` scans
-  the template for component tags and for interpolations, and the sites both produce join
-  the ones the Elixir AST produced. A heredoc `~H\"""` starts on the line after the sigil,
-  with the `indentation` Sourceror records on the sigil's string stripped from every line,
-  which is where the file has it too. A single-line `~H"..."` is the one place a site's key
-  and its range part ways: Phoenix compiles it as though it began on the next line at
-  column 1, so the site is keyed there — where the tracer reports its calls — while the
-  `range` stays on the sigil's own line, three columns past the `~`, where the reader sees
-  the code. A site made from a `render` call whose second argument is a literal atom or
-  string also carries that literal as `template`, with any `.html` suffix removed, which is
-  the name of the template the call renders.
+  A `~H` sigil in a definition body contributes call sites too: `Grasp.Index.Heex` scans the
+  template for component tags and yields the body of every interpolation, this module parses
+  those bodies, and the sites the two produce join the ones the Elixir AST produced. The
+  sigil itself is not one of them — a call whose name begins with `sigil_` never becomes a
+  site, since the macro behind a sigil builds a literal rather than calling anything. A heredoc
+  `~H\"""` starts on the line after the sigil, with the `indentation` Sourceror records on
+  the sigil's string stripped from every line, which is where the file has it too. A
+  single-line `~H"..."` is the one place a site's key and its range part ways: Phoenix
+  compiles it as though it began on the next line at column 1, so the site is keyed there —
+  where the tracer reports its calls — while the `range` stays on the sigil's own line,
+  three columns past the `~`, where the reader sees the code. A site made from a `render`
+  call whose second argument is a literal atom or string also carries that literal as
+  `template`, with any `.html` suffix removed, which is the name of the template the call
+  renders.
 
   An interpolation is Elixir, so its body is parsed rather than skipped: `Sourceror` reads
   it at the file position `Grasp.Index.Heex` reports, and the same walk that reads a clause
@@ -53,8 +56,9 @@ defmodule Grasp.Index.Extract do
   # with "." (`"Greeter"`, `"SampleApp.Greeter"`) or an Erlang module's own text — and is
   # `nil` for a local or imported call and for a receiver that is an expression
   # (`mod.f(x)`); `name` is the function and `arity` the arity as written, which for a
-  # capture (`&Mod.f/2`) is the one after the slash. A component tag has no callee: the
-  # compiler always reports it with a column, so it is never placed by name.
+  # capture (`&Mod.f/2`) is the one after the slash and for a piped call counts the piped
+  # value as the first argument. A component tag has no callee: the compiler always reports
+  # it with a column, so it is never placed by name.
   @type call_site :: %{
           line: pos_integer(),
           column: pos_integer(),
@@ -398,14 +402,17 @@ defmodule Grasp.Index.Extract do
 
         {:sigil_H, _meta, [{:<<>>, _str_meta, [content]}, _modifiers]} = node, sites
         when is_binary(content) ->
-          {node, Enum.reverse(sigil_sites(node)) ++ add_site(sites, node)}
+          {node, Enum.reverse(sigil_sites(node)) ++ sites}
+
+        {:|>, _meta, [_left, right]} = node, sites ->
+          {node, sites |> add_site(node) |> piped_site(right)}
 
         {{:., _, _}, _, args} = node, sites when is_list(args) ->
           {node, add_site(sites, node)}
 
         {name, _, args} = node, sites
         when is_atom(name) and is_list(args) and name not in @not_calls ->
-          {node, add_site(sites, node)}
+          {node, if(sigil?(name), do: sites, else: add_site(sites, node))}
 
         node, sites ->
           {node, sites}
@@ -416,6 +423,25 @@ defmodule Grasp.Index.Extract do
 
   defp written_arity({:__block__, _meta, [arity]}) when is_integer(arity), do: arity
   defp written_arity(_other), do: nil
+
+  # A sigil is written as a call to `sigil_x/2` and the compiler reports it as one, but the
+  # macro behind it describes how the literal is built rather than what the code calls.
+  defp sigil?(name), do: name |> Atom.to_string() |> String.starts_with?("sigil_")
+
+  # The compiler reports a piped call with the piped value as its first argument, so the
+  # site records one more than the arguments written between the parentheses. The prewalk
+  # reaches a pipe before its right-hand side, and `collect_sites/1` keeps the first site
+  # at a position, so this site is the one that survives the walk into that call node.
+  defp piped_site(sites, {{:., _, [_receiver, name]}, _meta, args} = right)
+       when is_atom(name) and is_list(args),
+       do: add_site(sites, right, length(args) + 1)
+
+  defp piped_site(sites, {name, _meta, args} = right)
+       when is_atom(name) and is_list(args) and name not in @not_calls do
+    if sigil?(name), do: sites, else: add_site(sites, right, length(args) + 1)
+  end
+
+  defp piped_site(sites, _right), do: sites
 
   defp defaults({_name, _meta, args}) when is_list(args),
     do: for({:\\, _, [_arg, default]} <- args, do: default)

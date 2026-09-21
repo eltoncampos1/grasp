@@ -188,6 +188,53 @@ defmodule Grasp.Index.JoinTest do
     assert run.hidden_calls == []
   end
 
+  test "drops a sigil target reported at a position no site holds", %{defs: defs} do
+    events = [event(:run, 2, 6, 5, {Phoenix.VerifiedRoutes, :sigil_p, 2}, :imported_macro)]
+
+    [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
+
+    assert run.calls == []
+    assert run.hidden_calls == []
+  end
+
+  @piped ~S'''
+  defmodule Grasp.JoinTest.Piped do
+    def render(assigns) do
+      ~H"""
+      <p>{@amount |> Fmt.money()}</p>
+      """
+    end
+  end
+  '''
+
+  test "places a column-less event on the site a piped call wrote" do
+    {:ok, %{definitions: defs}} = Extract.extract(@piped, "lib/piped.ex")
+
+    events = [
+      %{
+        file: "lib/piped.ex",
+        module: Grasp.JoinTest.Piped,
+        function: {:render, 1},
+        line: 4,
+        column: nil,
+        target: {App.Fmt, :money, 1},
+        kind: :remote
+      }
+    ]
+
+    render = defs |> Join.join(events) |> record("Grasp.JoinTest.Piped", :render)
+
+    assert render.calls == [
+             %{
+               target: "App.Fmt.money/1",
+               kind: :remote,
+               range: %{start: {4, 20}, end: {4, 29}}
+             }
+           ]
+
+    assert render.hidden_calls == []
+  end
+
   @reflection ~S"""
   defmodule Grasp.JoinTest.Schema do
     def __schema__(_kind), do: []

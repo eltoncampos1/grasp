@@ -37,16 +37,17 @@ defmodule Grasp.Index.Heex do
   A `{...}` body is found by counting brace depth, not by parsing Elixir. A double-quoted
   string inside the body is read as a string, so the braces in `{String.replace(x, "}", "")}`
   are left uncounted, and a `\\"` inside one does not end it. Two kinds of brace are still
-  counted: one inside a single-quoted charlist (`{f('}')}`), and one inside a string nested
-  in a `#{}` interpolation, whose opening `"` reads as the end of the string it is written
-  in; either ends the body early, where the truncated text parses into nothing. An
-  unbalanced brace swallows the rest of the template, as an unterminated `<%!--`, `<!--`,
-  `<script>` or `<style>` does; an unterminated `<%` does not, since the scan resumes just
-  past it. A body whose closing delimiter never arrives is yielded by neither function. An
-  expression tag is read before a brace inside it is, so the map in `<%= %{a: 1} %>` belongs
-  to the tag; a tag-shaped pattern inside a plain attribute string (`title="<.badge />"`) is
-  still reported as a tag, which is harmless, since the compiler reports no call there and
-  nothing lands on the site.
+  counted: one inside a single-quoted charlist (`{f('}')}`), and one inside a string nested in
+  a `#{}` interpolation, whose opening `"` reads as the end of the string it is written in;
+  either ends the body early, where the truncated text parses into nothing. The quote of a
+  `?\"` character literal opens a string the same way, so `{f(?\")}` never finds its closing
+  brace and yields no body at all. An unbalanced brace swallows the rest of the template, as
+  an unterminated `<%!--`, `<!--`, `<script>` or `<style>` does; an unterminated `<%` does
+  not, since the scan resumes just past it. A body whose closing delimiter never arrives is
+  yielded by neither function. An expression tag is read before a brace inside it is, so the
+  map in `<%= %{a: 1} %>` belongs to the tag; a tag-shaped pattern inside a plain attribute
+  string (`title="<.badge />"`) is still reported as a tag, which is harmless, since the
+  compiler reports no call there and nothing lands on the site.
   """
 
   alias Grasp.Index.Extract

@@ -637,22 +637,7 @@
       ],
       "arity": 1,
       "base_source": null,
-      "calls": [
-        {
-          "kind": "imported_macro",
-          "range": {
-            "end": [
-              10,
-              12
-            ],
-            "start": [
-              10,
-              5
-            ]
-          },
-          "target": "Phoenix.Component.sigil_H/2"
-        }
-      ],
+      "calls": [],
       "change": "unchanged",
       "file": "lib/sample_app_web/greet_html.ex",
       "hidden_calls": [],
@@ -710,20 +695,6 @@
       "arity": 1,
       "base_source": null,
       "calls": [
-        {
-          "kind": "imported_macro",
-          "range": {
-            "end": [
-              8,
-              12
-            ],
-            "start": [
-              8,
-              5
-            ]
-          },
-          "target": "Phoenix.Component.sigil_H/2"
-        },
         {
           "kind": "remote",
           "range": {
@@ -832,20 +803,6 @@
       "arity": 1,
       "base_source": null,
       "calls": [
-        {
-          "kind": "imported_macro",
-          "range": {
-            "end": [
-              11,
-              12
-            ],
-            "start": [
-              11,
-              5
-            ]
-          },
-          "target": "Phoenix.Component.sigil_H/2"
-        },
         {
           "kind": "remote",
           "range": {

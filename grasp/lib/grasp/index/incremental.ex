@@ -37,6 +37,11 @@ defmodule Grasp.Index.Incremental do
       module. A file left with no events at all is not rebuilt: a record built from an
       empty event set would claim the function calls nothing.
 
+  A column-less event is placed by name on a call site of its own line before the
+  hidden-call rule is consulted, here as in a full build. That is safe with events this old
+  because the mtime rule above has already dropped the stale ones, so the line such an event
+  claims is a line of the source this update is reading.
+
   Classification is per file, against the base commit the document was built with: the
   base contents of the changed files come from `git show`, and a file the base does not
   hold compares against an empty string, which is how `Grasp.Index.Changes` recognises a

@@ -22,7 +22,8 @@ path from the route to the write on a canvas you can arrange, annotate and come 
 - **Entry points.** The sidebar lists where the system starts executing — Phoenix and
   LiveView routes, Oban workers, LiveView, GenServer, supervisor, application and plug
   callbacks — so a review starts where the system starts.
-- **Templates.** A `.heex` file is a card too, and a component tag inside it is a call site.
+- **Templates.** A `.heex` file is a card too, and a component tag inside it is a call
+  site, and so is a call written in `{…}` or `<%= … %>`.
 - **Pull-request mode.** Index against a base ref and changed functions lead the sidebar, a
   modified card swaps between its source and its diff, and removed functions open from the
   base.

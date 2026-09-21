@@ -8,7 +8,7 @@ defmodule Grasp.Index.Join do
   introduce, so calls made through any of them land on it. The event's line and column
   then locate the call node inside that definition, giving a call with a clickable range.
 
-  Six rules decide what survives:
+  Seven rules decide what survives:
 
     * **Head positions.** The compiler reports its own bookkeeping at every clause head —
       `Module.compile_definition_attributes/6` and any `@on_definition` hook a library
@@ -25,25 +25,34 @@ defmodule Grasp.Index.Join do
       defence: a `~p` sigil reports its segment encoder at the interpolation's own line and
       column, which matches a real call node, and the rules below would otherwise hand the
       reader a clickable call that says nothing about what the function does.
+    * **Sigils.** A `sigil_`-prefixed target — `Phoenix.Component.sigil_H/2`,
+      `Phoenix.VerifiedRoutes.sigil_p/2` — is the macro that builds a literal out of the
+      text beside it, which says nothing about what the function calls, so it is dropped
+      wherever it was reported. A template holding thirty links would otherwise draw thirty
+      clickable calls into the same route macro.
     * **`defdelegate`.** The delegated call is reported with no column, so it can only be
       placed by kind: for a `defdelegate`, a column-less event becomes a visible call
       ranged over the delegate's own name.
     * **Column-less events.** Macro- and template-generated code is reported without a
       column — a call written inside a `{...}` interpolation is the common case. Outside a
       `defdelegate` (which turns its one column-less delegated call into a visible call),
-      such an event is first offered to the call sites the extractor parsed out of the
-      definition's interpolations: a site no column-bearing event claims, on the event's
-      line, whose written name and arity are the event's, and whose written module, where
-      the source spells one out, is the target module or a suffix of it, claims the event
-      and makes it a visible call over that site's range. Two identical calls on one line are handed to their two sites
-      in document order. Only what no site claims reaches the rule below it, where an event
-      becomes a hidden call when its line falls inside the definition's span *and* its
-      target is a definition the index holds. A macro that expands into a dependency — a
-      template engine, a query builder, `Logger` — reports the macro's own implementation,
-      not what the function set out to do, and on a real project those outnumber the
-      project calls worth seeing by more than ten to one; OTP's `:erlang` operators that
-      `and` and `>` expand to are not definitions the index holds, so they fall out the
-      same way.
+      such an event is first offered to every call site of the definition that carries a
+      callee, wherever the source wrote it: an interpolation, a `~H` body, or the clause
+      body itself. A site claims the event when it sits on the event's line, no
+      column-bearing event has claimed it, its written name and arity are the event's, and
+      its written module — where the source spells one out — is the target module or a
+      suffix of it; the event then becomes a visible call over that site's range. Nothing
+      narrower is right: an event carrying the name and arity of a call written on that
+      line *is* that call, wherever the definition wrote it, and a macro that forwards its
+      argument reports the forwarded call with the line alone. Two identical calls on one
+      line are handed to their two sites in document order. Only what no site claims
+      reaches the rule below it, where an event becomes a hidden call when its line falls
+      inside the definition's span *and* its target is a definition the index holds. A
+      macro that expands into a dependency — a template engine, a query builder, `Logger` —
+      reports the macro's own implementation, not what the function set out to do, and on a
+      real project those outnumber the project calls worth seeing by more than ten to one;
+      OTP's `:erlang` operators that `and` and `>` expand to are not definitions the index
+      holds, so they fall out the same way.
     * **Hidden calls.** An event with a column but no matching node came from
       macro-generated code — a function component in a `~H` template, code injected by
       `use` — and is kept as a hidden call so the graph stays complete even though
@@ -155,7 +164,7 @@ defmodule Grasp.Index.Join do
   defp keep?(%{target: {module, _, _}}) when module in @ignored_targets, do: false
 
   defp keep?(%{target: {module, name, _}}),
-    do: not compiler_internal?(module) and not reflection?(name)
+    do: not compiler_internal?(module) and not reflection?(name) and not sigil?(name)
 
   defp compiler_internal?(module),
     do: module |> Atom.to_string() |> String.starts_with?("elixir_")
@@ -164,6 +173,8 @@ defmodule Grasp.Index.Join do
     name = Atom.to_string(name)
     String.starts_with?(name, "__") and String.ends_with?(name, "__")
   end
+
+  defp sigil?(name), do: name |> Atom.to_string() |> String.starts_with?("sigil_")
 
   # The template a controller's `render` reaches, when the index holds it: the HTML module
   # Phoenix resolves by convention, the name the site read from the call's second argument,

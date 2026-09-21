@@ -61,9 +61,10 @@ beside that card inside the same frame.
 A card is one function: its header, its `file:line`, and its syntax-highlighted source with
 every call it makes clickable.
 
-- **Calls.** Click one to open the callee to the right. Calls the compiler resolved but that
-  have no clickable site in the source — a call a macro expanded — are listed in the card's
-  "Also calls" footer.
+- **Calls.** Click one to open the callee to the right. Calls the compiler reports at a
+  position nothing in the source can be clicked — code a macro generated, or a call in an
+  interpolation the extractor could not place — are listed in the card's "Also calls"
+  footer.
 - **The callers menu** opens a caller to the card's left. Open several and the card keeps
   one edge from each of them.
 - **`file:line`** links into your editor when `editor` is configured. A removed function's

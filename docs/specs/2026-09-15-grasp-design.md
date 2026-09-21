@@ -94,32 +94,32 @@ mix grasp.index [--base main] [--out .grasp/index.json]
    last clause's `end`; the source text is the file slice for that span. Every call node
    inside the bodies is collected with `Sourceror.get_range/1`, keyed by start
    line and column.
-3. **Join.** Each tracer event finds its definition by caller MFA (falling back to
-   file and line containment) and its call node by line and column, producing a call
-   with a target id, kind and range. An event that has a column but no matching node is
-   macro-generated (`use`-injected code) and is kept as a `hidden_call`, so the
-   callers/callees graph stays exact even where nothing is clickable. Events reported
-   with **no column at all** come from the same machinery but are mostly the expansion's
-   own plumbing — a template engine, a query builder, `Logger`, `and` and `>` compiling
-   to `:erlang` — which describes how the code was built rather than what the function
-   set out to do, and on a real project outnumbers the interesting calls by more than ten
-   to one. A column-less event therefore becomes a
-   hidden call only when its line falls inside the definition's span and its target is a
-   definition the index itself holds. That keeps the calls a `~H` body makes into the
-   project's own contexts — the controller to template to context chain — while leaving
-   the macro's implementation out. A call written in a template's `{…}` interpolation is
-   reported the same way — its line, no column — but there the source itself says what
-   was called: the extractor parses every interpolation and records its call nodes as
-   sites carrying the callee as written (`Greeter.greet`, arity 1), and a column-less
+3. **Join.** Each tracer event finds its definition by caller MFA (falling back to file and line
+   containment) and its call node by line and column, producing a call with a target id, kind and
+   range. An event that has a column but no matching node is macro-generated (`use`-injected
+   code) and is kept as a `hidden_call`, so the callers/callees graph stays exact even where
+   nothing is clickable. Events reported with **no column at all** come from the same machinery
+   but are mostly the expansion's own plumbing — a template engine, a query builder, `Logger`,
+   `and` and `>` compiling to `:erlang` — which describes how the code was built rather than what
+   the function set out to do, and on a real project outnumbers the interesting calls by more
+   than ten to one. A column-less event therefore becomes a hidden call only when its line falls
+   inside the definition's span and its target is a definition the index itself holds. That keeps
+   the calls a `~H` body makes into the project's own contexts — the controller to template to
+   context chain — while leaving the macro's implementation out. A call written in a template's
+   `{…}` interpolation is reported the same way — its line, no column — but there the source
+   itself says what was called: the extractor parses every interpolation and records its call
+   nodes as sites carrying the callee as written (`Greeter.greet`, arity 1), and a column-less
    event whose line holds a site with the same name and arity — and, when the site names a
    module, one the event's target module ends with — takes that site's range and becomes a
    visible call, before the hidden-call rule is consulted (see [Templates](#templates)).
    `defdelegate` is the other column-less case placed as a visible call, ranged over the
-   delegate's own name. A `__name__`-shaped
-   target (`__schema__/1`, `__struct__/1`, `Phoenix.VerifiedRoutes.__encode_segment__/1`)
-   is dropped before any of this, whatever position it carries: it is machinery a macro
-   expanded into, and a `~p` sigil reports its encoder at the interpolation's own line and
-   column, where the position rules would otherwise make it a clickable call.
+   delegate's own name. A `__name__`-shaped target (`__schema__/1`, `__struct__/1`,
+   `Phoenix.VerifiedRoutes.__encode_segment__/1`) is dropped before any of this, whatever
+   position it carries: it is machinery a macro expanded into, and a `~p` sigil reports its
+   encoder at the interpolation's own line and column, where the position rules would otherwise
+   make it a clickable call. A `sigil_`-prefixed target (`Phoenix.Component.sigil_H/2`,
+   `Phoenix.VerifiedRoutes.sigil_p/2`) is dropped for the same reason: the macro behind a sigil
+   builds a literal out of the text beside it and says nothing about what the function calls.
 4. **Entry points.** After the traced compile, `Application.load/1` then
    `:application.get_key(app, :modules)` gives the application's modules to iterate. Routers are found by their exported
    `__routes__/0` — `use Phoenix.Router` declares no behaviour — and everything else by
@@ -184,17 +184,17 @@ mix grasp.index [--base main] [--out .grasp/index.json]
 HEEx is code the graph knows, in four parts:
 
 - **Component tags are call sites.** The compiler reports `<.badge>` and
-  `<MyAppWeb.Components.badge>` as calls to the component function, inside inline `~H`
-  bodies and inside `.heex` files alike, but not at the same column: a local tag carries
-  the column of the `<` that opens it, a remote one the column of the function name, one
-  past the last dot. `Grasp.Index.Heex.tag_sites/2` scans template text for those tags —
-  skipping slots (`<:name>`), comments, the inside of `{…}` interpolations and expression
-  tags, and `<script>` / `<style>` bodies — and yields call sites in file coordinates (a heredoc's stripped indentation is
-  added back; a single-line `~H"…"` starts at the sigil's own column), each keyed at the
-  column the compiler reports for its form and ranged from the character after `<` to the
-  end of the name, so the tag name is the clickable span whichever form it takes. The
-  extractor adds them to the definition holding each `~H` sigil; the join then matches the
-  events as it does any call.
+  `<MyAppWeb.Components.badge>` as calls to the component function, inside inline `~H` bodies
+  and inside `.heex` files alike, but not at the same column: a local tag carries the column
+  of the `<` that opens it, a remote one the column of the function name, one past the last
+  dot. `Grasp.Index.Heex.tag_sites/2` scans template text for those tags — skipping slots
+  (`<:name>`), comments, the inside of `{…}` interpolations and expression tags, and
+  `<script>` / `<style>` bodies — and yields call sites in file coordinates (a heredoc's
+  stripped indentation is added back; a single-line `~H"…"` starts at the sigil's own column),
+  each keyed at the column the compiler reports for its form and ranged from the character
+  after `<` to the end of the name, so the tag name is the clickable span whichever form it
+  takes. The extractor adds them to the definition holding each `~H` sigil; the join then
+  matches the events as it does any call.
 - **Template files are records.** The extractor records every `embed_templates "pattern"`
   a module body calls, with the `:suffix` and `:root` options it was given. The builder
   globs each pattern under `:root` — resolved against the directory of the module that
@@ -214,21 +214,21 @@ HEEx is code the graph knows, in four parts:
   `put_view` naming another module is not followed.
 - **Interpolations are code.** `Grasp.Index.Heex.interpolations/2` yields the body of every
   `{…}` — in a tag body or as an attribute value — and of every `<%= … %>` / `<% … %>`
-  expression tag, with its file position, and the extractor parses each body with
-  Sourceror at that position (a heredoc's stripped indentation is put back on every
-  continuation line first, so every node carries file coordinates) and collects call sites
-  from the AST exactly as it does for a clause body: the range covers the callee only. An
-  EEx block opener (`<%= if x do %>`) is parsed with an `end` appended; a body that still
-  does not parse (`<% else %>`, `<% end %>`, a `phx-no-curly-interpolation` literal)
-  contributes nothing. The compiler reports an expression tag's calls with their file
-  column, so those sites join like any other; it reports a `{…}` interpolation's calls with
-  the line alone, so every site also carries the callee as written — module segments when
-  the receiver is a literal alias, `nil` otherwise, the name and the arity — and the join
-  matches a column-less event to the first unclaimed site on its line with the same name and
-  arity whose written module, if any, is a suffix of the event's target module. A call the
-  index does not hold (`Enum.join/2`) is a visible external call, as it is in a clause body.
-  Positions inside a single-line `~H"…"` follow the same key/range split component tags
-  use.
+  expression tag, with its file position, and the extractor parses each body with Sourceror at
+  that position (a heredoc's stripped indentation is put back on every continuation line
+  first, so every node carries file coordinates) and collects call sites from the AST exactly
+  as it does for a clause body: the range covers the callee only. An EEx block opener (`<%= if
+  x do %>`) is parsed with an `end` appended; a body that still does not parse (`<% else %>`,
+  `<% end %>`) contributes nothing, and a sigil inside a body (`~p"/users/#{@id}"`) yields no
+  site of its own. The compiler reports an expression tag's calls with their file column, so
+  those sites join like any other; it reports a `{…}` interpolation's calls with the line
+  alone, so every site also carries the callee as written — module segments when the receiver
+  is a literal alias, `nil` otherwise, the name, and the arity as written, counting a piped
+  value as the first argument — and the join matches a column-less event to the first
+  unclaimed site on its line with the same name and arity whose written module, if any, is a
+  suffix of the event's target module. A call the index does not hold (`Enum.join/2`) is a
+  visible external call, as it is in a clause body. Positions inside a single-line `~H"…"`
+  follow the same key/range split component tags use.
 
 Against a base ref, a template's `change` compares the whole file with the base commit's
 copy (`git show <base>:<path>`): a template the base does not have is added, one whose text
@@ -900,12 +900,16 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 
 ### Known gaps (milestone 6.1)
 
-- **A column-less event is placed by name.** Two calls of one name and arity on one line
-  of a template are handed out in document order, which the compiler's event order matches;
-  a call whose receiver is not a literal alias (`@mod.greet(x)`) matches any module. An
-  interpolation that is not a complete expression on its own (`<% else %>`, a
-  `phx-no-curly-interpolation` literal) has no sites, and a multi-line `{…}` body whose call
-  sits on a continuation line is keyed at that line, as the compiler reports it.
+- **A column-less event is placed by name.** Two calls of one name and arity on one line of a
+  template are handed out in document order, which the compiler's event order matches; a call
+  whose receiver is not a literal alias (`@mod.greet(x)`) matches any module. A receiver
+  written through a rename (`alias App.Money, as: Fmt`) is no suffix of the module the
+  compiler resolved, so that call stays hidden. An interpolation that is not a complete
+  expression on its own (`<% else %>`) has no sites; a literal inside a
+  `phx-no-curly-interpolation` element is parsed like any other interpolation and yields sites
+  no event lands on, which mis-highlights only if an event of that name and arity sits on the
+  same line. A multi-line `{…}` body whose call sits on a continuation line is keyed at that
+  line, as the compiler reports it.
 - **Only the `…Controller` → `…HTML` convention is followed.** A controller that
   `put_view`s another module, or renders through `Phoenix.Template.render/4` or
   `render_to_string`, is not linked to its template.

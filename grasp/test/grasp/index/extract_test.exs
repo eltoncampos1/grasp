@@ -177,6 +177,19 @@ defmodule Grasp.Index.ExtractTest do
     assert %{range: %{start: {7, 6}, end: {7, 43}}, template: nil} = site(render, 7, 37)
   end
 
+  test "makes no site of the ~H sigil itself, only of what its template holds" do
+    {:ok, %{definitions: defs}} = Extract.extract(@templates, "lib/sample_web/page.ex")
+    render = find(defs, "SampleWeb.Page", :render)
+
+    assert Enum.map(render.call_sites, &{&1.line, &1.column}) == [{6, 5}, {7, 37}, {7, 50}]
+  end
+
+  test "makes no site of a sigil written in an interpolation" do
+    sites = Extract.expression_sites(~S|~p"/users/#{@id}"|, 1, 1)
+
+    refute Enum.any?(sites, &(&1.callee.name == :sigil_p))
+  end
+
   @inline_template ~S'''
   defmodule SampleWeb.Inline do
     def badge(assigns), do: ~H"<.label text={@text} />"
@@ -294,6 +307,30 @@ defmodule Grasp.Index.ExtractTest do
                callee: %{module: nil, name: :@, arity: 1}
              }
            ]
+  end
+
+  test "counts a piped value as the first argument of the call it feeds" do
+    assert [%{callee: %{module: "Fmt", name: :money, arity: 1}}] =
+             "@amount |> Fmt.money()"
+             |> Extract.expression_sites(1, 1)
+             |> Enum.filter(&(&1.callee.name == :money))
+  end
+
+  test "counts the piped value at every step of a chain" do
+    assert "a |> f() |> g(1)"
+           |> Extract.expression_sites(1, 1)
+           |> Enum.map(& &1.callee)
+           |> Enum.filter(&(&1.name in [:f, :g]))
+           |> Enum.sort_by(& &1.name) == [
+             %{module: nil, name: :f, arity: 1},
+             %{module: nil, name: :g, arity: 2}
+           ]
+  end
+
+  test "adds nothing for a pipe into a variable" do
+    assert "a |> b"
+           |> Extract.expression_sites(1, 1)
+           |> Enum.map(& &1.callee.name) == [:|>]
   end
 
   test "records no written module for a receiver that is not a module" do
