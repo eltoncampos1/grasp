@@ -1107,7 +1107,6 @@
         button.type = "button";
         button.className = "copy";
         button.dataset.copy = "pre";
-        button.setAttribute("aria-hidden", "true");
         button.textContent = "Copy";
         fence.prepend(button);
       });

@@ -225,9 +225,6 @@ const Chat = {
       button.type = "button"
       button.className = "copy"
       button.dataset.copy = "pre"
-      // Hidden from the log's live region, which announces the answer rather than the
-      // controls over it; the button keeps its place in the tab order.
-      button.setAttribute("aria-hidden", "true")
       button.textContent = "Copy"
       fence.prepend(button)
     })

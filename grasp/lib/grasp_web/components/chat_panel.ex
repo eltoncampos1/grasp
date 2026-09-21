@@ -44,8 +44,8 @@ defmodule GraspWeb.ChatPanel do
   since which way the reader has scrolled is not something the server can know. Every
   assistant message carries a copy button, and the hook adds one to every code fence, for
   the same reason it owns the function links: a fence is rendered from model output, so
-  nothing is written into that output. Both are hidden from the live region, whose subject
-  is the answer rather than the controls over it.
+  nothing is written into that output. Both stay focusable and are announced like any other
+  control: a focusable element hidden from assistive technology is reachable and silent.
 
   The settings row carries the two choices a run is made under — which model the CLI runs,
   and whether the agent may only read or may also edit files and run mix. Both are the
@@ -83,10 +83,7 @@ defmodule GraspWeb.ChatPanel do
                 </details>
               <% %{kind: :msg, type: :assistant} = msg -> %>
                 <div class="msg" data-type="assistant">
-                  <%!-- The log is a live region, and the label of a control in it is read
-                  out as part of the answer; the button stays focusable, so a keyboard
-                  still reaches it. --%>
-                  <button type="button" class="copy" data-copy="msg" aria-hidden="true">
+                  <button type="button" class="copy" data-copy="msg">
                     Copy
                   </button>{msg.body}
                 </div>
