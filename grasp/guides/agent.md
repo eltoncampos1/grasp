@@ -12,7 +12,8 @@ opens the cards that answer it.
 The panel runs the [Claude Code](https://claude.com/claude-code) CLI headless, with the
 indexed project's root as its working directory and Grasp as its only MCP server. The
 transcript shows each tool call as it happens; Stop kills the run, and New conversation
-starts over.
+starts over. An answer is rendered Markdown: its code fences are highlighted as the cards
+are, and every `Mod.fun/arity` the index holds is a button that opens that function's card.
 
 ### Read and edit mode
 

@@ -24,6 +24,11 @@ echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Looking a
 echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"mcp__grasp__search_functions","input":{"query":"greet","limit":5}}]}}'
 echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"[]"}]}}'
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":" Done."}]}}'
+# One turn is Markdown — a fence, an id the fixture index holds and one it does not, and a
+# raw script tag — so the panel's rendering and sanitising are exercised end to end. Its
+# JSON string carries \n escapes, which echo would expand into real newlines and break the
+# object across lines, so this line is printed rather than echoed.
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"\n\nIt calls **greet** in `SampleApp.Greeter.greet/2`, not `Nope.Missing.fun/1`.\n\n```elixir\nSampleApp.Greeter.greet(name, greeting)\n```\n\n<script>alert(1)</script>\n"}]}}'
 
 case "$args" in
   *HANG*) sleep 5 ;;

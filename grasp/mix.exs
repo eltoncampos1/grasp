@@ -44,6 +44,7 @@ defmodule Grasp.MixProject do
       {:bandit, "~> 1.12", optional: true},
       {:jason, "~> 1.4"},
       {:lumis, "~> 0.8"},
+      {:mdex, "~> 0.13"},
       {:lazy_html, ">= 0.1.0"},
       {:anubis_mcp, "~> 2.0"},
       {:sourceror, "~> 1.10"},

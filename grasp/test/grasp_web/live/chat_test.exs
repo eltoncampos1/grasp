@@ -1,6 +1,8 @@
 defmodule GraspWeb.ChatTest do
   use GraspWeb.ConnCase, async: true
 
+  @greeter "SampleApp.Greeter.greet/2"
+
   setup %{conn: conn} do
     name = "t-#{System.unique_integer([:positive])}"
     {:ok, view, _html} = live(conn, "/s/#{name}")
@@ -35,6 +37,28 @@ defmodule GraspWeb.ChatTest do
 
     assert has_element?(view, ~s(#chat .msg[data-type="done"]), "2 turns")
     refute has_element?(view, "#chat button[disabled]", "Send")
+  end
+
+  test "an answer renders as Markdown whose function ids open cards", %{view: view, name: name} do
+    view |> element("#toggle-chat") |> render_click()
+    :ok = Grasp.Agent.subscribe(name)
+    view |> form("#chat-form", %{"prompt" => "show me greet"}) |> render_submit()
+    assert_receive {:agent, ^name, %{running?: false}}, 2_000
+
+    assert has_element?(view, ~s(#chat .msg[data-type="assistant"] strong), "greet")
+    assert has_element?(view, ~s(#chat pre.fence[data-lang="elixir"]))
+    assert has_element?(view, ~s(#chat pre.fence span.l-module), "SampleApp")
+
+    # An id the fixture index holds is a button; one it does not stays as written.
+    assert has_element?(view, ~s(#chat button.fn[phx-click="open_root"]), @greeter)
+    assert has_element?(view, "#chat code", "Nope.Missing.fun/1")
+
+    html = render(view)
+    refute html =~ "script"
+    refute html =~ "alert(1)"
+
+    view |> element(~s(#chat button.fn[phx-value-id="#{@greeter}"])) |> render_click()
+    assert has_element?(view, ~s(.card[data-function-id="#{@greeter}"]))
   end
 
   test "the model picker chooses the CLI model for the next run", %{view: view, name: name} do

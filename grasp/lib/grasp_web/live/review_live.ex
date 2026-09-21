@@ -1101,7 +1101,7 @@ defmodule GraspWeb.ReviewLive do
         <p :if={@forest.cards == %{}} class="empty">
           Pick a function from the sidebar or press <kbd>⌘K</kbd>.
         </p>
-        <.chat_panel open?={@chat_open?} agent={@agent} error={@chat_error} />
+        <.chat_panel open?={@chat_open?} agent={@agent} index={@index} error={@chat_error} />
         <div id="stage" class="stage">
           <%!-- A group's frame is measured from the cards inside it and so cannot be a box the
           server renders: the hook owns this layer and fills it on every draw. --%>

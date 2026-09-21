@@ -9,6 +9,10 @@ defmodule GraspWeb.ChatPanel do
   while it is unfocused — one arrives per line of CLI output — cannot reset a half-written
   draft, and the `Chat` hook, not a re-render, clears it after a submit.
 
+  An assistant turn is Markdown: `GraspWeb.ChatMarkdown` renders it server-side, sanitised,
+  with its code fences highlighted and every function id the index holds drawn as a button
+  that opens that function's card. A user's turn is the text they typed.
+
   A failed run is the one case where the transcript is not enough: the CLI explains itself
   on stderr, which the runner collects into `log`, so the log is offered beside an error.
 
@@ -19,16 +23,19 @@ defmodule GraspWeb.ChatPanel do
 
   use GraspWeb, :html
 
+  alias GraspWeb.ChatMarkdown
+
   attr :open?, :boolean, required: true
   attr :agent, :map, required: true
+  attr :index, :map, default: nil
   attr :error, :string, default: nil
 
   def chat_panel(assigns) do
     ~H"""
     <aside id="chat" class="chat" phx-hook="Chat" hidden={!@open?} aria-label="Agent chat">
       <div class="chat__log" id="chat-log" aria-live="polite">
-        <%= for entry <- @agent.entries, body(entry) != "" do %>
-          <div class="msg" data-type={entry.type} data-status={entry[:status]}>{body(entry)}</div>
+        <%= for row <- rows(@agent.entries, @index) do %>
+          <div class="msg" data-type={row.type} data-status={row.status}>{row.body}</div>
         <% end %>
       </div>
       <details :if={explain?(@agent)} class="chat__debug">
@@ -80,14 +87,33 @@ defmodule GraspWeb.ChatPanel do
     """
   end
 
-  # Assistant text keeps the line breaks the model wrote (`white-space: pre-wrap`), so the
-  # body is one interpolation sitting flush against its tags: any indentation the template
-  # put around it would be indentation the reader sees. An entry with nothing to say — a
-  # result that reported no cost — is skipped rather than drawn as an empty row with a gap
-  # above it.
-  defp body(%{type: :tool} = entry), do: String.trim("#{entry.name} #{entry.summary}")
-  defp body(%{type: :done} = entry), do: done_text(entry)
-  defp body(entry), do: entry.text
+  # The rows the log draws, oldest first. An entry with nothing to say — a result that
+  # reported no cost — is left out rather than drawn as an empty row with a gap above it.
+  # A row's body is one interpolation sitting flush against its tags, since a user's text
+  # keeps the line breaks it was typed with (`white-space: pre-wrap`) and any indentation
+  # the template put around it would be indentation the reader sees.
+  defp rows(entries, index) do
+    for entry <- entries, text(entry) != "" do
+      %{type: entry.type, status: Map.get(entry, :status), body: body(entry, index)}
+    end
+  end
+
+  # An assistant turn is Markdown and brings its own block structure; every other row is the
+  # text the entry carries.
+  defp body(%{type: :assistant} = entry, index),
+    do: ChatMarkdown.render(entry.text, known?(index))
+
+  defp body(entry, _index), do: text(entry)
+
+  # Which ids the chat may turn into cards: the ones the index holds, followed through the
+  # arities a default argument declares, exactly as a call site on a card resolves them. With
+  # no index nothing is linkable, since every button would open a card of nothing.
+  defp known?(nil), do: fn _id -> false end
+  defp known?(index), do: &match?({:ok, _record}, Grasp.Index.fetch_function(index, &1))
+
+  defp text(%{type: :tool} = entry), do: String.trim("#{entry.name} #{entry.summary}")
+  defp text(%{type: :done} = entry), do: done_text(entry)
+  defp text(entry), do: entry.text
 
   defp explain?(agent) do
     agent.log != [] and match?(%{type: :error}, List.last(agent.entries))

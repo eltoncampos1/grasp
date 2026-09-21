@@ -345,8 +345,26 @@ body.grasp-signatures #stage .badge { padding: 0 calc(var(--space-s) / var(--zoo
    its own. */
 .chat[hidden] { display: none; }
 .chat__log { overflow-y: auto; padding: var(--space-s) var(--space-m); display: flex; flex-direction: column; gap: var(--space-xs); }
-.msg[data-type="user"] { align-self: flex-end; background: var(--accent-soft); border-radius: var(--radius); padding: var(--space-xs) var(--space-s); }
-.msg[data-type="assistant"] { white-space: pre-wrap; }
+.msg[data-type="user"] { align-self: flex-end; background: var(--accent-soft); border-radius: var(--radius); padding: var(--space-xs) var(--space-s); white-space: pre-wrap; }
+/* An assistant turn is rendered Markdown and brings its own blocks, so the first and last
+   of them sit flush against the row and only the space between them is the panel's. */
+.msg[data-type="assistant"] > :first-child { margin-block-start: 0; }
+.msg[data-type="assistant"] > :last-child { margin-block-end: 0; }
+.msg p { margin: var(--space-s) 0; }
+.msg ul, .msg ol { margin: var(--space-s) 0; padding-inline-start: var(--space-l); }
+.msg li { margin: 2px 0; }
+.msg h1, .msg h2, .msg h3, .msg h4, .msg h5, .msg h6 { margin: var(--space-m) 0 var(--space-s); font-size: 13px; }
+.msg code { font-family: var(--mono); font-size: 12px; background: var(--bg-sunken); border-radius: 4px; padding: 0 0.3em; }
+.msg blockquote { margin: var(--space-s) 0; padding-inline-start: var(--space-s); border-inline-start: 2px solid var(--border); color: var(--fg-muted); }
+.msg table { border-collapse: collapse; display: block; overflow-x: auto; margin: var(--space-s) 0; }
+.msg th, .msg td { border: 1px solid var(--border); padding: 2px var(--space-xs); text-align: start; }
+.msg hr { border: 0; border-block-start: 1px solid var(--border); margin: var(--space-s) 0; }
+.fence { font-family: var(--mono); font-size: 12px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-s); margin: var(--space-s) 0; overflow-x: auto; }
+.fence code { background: none; padding: 0; font-size: inherit; }
+/* A named function reads as the code span it was written as and behaves like a call site:
+   the same dashed accent underline, and a click that opens the card. */
+.msg .fn { display: inline; width: auto; font-family: var(--mono); font-size: 12px; background: var(--bg-sunken); border-radius: 4px; padding: 0 0.3em; color: inherit; cursor: pointer; border-bottom: 1px dashed var(--accent); }
+.msg .fn:hover { background: var(--accent-soft); color: var(--accent); }
 .msg[data-type="tool"] { font-family: var(--mono); font-size: 12px; color: var(--fg-muted); }
 .msg[data-type="tool"][data-status="running"]::before { content: "… "; }
 .msg[data-type="tool"][data-status="done"]::before { content: "✓ "; }
