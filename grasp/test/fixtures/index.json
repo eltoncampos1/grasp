@@ -642,11 +642,11 @@
           "kind": "imported_macro",
           "range": {
             "end": [
-              9,
+              10,
               12
             ],
             "start": [
-              9,
+              10,
               5
             ]
           },
@@ -663,8 +663,8 @@
       "removed": false,
       "source": "  @doc \"A small label.\"\n  def badge(assigns) do\n    ~H\"\"\"\n    <span>{@label}</span>\n    \"\"\"\n  end",
       "span": {
-        "end_line": 12,
-        "start_line": 7
+        "end_line": 13,
+        "start_line": 8
       }
     },
     {
@@ -723,17 +723,25 @@
             ]
           },
           "target": "Phoenix.Component.sigil_H/2"
+        },
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              9,
+              35
+            ],
+            "start": [
+              9,
+              12
+            ]
+          },
+          "target": "SampleApp.Greeter.greet/1"
         }
       ],
       "change": "unchanged",
       "file": "lib/sample_app_web/greeting_component.ex",
-      "hidden_calls": [
-        {
-          "kind": "remote",
-          "line": 9,
-          "target": "SampleApp.Greeter.greet/1"
-        }
-      ],
+      "hidden_calls": [],
       "id": "SampleAppWeb.GreetingComponent.render/1",
       "kind": "def",
       "module": "SampleAppWeb.GreetingComponent",
@@ -842,6 +850,20 @@
           "kind": "remote",
           "range": {
             "end": [
+              12,
+              32
+            ],
+            "start": [
+              12,
+              9
+            ]
+          },
+          "target": "SampleApp.Greeter.greet/1"
+        },
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
               13,
               43
             ],
@@ -855,13 +877,7 @@
       ],
       "change": "unchanged",
       "file": "lib/sample_app_web/hello_live.ex",
-      "hidden_calls": [
-        {
-          "kind": "remote",
-          "line": 12,
-          "target": "SampleApp.Greeter.greet/1"
-        }
-      ],
+      "hidden_calls": [],
       "id": "SampleAppWeb.HelloLive.render/1",
       "kind": "def",
       "module": "SampleAppWeb.HelloLive",
@@ -964,25 +980,75 @@
             ]
           },
           "target": "SampleAppWeb.GreetingComponent.render/1"
+        },
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              4,
+              28
+            ],
+            "start": [
+              4,
+              5
+            ]
+          },
+          "target": "SampleApp.Greeter.greet/1"
+        },
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              5,
+              21
+            ],
+            "start": [
+              5,
+              8
+            ]
+          },
+          "target": "SampleApp.Greeter.greet/1"
+        },
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              6,
+              29
+            ],
+            "start": [
+              6,
+              16
+            ]
+          },
+          "target": "SampleApp.Greeter.greet/1"
+        },
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
+              6,
+              52
+            ],
+            "start": [
+              6,
+              39
+            ]
+          },
+          "target": "SampleApp.Greeter.greet/1"
         }
       ],
       "change": "unchanged",
       "file": "lib/sample_app_web/greet_html/show.html.heex",
-      "hidden_calls": [
-        {
-          "kind": "remote",
-          "line": 4,
-          "target": "SampleApp.Greeter.greet/1"
-        }
-      ],
+      "hidden_calls": [],
       "id": "SampleAppWeb.GreetHTML.show/1",
       "kind": "template",
       "module": "SampleAppWeb.GreetHTML",
       "name": "show",
       "removed": false,
-      "source": "<.badge label=\"hi\" />\n<SampleAppWeb.GreetingComponent.render name={@name} />\n<a href=\"/greet/bob\">again</a>\n<p>{SampleApp.Greeter.greet(@name)}</p>\n",
+      "source": "<.badge label=\"hi\" />\n<SampleAppWeb.GreetingComponent.render name={@name} />\n<a href=\"/greet/bob\">again</a>\n<p>{SampleApp.Greeter.greet(@name)}</p>\n<%= if Greeter.greet(@name) do %>\n  <span class={Greeter.greet(@name)}>{Greeter.greet(@name)}</span>\n<% end %>\n",
       "span": {
-        "end_line": 4,
+        "end_line": 7,
         "start_line": 1
       }
     },

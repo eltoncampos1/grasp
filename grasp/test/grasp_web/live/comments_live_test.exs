@@ -44,34 +44,34 @@ defmodule GraspWeb.CommentsLiveTest do
     render_click(view, "comment_start", %{
       "card" => "1",
       "side" => "new",
-      "line" => "8",
-      "end_line" => "10"
+      "line" => "9",
+      "end_line" => "11"
     })
 
-    assert has_element?(view, "#card-1 .composer__lines", "Lines 8–10")
-    assert has_element?(view, "#card-1 form.composer input[name='line'][value='8']")
+    assert has_element?(view, "#card-1 .composer__lines", "Lines 9–11")
+    assert has_element?(view, "#card-1 form.composer input[name='line'][value='9']")
 
     view |> form("#card-1 form.composer", %{"body" => body}) |> render_submit()
 
     id = thread_id(body)
-    assert %{line: 8, end_line: 10} = Comments.fetch(id) |> then(fn {:ok, thread} -> thread end)
+    assert %{line: 9, end_line: 11} = Comments.fetch(id) |> then(fn {:ok, thread} -> thread end)
 
     # No other test writes on this function, so every tinted line of the card is this
     # thread's own.
     html = card(view)
-    assert html =~ ~s|data-line="8" data-commented="true"|
     assert html =~ ~s|data-line="9" data-commented="true"|
     assert html =~ ~s|data-line="10" data-commented="true"|
-    refute html =~ ~s|data-line="7" data-commented|
-    refute html =~ ~s|data-line="11" data-commented|
+    assert html =~ ~s|data-line="11" data-commented="true"|
+    refute html =~ ~s|data-line="8" data-commented|
+    refute html =~ ~s|data-line="12" data-commented|
 
-    assert before?(html, ~s(data-line="10"), body)
-    assert before?(html, body, ~s(data-line="11"))
+    assert before?(html, ~s(data-line="11"), body)
+    assert before?(html, body, ~s(data-line="12"))
 
     assert has_element?(
              view,
              "#entries .entry--comment[phx-value-id='#{id}'] .entry__where",
-             "badge/1 · L8–L10"
+             "badge/1 · L9–L11"
            )
   end
 

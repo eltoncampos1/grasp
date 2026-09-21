@@ -448,28 +448,6 @@ defmodule GraspWeb.ReviewLiveTest do
     refute has_element?(view, "#card-2")
   end
 
-  test "a hidden call opens a card one column right and marks its footer button", %{
-    view: view,
-    name: name
-  } do
-    Session.open_root(name, @render)
-
-    refute has_element?(view, "#card-1 .card__also button.also[data-open='true']")
-
-    view |> element("#card-1 .card__also button.also", @greet_alias) |> render_click()
-
-    assert has_element?(
-             view,
-             "#node-2[data-depth='1'] #card-2[data-function-id='#{@greet}']"
-           )
-
-    assert has_element?(
-             view,
-             "#card-1 .card__also button.also[data-open='true'][data-color='0'][data-edge-to='2']",
-             @greet_alias
-           )
-  end
-
   test "opening a call pushes a focus event for the new card", %{view: view, name: name} do
     Session.open_root(name, @greet)
 
@@ -490,9 +468,25 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#card-2.stub a[href='https://hexdocs.pm/elixir/Enum.html#map/2']")
   end
 
-  test "a template's card lists the call its interpolation hides", %{view: view, name: name} do
+  test "a template's interpolated calls are clickable on its own card", %{
+    view: view,
+    name: name
+  } do
     Session.open_root(name, @show_template)
-    assert has_element?(view, "#card-1 .card__also", @greet_alias)
+
+    refute has_element?(view, "#card-1 .card__also")
+    assert count(view, "#card-1 span.call[data-target='#{@greet_alias}']") == 4
+
+    view
+    |> element(
+      "#card-1 .line[data-line='4'] span.call[phx-click='open_call'][data-target='#{@greet_alias}']"
+    )
+    |> render_click()
+
+    assert has_element?(
+             view,
+             "#node-2[data-depth='1'] #card-2[data-function-id='#{@greet}']"
+           )
   end
 
   test "a controller's render opens the template it names", %{view: view, name: name} do
@@ -537,10 +531,21 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#card-2 .card__callers ul button.caller", @show_template)
   end
 
-  test "a call made inside a template is listed under the view's card", %{view: view, name: name} do
+  test "a call made inside a ~H is clickable on the card holding it", %{view: view, name: name} do
     Session.open_root(name, @render)
 
-    assert has_element?(view, "#card-1 .card__also button.also", @greet_alias)
+    refute has_element?(view, "#card-1 .card__also")
+
+    view
+    |> element(
+      "#card-1 .line[data-line='12'] span.call[phx-click='open_call'][data-target='#{@greet_alias}']"
+    )
+    |> render_click()
+
+    assert has_element?(
+             view,
+             "#node-2[data-depth='1'] #card-2[data-function-id='#{@greet}']"
+           )
   end
 
   test "changes made through the session API render live", %{view: view, name: name} do

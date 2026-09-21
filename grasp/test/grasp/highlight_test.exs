@@ -253,21 +253,29 @@ defmodule Grasp.HighlightTest do
              |> LazyHTML.text() == "class"
     end
 
-    test "a component tag in a template is a clickable call span" do
+    test "a component tag and an interpolated call in a template are clickable call spans" do
       doc = fixture_lines("SampleAppWeb.GreetHTML.show/1")
 
-      assert doc |> LazyHTML.query("span.line") |> Enum.count() == 4
+      assert doc |> LazyHTML.query("span.line") |> Enum.count() == 7
 
       assert doc
              |> LazyHTML.query(~s(span.call[phx-click="open_call"]))
              |> LazyHTML.attribute("data-target") == [
                "SampleAppWeb.GreetHTML.badge/1",
-               "SampleAppWeb.GreetingComponent.render/1"
+               "SampleAppWeb.GreetingComponent.render/1",
+               "SampleApp.Greeter.greet/1",
+               "SampleApp.Greeter.greet/1",
+               "SampleApp.Greeter.greet/1",
+               "SampleApp.Greeter.greet/1"
              ]
 
       assert doc
              |> LazyHTML.query(~s(span.call[data-target="SampleAppWeb.GreetHTML.badge/1"]))
              |> LazyHTML.text() == ".badge"
+
+      assert doc
+             |> LazyHTML.query(~s(span.line[data-line="4"] span.call))
+             |> LazyHTML.text() == "SampleApp.Greeter.greet"
     end
 
     test "a modified template's diff numbers its own lines and nothing past them" do

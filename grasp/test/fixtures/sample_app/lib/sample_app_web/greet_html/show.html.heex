@@ -2,3 +2,6 @@
 <SampleAppWeb.GreetingComponent.render name={@name} />
 <a href="/greet/bob">again</a>
 <p>{SampleApp.Greeter.greet(@name)}</p>
+<%= if Greeter.greet(@name) do %>
+  <span class={Greeter.greet(@name)}>{Greeter.greet(@name)}</span>
+<% end %>

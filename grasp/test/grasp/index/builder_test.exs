@@ -110,17 +110,26 @@ defmodule Grasp.Index.BuilderTest do
            ]
   end
 
-  test "keeps a context call made inside a template as a hidden call", %{index: index} do
+  test "a context call written inside a ~H interpolation is a call of its own", %{index: index} do
     {:ok, render} = Grasp.Index.fetch_function(index, "SampleAppWeb.HelloLive.render/1")
 
-    assert render["hidden_calls"] == [
-             %{"target" => "SampleApp.Greeter.greet/1", "kind" => "remote", "line" => 12}
-           ]
+    assert %{"kind" => "remote", "range" => %{"start" => [12, 9], "end" => [12, 32]}} =
+             call(render, "SampleApp.Greeter.greet/1")
+
+    assert render["hidden_calls"] == []
 
     assert "SampleApp.Greeter.greet/2" in Grasp.Index.callees(
              index,
              "SampleAppWeb.HelloLive.render/1"
            )
+
+    {:ok, component} =
+      Grasp.Index.fetch_function(index, "SampleAppWeb.GreetingComponent.render/1")
+
+    assert %{"kind" => "remote", "range" => %{"start" => [9, 12], "end" => [9, 35]}} =
+             call(component, "SampleApp.Greeter.greet/1")
+
+    assert component["hidden_calls"] == []
   end
 
   test "indexes an embedded template as a record of its own", %{index: index} do
@@ -129,7 +138,7 @@ defmodule Grasp.Index.BuilderTest do
 
     assert show["kind"] == "template"
     assert show["file"] == "lib/sample_app_web/greet_html/show.html.heex"
-    assert show["span"] == %{"start_line" => 1, "end_line" => 4}
+    assert show["span"] == %{"start_line" => 1, "end_line" => 7}
     assert show["source"] == File.read!(file)
 
     assert %{"range" => %{"start" => [1, 2], "end" => [1, 8]}} =
@@ -138,7 +147,31 @@ defmodule Grasp.Index.BuilderTest do
     assert %{"range" => %{"start" => [2, 2], "end" => [2, 39]}} =
              call(show, "SampleAppWeb.GreetingComponent.render/1")
 
-    assert %{"kind" => "remote", "line" => 4} = hidden(show, "SampleApp.Greeter.greet/1")
+    assert hidden(show, "SampleApp.Greeter.greet/1") == nil
+  end
+
+  test "a template's interpolations and expression tags are calls the reader can click",
+       %{index: index} do
+    {:ok, show} = Grasp.Index.fetch_function(index, "SampleAppWeb.GreetHTML.show/1")
+
+    assert %{"kind" => "remote", "range" => %{"start" => [4, 5], "end" => [4, 28]}} =
+             call(show, "SampleApp.Greeter.greet/1")
+
+    greets =
+      show["calls"]
+      |> Enum.filter(&(&1["target"] == "SampleApp.Greeter.greet/1"))
+      |> Enum.map(&{&1["kind"], &1["range"]})
+
+    # The expression tag on line 5 carries a column the compiler reports; the attribute and
+    # body interpolations on line 6 carry none and are placed in document order.
+    assert greets == [
+             {"remote", %{"start" => [4, 5], "end" => [4, 28]}},
+             {"remote", %{"start" => [5, 8], "end" => [5, 21]}},
+             {"remote", %{"start" => [6, 16], "end" => [6, 29]}},
+             {"remote", %{"start" => [6, 39], "end" => [6, 52]}}
+           ]
+
+    assert hidden(show, "SampleApp.Greeter.greet/1") == nil
   end
 
   test "reaches the template a controller renders and the component a template calls",

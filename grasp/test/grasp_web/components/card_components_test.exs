@@ -10,6 +10,7 @@ defmodule GraspWeb.CardComponentsTest do
 
   @wrap "SampleApp.Formatter.wrap/1"
   @whisper "SampleApp.Formatter.whisper/1"
+  @greet_alias "SampleApp.Greeter.greet/1"
 
   describe "card/1" do
     test "links a card's file and line into the editor" do
@@ -205,6 +206,76 @@ defmodule GraspWeb.CardComponentsTest do
       assert html =~ ">a20</span>"
       assert html =~ "changes only"
     end
+  end
+
+  describe "the Also calls footer" do
+    test "a call the indexer could place on no line of the source is a footer button" do
+      doc = render_also_card(%{})
+
+      assert doc |> LazyHTML.query(".card__also .card__also-label") |> LazyHTML.text() ==
+               "Also calls"
+
+      button = LazyHTML.query(doc, ".card__also button.also")
+
+      assert button |> LazyHTML.text() |> String.trim() == @greet_alias
+      assert LazyHTML.attribute(button, "phx-click") == ["open_call"]
+      assert LazyHTML.attribute(button, "phx-value-card") == ["1"]
+      assert LazyHTML.attribute(button, "phx-value-target") == [@greet_alias]
+      assert LazyHTML.attribute(button, "data-open") == ["false"]
+    end
+
+    test "the footer button carries the edge to the card its call opened" do
+      doc = render_also_card(%{@greet_alias => %{to: 2, color: 0}})
+      button = LazyHTML.query(doc, ".card__also button.also")
+
+      assert LazyHTML.attribute(button, "data-open") == ["true"]
+      assert LazyHTML.attribute(button, "data-color") == ["0"]
+      assert LazyHTML.attribute(button, "data-edge-to") == ["2"]
+    end
+
+    test "a function with nothing hidden has no footer" do
+      doc = @wrap |> render_card() |> LazyHTML.from_fragment()
+
+      assert LazyHTML.query(doc, ".card__also") |> Enum.to_list() == []
+    end
+  end
+
+  # A function whose call the compiler reported without a column, on a line whose source
+  # holds no matching call site: the reader cannot point at it, so the card lists it.
+  defp render_also_card(open_calls) do
+    record = %{
+      "id" => "SampleApp.Hidden.run/0",
+      "module" => "SampleApp.Hidden",
+      "name" => "run",
+      "arity" => 0,
+      "kind" => "def",
+      "file" => "lib/sample_app/hidden.ex",
+      "span" => %{"start_line" => 1, "end_line" => 3},
+      "source" => "def run do\n  generated()\nend",
+      "base_source" => nil,
+      "change" => "unchanged",
+      "calls" => [],
+      "hidden_calls" => [%{"target" => @greet_alias, "kind" => "remote", "line" => 2}]
+    }
+
+    {:ok, index} =
+      Grasp.Index.from_document(%{
+        "version" => 1,
+        "project" => %{"root" => "/tmp/sample_app"},
+        "functions" => [record]
+      })
+
+    {forest, id} = Forest.open_root(Forest.new(), record["id"])
+
+    render_component(&CardComponents.card/1,
+      forest: forest,
+      index: index,
+      card: Forest.card(forest, id),
+      column: 0,
+      open_calls: open_calls,
+      editor: "vscode"
+    )
+    |> LazyHTML.from_fragment()
   end
 
   # A modified function long enough that `:auto` folds it, which the fixture has none of.

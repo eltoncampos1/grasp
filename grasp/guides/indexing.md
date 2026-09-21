@@ -44,6 +44,16 @@ to `Phoenix.Controller.render/2,3` in a module named `…Controller`, whose seco
 a literal atom or string, retargets at the `…HTML.<name>/1` record, so a route reads through
 its action and its page into the contexts underneath.
 
+**Interpolations are code.** The body of every `{…}` — in a tag body or an attribute value —
+and of every `<%= … %>` or `<% … %>` expression tag is parsed at its position in the file, so
+a call written inside one is a clickable call site over the callee, both on a `.heex` record
+and on the card holding a `~H`. The compiler reports a `{…}` call with a line and no column,
+and such a call is placed on the first site on that line with the same name and arity whose
+written module, where the source spells one out, ends the target module. Two caveats follow
+from that: a body that is not a complete expression on its own is parsed once more with an
+`end` appended and otherwise yields no site, and two identical calls on one line are handed
+their sites in document order rather than by what each one computes.
+
 `--base REF` classifies every function against the merge base of `REF` and `HEAD` — added,
 modified, unchanged or removed — and carries the base version of each modified function's
 source. That is what turns the canvas into a pull-request review; see
@@ -104,9 +114,6 @@ caller has no definition record is dropped.
 - **Macro-generated functions.** A function a `use` injects has no source of its own to
   extract. The one exception is `embed_templates`, whose functions have a source: the template
   file.
-- **Interpolated calls in templates stay hidden.** A call written in `{…}` inside a template
-  or a `~H` body is reported with no column, so it reaches the graph as a hidden call on the
-  template or the function holding the `~H`. Only component tags are clickable.
 - **Only the `…Controller` → `…HTML` convention is followed.** A controller that `put_view`s
   another module, or renders through `Phoenix.Template.render/4` or `render_to_string`, is not
   linked to its template.
