@@ -191,7 +191,8 @@ defmodule Grasp.Index.ExtractTest do
              line: 3,
              column: 1,
              range: %{start: {2, 31}, end: {2, 37}},
-             template: nil
+             template: nil,
+             callee: nil
            }
   end
 
@@ -231,6 +232,116 @@ defmodule Grasp.Index.ExtractTest do
     assert [emails, texts] = embeds
     assert %{pattern: "emails/*", suffix: "_html", root: "../shared"} = emails
     assert %{pattern: "texts/*", suffix: nil, root: nil} = texts
+  end
+
+  test "records the callee as written on every site the Elixir AST produces" do
+    {:ok, %{definitions: defs}} = Extract.extract(@source, "lib/sample.ex")
+
+    assert %{callee: %{module: "Formatter", name: :wrap, arity: 1}} =
+             site(find(defs, "Sample", :greet), 6, 22)
+
+    assert %{callee: %{module: nil, name: :shout, arity: 1}} =
+             site(find(defs, "Sample", :greet), 7, 19)
+  end
+
+  test "records the written arity of a capture rather than its argument list" do
+    {:ok, %{definitions: defs}} = Extract.extract(@kinds, "lib/ops.ex")
+    all = find(defs, "Ops", :all)
+
+    assert %{callee: %{module: "Enum", name: :map, arity: 2}} = site(all, 5, 27)
+    assert %{callee: %{module: nil, name: :double, arity: 1}} = site(all, 5, 38)
+  end
+
+  test "parses an interpolation body at the file position it was given" do
+    assert Extract.expression_sites("SampleApp.Greeter.greet(@name)", 12, 8) == [
+             %{
+               line: 12,
+               column: 26,
+               range: %{start: {12, 8}, end: {12, 31}},
+               template: nil,
+               callee: %{module: "SampleApp.Greeter", name: :greet, arity: 1}
+             },
+             %{
+               line: 12,
+               column: 32,
+               range: %{start: {12, 32}, end: {12, 33}},
+               template: nil,
+               callee: %{module: nil, name: :@, arity: 1}
+             }
+           ]
+  end
+
+  test "parses a body that only becomes an expression once an end is added" do
+    assert %{callee: %{module: nil, name: :ok?, arity: 1}} =
+             Extract.expression_sites(" if ok?(@u) do ", 3, 8)
+             |> Enum.find(&(&1.column == 12))
+  end
+
+  test "yields nothing for a body no parse can make an expression of" do
+    assert Extract.expression_sites(" else ", 1, 1) == []
+    assert Extract.expression_sites(" end ", 1, 1) == []
+  end
+
+  # `@name` is the module-attribute node the walk has always produced a site for; the
+  # compiler reports no call there, so nothing ever lands on it.
+  test "reads a module attribute the way a clause body does" do
+    assert Extract.expression_sites("@name", 1, 1) == [
+             %{
+               line: 1,
+               column: 1,
+               range: %{start: {1, 1}, end: {1, 2}},
+               template: nil,
+               callee: %{module: nil, name: :@, arity: 1}
+             }
+           ]
+  end
+
+  @interpolated ~S'''
+  defmodule SampleWeb.Interp do
+    def render(assigns) do
+      ~H"""
+      <p>{SampleApp.Greeter.greet(@name)}</p>
+      """
+    end
+  end
+  '''
+
+  test "turns a call written inside a ~H heredoc interpolation into a call site" do
+    {:ok, %{definitions: defs}} = Extract.extract(@interpolated, "lib/sample_web/interp.ex")
+
+    assert %{
+             range: %{start: {4, 9}, end: {4, 32}},
+             callee: %{module: "SampleApp.Greeter", name: :greet, arity: 1}
+           } = site(find(defs, "SampleWeb.Interp", :render), 4, 27)
+  end
+
+  @inline_interpolated ~S'''
+  defmodule SampleWeb.InlineInterp do
+    def badge(assigns), do: ~H"<p>{shout(@x)}</p>"
+  end
+  '''
+
+  test "keys a single-line ~H sigil's interpolated call where the compiler reports it" do
+    {:ok, %{definitions: defs}} =
+      Extract.extract(@inline_interpolated, "lib/sample_web/inline_interp.ex")
+
+    assert site(find(defs, "SampleWeb.InlineInterp", :badge), 3, 5) == %{
+             line: 3,
+             column: 5,
+             range: %{start: {2, 34}, end: {2, 39}},
+             template: nil,
+             callee: %{module: nil, name: :shout, arity: 1}
+           }
+  end
+
+  test "collects both the tags and the interpolations of a template" do
+    template = "<.badge label={label(@x)} />\n"
+
+    assert Extract.template_sites(template, {1, 0}, nil) |> Enum.map(&{&1.column, &1.callee}) == [
+             {1, nil},
+             {16, %{module: nil, name: :label, arity: 1}},
+             {22, %{module: nil, name: :@, arity: 1}}
+           ]
   end
 
   test "leaves template nil on a call site that is not a render call" do

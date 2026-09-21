@@ -32,9 +32,12 @@ defmodule Grasp.Index.TemplatesTest do
              head_ranges: []
            } = show
 
+    # The two component tags, and the `@name` the second one interpolates, which the walk
+    # reads as the module-attribute node it is in a clause body.
     assert Enum.map(show.call_sites, & &1.range) == [
              %{start: {1, 2}, end: {1, 8}},
-             %{start: {2, 2}, end: {2, 39}}
+             %{start: {2, 2}, end: {2, 39}},
+             %{start: {2, 46}, end: {2, 47}}
            ]
 
     assert %{name: :edit, end_line: 1, call_sites: []} = edit
@@ -47,6 +50,26 @@ defmodule Grasp.Index.TemplatesTest do
              file: "lib/sample_app_web/greet_html/legacy.html.eex",
              call_sites: []
            } = legacy
+  end
+
+  @tag :tmp_dir
+  test "gives a call written inside an interpolation a site of its own", %{tmp_dir: root} do
+    write!(root, "lib/sample_app_web/greet_html.ex", "defmodule SampleAppWeb.GreetHTML do\nend\n")
+
+    write!(
+      root,
+      "lib/sample_app_web/greet_html/show.html.heex",
+      "<p>{SampleApp.Greeter.greet(@name)}</p>\n"
+    )
+
+    assert [show] = Templates.definitions(root, [embed()], [])
+
+    assert %{
+             line: 1,
+             column: 23,
+             range: %{start: {1, 5}, end: {1, 28}},
+             callee: %{module: "SampleApp.Greeter", name: :greet, arity: 1}
+           } = Enum.find(show.call_sites, &match?(%{callee: %{name: :greet}}, &1))
   end
 
   @tag :tmp_dir

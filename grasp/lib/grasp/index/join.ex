@@ -29,15 +29,21 @@ defmodule Grasp.Index.Join do
       placed by kind: for a `defdelegate`, a column-less event becomes a visible call
       ranged over the delegate's own name.
     * **Column-less events.** Macro- and template-generated code is reported without a
-      column — a context call inside a `~H` body is the common case. Outside a
+      column — a call written inside a `{...}` interpolation is the common case. Outside a
       `defdelegate` (which turns its one column-less delegated call into a visible call),
-      such an event becomes a hidden call only when its line falls inside the definition's
-      span *and* its target is a definition the index holds. A macro that expands into a
-      dependency — a template engine, a query builder, `Logger` — reports the macro's own
-      implementation, not what the function set out to do, and on a real project those
-      outnumber the project calls worth seeing by more than ten to one; OTP's `:erlang`
-      operators that `and` and `>` expand to are not definitions the index holds, so they
-      fall out the same way.
+      such an event is first offered to the call sites the extractor parsed out of the
+      definition's interpolations: an unclaimed site on the event's line whose written name
+      and arity are the event's, and whose written module, where the source spells one out,
+      is the target module or a suffix of it, claims the event and makes it a visible call
+      over that site's range. Two identical calls on one line are handed to their two sites
+      in document order. Only what no site claims reaches the rule below it, where an event
+      becomes a hidden call when its line falls inside the definition's span *and* its
+      target is a definition the index holds. A macro that expands into a dependency — a
+      template engine, a query builder, `Logger` — reports the macro's own implementation,
+      not what the function set out to do, and on a real project those outnumber the
+      project calls worth seeing by more than ten to one; OTP's `:erlang` operators that
+      `and` and `>` expand to are not definitions the index holds, so they fall out the
+      same way.
     * **Hidden calls.** An event with a column but no matching node came from
       macro-generated code — a function component in a `~H` template, code injected by
       `use` — and is kept as a hidden call so the graph stays complete even though
@@ -178,14 +184,39 @@ defmodule Grasp.Index.Join do
 
   defp template_call(_event, _definition, _site, _indexed), do: nil
 
+  # The site that wrote the call an event reports with no column: the first one left on
+  # that line whose name and arity are the event's, and whose module, where the source
+  # names one, is the module the compiler resolved or the tail of it — a call written
+  # through an alias (`Greeter.greet(@name)`) reports `SampleApp.Greeter`.
+  defp named_site(sites, claimed, event) do
+    {module, name, arity} = event.target
+
+    Enum.find(sites, fn site ->
+      site.line == event.line and site.callee.name == name and site.callee.arity == arity and
+        written_module?(site.callee.module, module) and
+        not MapSet.member?(claimed, {site.line, site.column})
+    end)
+  end
+
+  defp written_module?(nil, _module), do: true
+
+  defp written_module?(written, module) do
+    resolved = inspect(module)
+    resolved == written or String.ends_with?(resolved, "." <> written)
+  end
+
   defp build(definition, events, indexed, unmatched) do
     sites = Map.new(definition.call_sites, &{{&1.line, &1.column}, &1})
+
+    named =
+      definition.call_sites |> Enum.filter(& &1.callee) |> Enum.sort_by(&{&1.line, &1.column})
+
     heads = MapSet.new(definition.head_positions)
     delegate_range = if definition.kind == :defdelegate, do: List.first(definition.head_ranges)
     span = definition.start_line..definition.end_line
 
-    {calls, hidden} =
-      Enum.reduce(events, {[], []}, fn event, {calls, hidden} ->
+    {calls, hidden, _claimed} =
+      Enum.reduce(events, {[], [], MapSet.new()}, fn event, {calls, hidden, claimed} ->
         {module, name, arity} = event.target
         target = function_id(module, name, arity)
         call = fn range -> %{target: target, kind: event.kind, range: range} end
@@ -193,30 +224,41 @@ defmodule Grasp.Index.Join do
 
         cond do
           MapSet.member?(heads, {event.line, event.column}) ->
-            {calls, hidden}
+            {calls, hidden, claimed}
 
           event.column == nil and event.target == @definition_bookkeeping ->
-            {calls, hidden}
+            {calls, hidden, claimed}
 
           event.column == nil ->
             cond do
-              delegate_range -> {[call.(delegate_range) | calls], hidden}
-              not MapSet.member?(indexed, target) -> {calls, hidden}
-              event.line in span -> {calls, [hidden_call | hidden]}
-              true -> {calls, hidden}
+              delegate_range ->
+                {[call.(delegate_range) | calls], hidden, claimed}
+
+              site = named_site(named, claimed, event) ->
+                {[call.(site.range) | calls], hidden,
+                 MapSet.put(claimed, {site.line, site.column})}
+
+              not MapSet.member?(indexed, target) ->
+                {calls, hidden, claimed}
+
+              event.line in span ->
+                {calls, [hidden_call | hidden], claimed}
+
+              true ->
+                {calls, hidden, claimed}
             end
 
           true ->
             case Map.fetch(sites, {event.line, event.column}) do
               {:ok, site} ->
                 resolved = template_call(event, definition, site, indexed) || call.(site.range)
-                {[resolved | calls], hidden}
+                {[resolved | calls], hidden, claimed}
 
               :error when unmatched == :hide ->
-                {calls, [hidden_call | hidden]}
+                {calls, [hidden_call | hidden], claimed}
 
               :error ->
-                {calls, hidden}
+                {calls, hidden, claimed}
             end
         end
       end)

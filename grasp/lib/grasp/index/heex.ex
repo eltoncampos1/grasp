@@ -1,7 +1,8 @@
 defmodule Grasp.Index.Heex do
   @moduledoc """
-  Finds the component tags in HEEx template text and reports each one at the position the
-  compiler reports for the call it becomes.
+  Reads HEEx template text and reports the two things in it a reader can click through:
+  the component tags, at the position the compiler reports for the call each one becomes,
+  and the body of every interpolation, for `Grasp.Index.Extract` to parse as Elixir.
 
   Phoenix compiles `<.badge />` into a call to `badge/1` and `<Alias.Path.fun />` into a
   call to `Alias.Path.fun/1`, and the position it attaches to the two differs: a local tag
@@ -20,23 +21,33 @@ defmodule Grasp.Index.Heex do
   single-line `~H"..."`) passes the file column of its first character as a third argument;
   it applies to the first line only.
 
-  Four kinds of text are skipped, because none of them compiles to a component call:
-  slot tags (`<:inner>`, which are not components), `<%!-- --%>` and `<!-- -->` comments,
-  `{...}` interpolation, and the body of a `<script>` or `<style>` element, which HEEx
-  treats as raw text where a brace is a brace and a `<` opens nothing.
+  An interpolation — a `{...}` in a tag body or an attribute value, or an EEx expression
+  tag (`<%= ... %>`, `<% ... %>`) — is Elixir, so its body is yielded rather than dropped:
+  `interpolations/2,3` returns the text between the delimiters at the file position of its
+  first character, with every continuation line prefixed by `indent` spaces so that parsing
+  the text at that position reads file coordinates on every line. A body is yielded whole,
+  whatever it says: `<% end %>` and `<%# a note %>` are yielded like any other, and the
+  parser that fails on them makes no site.
 
-  Interpolation is skipped by counting brace depth, not by parsing Elixir: a brace inside a
-  string inside an interpolation (`{"{"}`) is counted like any other, so an unbalanced one
-  swallows the rest of the template, as an unterminated `<%!--`, `<!--`, `<script>` or
-  `<style>` does. EEx expression tags (`<%= ... %>`) are not skipped, so a tag written
-  inside a string in one is reported, and so is a tag-shaped pattern inside a plain
-  attribute string (`title="<.badge />"`) — harmless in both cases, since the compiler
-  reports no call there and nothing lands on the site.
+  Three kinds of text are skipped, because none of them is a component call or Elixir:
+  slot tags (`<:inner>`, which are not components), `<%!-- --%>` and `<!-- -->` comments,
+  and the body of a `<script>` or `<style>` element, which HEEx treats as raw text where a
+  brace is a brace and a `<` opens nothing.
+
+  A `{...}` body is found by counting brace depth, not by parsing Elixir: a brace inside a
+  string (`{"{"}`) is counted like any other, so an unbalanced one swallows the rest of the
+  template, as an unterminated `<%!--`, `<!--`, `<script>` or `<style>` does. A body whose
+  closing delimiter never arrives is yielded by neither function. An expression tag is read
+  before a brace inside it is, so the map in `<%= %{a: 1} %>` belongs to the tag; a
+  tag-shaped pattern inside a plain attribute string (`title="<.badge />"`) is still
+  reported as a tag, which is harmless, since the compiler reports no call there and
+  nothing lands on the site.
   """
 
   alias Grasp.Index.Extract
 
   @type site :: Extract.call_site()
+  @type interpolation :: %{line: pos_integer(), column: pos_integer(), text: String.t()}
 
   # A local tag (`.name`) or a remote one (`Alias.Path.name`) directly after the `<`. The
   # lookahead keeps the match off names the HEEx tokenizer would read as one longer name.
@@ -56,10 +67,30 @@ defmodule Grasp.Index.Heex do
   """
   @spec tag_sites(String.t(), {pos_integer(), non_neg_integer()}) :: [site()]
   @spec tag_sites(String.t(), {pos_integer(), non_neg_integer()}, pos_integer() | nil) :: [site()]
-  def tag_sites(text, first_line_and_indent, first_line_column \\ nil)
+  def tag_sites(text, first_line_and_indent, first_line_column \\ nil) do
+    for {:tag, site} <- found(text, first_line_and_indent, first_line_column), do: site
+  end
 
-  def tag_sites(text, {first_line, indent}, first_line_column)
-      when is_binary(text) and is_integer(first_line) and is_integer(indent) do
+  @doc """
+  Scans `text` for interpolations, returning the body of each in document order.
+
+  The position arguments are `tag_sites/3`'s. `line` and `column` are the file position of
+  the body's first character, and `text` is the body with each continuation line prefixed
+  by `indent` spaces, so a parse of `text` started at that position reads the file's own
+  coordinates on every line.
+  """
+  @spec interpolations(String.t(), {pos_integer(), non_neg_integer()}) :: [interpolation()]
+  @spec interpolations(String.t(), {pos_integer(), non_neg_integer()}, pos_integer() | nil) :: [
+          interpolation()
+        ]
+  def interpolations(text, first_line_and_indent, first_line_column \\ nil) do
+    for {:interpolation, body} <- found(text, first_line_and_indent, first_line_column), do: body
+  end
+
+  # One pass finds both kinds, so a tag and an interpolation can never disagree about what
+  # the text between them is.
+  defp found(text, {first_line, indent}, first_line_column)
+       when is_binary(text) and is_integer(first_line) and is_integer(indent) do
     state = %{line: first_line, column: first_line_column || indent + 1, indent: indent}
 
     text
@@ -67,49 +98,71 @@ defmodule Grasp.Index.Heex do
     |> Enum.reverse()
   end
 
-  defp scan(<<>>, _state, sites), do: sites
+  defp scan(<<>>, _state, found), do: found
 
-  defp scan(<<"\r\n", rest::binary>>, state, sites), do: scan(rest, newline(state), sites)
-  defp scan(<<"\n", rest::binary>>, state, sites), do: scan(rest, newline(state), sites)
+  defp scan(<<"\r\n", rest::binary>>, state, found), do: scan(rest, newline(state), found)
+  defp scan(<<"\n", rest::binary>>, state, found), do: scan(rest, newline(state), found)
 
-  defp scan(<<"<%!--", rest::binary>>, state, sites) do
+  defp scan(<<"<%!--", rest::binary>>, state, found) do
     {rest, state} = skip_past(rest, advance(state, 5), "--%>")
-    scan(rest, state, sites)
+    scan(rest, state, found)
   end
 
-  defp scan(<<"<!--", rest::binary>>, state, sites) do
+  defp scan(<<"<!--", rest::binary>>, state, found) do
     {rest, state} = skip_past(rest, advance(state, 4), "-->")
-    scan(rest, state, sites)
+    scan(rest, state, found)
   end
 
-  defp scan(<<"{", rest::binary>>, state, sites) do
-    {rest, state} = skip_braces(rest, advance(state, 1), 1)
-    scan(rest, state, sites)
+  defp scan(<<"<%=", rest::binary>>, state, found), do: expression(rest, state, found, 3)
+  defp scan(<<"<%", rest::binary>>, state, found), do: expression(rest, state, found, 2)
+
+  defp scan(<<"{", rest::binary>>, state, found) do
+    body = advance(state, 1)
+    {rest, state, text, closed?} = read_braces(rest, body, 1, [])
+    scan(rest, state, collect(found, body, text, closed?))
   end
 
-  defp scan(<<"<script", rest::binary>>, state, sites) when raw_boundary(rest) do
+  defp scan(<<"<script", rest::binary>>, state, found) when raw_boundary(rest) do
     {rest, state} = skip_past(rest, advance(state, 7), "</script>")
-    scan(rest, state, sites)
+    scan(rest, state, found)
   end
 
-  defp scan(<<"<style", rest::binary>>, state, sites) when raw_boundary(rest) do
+  defp scan(<<"<style", rest::binary>>, state, found) when raw_boundary(rest) do
     {rest, state} = skip_past(rest, advance(state, 6), "</style>")
-    scan(rest, state, sites)
+    scan(rest, state, found)
   end
 
-  defp scan(<<"<", rest::binary>>, state, sites) do
+  defp scan(<<"<", rest::binary>>, state, found) do
     case tag_site(rest, state) do
       nil ->
-        scan(rest, advance(state, 1), sites)
+        scan(rest, advance(state, 1), found)
 
       {site, size} ->
         <<_name::binary-size(^size), after_name::binary>> = rest
-        scan(after_name, advance(state, size + 1), [site | sites])
+        scan(after_name, advance(state, size + 1), [{:tag, site} | found])
     end
   end
 
-  defp scan(<<_::utf8, rest::binary>>, state, sites), do: scan(rest, advance(state, 1), sites)
-  defp scan(<<_, rest::binary>>, state, sites), do: scan(rest, advance(state, 1), sites)
+  defp scan(<<_::utf8, rest::binary>>, state, found), do: scan(rest, advance(state, 1), found)
+  defp scan(<<_, rest::binary>>, state, found), do: scan(rest, advance(state, 1), found)
+
+  defp expression(rest, state, found, delimiter_size) do
+    body = advance(state, delimiter_size)
+    {rest, state, text, closed?} = read_until(rest, body, "%>", [])
+    scan(rest, state, collect(found, body, text, closed?))
+  end
+
+  defp collect(found, _body, _text, false), do: found
+
+  defp collect(found, body, text, true) do
+    interpolation = %{
+      line: body.line,
+      column: body.column,
+      text: text |> Enum.reverse() |> IO.iodata_to_binary()
+    }
+
+    [{:interpolation, interpolation} | found]
+  end
 
   # Returns the site and the byte size of the name it matched, so the scan resumes past the
   # name rather than inside it.
@@ -128,7 +181,8 @@ defmodule Grasp.Index.Heex do
             start: {state.line, start},
             end: {state.line, name_column + String.length(name)}
           },
-          template: nil
+          template: nil,
+          callee: nil
         }
 
         {site, byte_size(matched)}
@@ -161,26 +215,58 @@ defmodule Grasp.Index.Heex do
     end
   end
 
-  defp skip_braces(<<>>, state, _depth), do: {<<>>, state}
-  defp skip_braces(binary, state, 0), do: {binary, state}
+  # The body of an expression tag: everything up to `marker`, which is consumed.
+  defp read_until(<<>>, state, _marker, text), do: {<<>>, state, text, false}
 
-  defp skip_braces(<<"\r\n", rest::binary>>, state, depth),
-    do: skip_braces(rest, newline(state), depth)
+  defp read_until(binary, state, marker, text) do
+    size = byte_size(marker)
 
-  defp skip_braces(<<"\n", rest::binary>>, state, depth),
-    do: skip_braces(rest, newline(state), depth)
+    case binary do
+      <<^marker::binary-size(^size), rest::binary>> ->
+        {rest, advance(state, size), text, true}
 
-  defp skip_braces(<<"{", rest::binary>>, state, depth),
-    do: skip_braces(rest, advance(state, 1), depth + 1)
+      <<"\r\n", rest::binary>> ->
+        read_until(rest, newline(state), marker, [break(state, "\r\n") | text])
 
-  defp skip_braces(<<"}", rest::binary>>, state, depth),
-    do: skip_braces(rest, advance(state, 1), depth - 1)
+      <<"\n", rest::binary>> ->
+        read_until(rest, newline(state), marker, [break(state, "\n") | text])
 
-  defp skip_braces(<<_::utf8, rest::binary>>, state, depth),
-    do: skip_braces(rest, advance(state, 1), depth)
+      <<character::utf8, rest::binary>> ->
+        read_until(rest, advance(state, 1), marker, [<<character::utf8>> | text])
 
-  defp skip_braces(<<_, rest::binary>>, state, depth),
-    do: skip_braces(rest, advance(state, 1), depth)
+      <<byte, rest::binary>> ->
+        read_until(rest, advance(state, 1), marker, [<<byte>> | text])
+    end
+  end
+
+  # The body of a `{...}`: everything up to the brace that closes the one already opened.
+  defp read_braces(<<>>, state, _depth, text), do: {<<>>, state, text, false}
+
+  defp read_braces(<<"}", rest::binary>>, state, 1, text),
+    do: {rest, advance(state, 1), text, true}
+
+  defp read_braces(<<"}", rest::binary>>, state, depth, text),
+    do: read_braces(rest, advance(state, 1), depth - 1, ["}" | text])
+
+  defp read_braces(<<"{", rest::binary>>, state, depth, text),
+    do: read_braces(rest, advance(state, 1), depth + 1, ["{" | text])
+
+  defp read_braces(<<"\r\n", rest::binary>>, state, depth, text),
+    do: read_braces(rest, newline(state), depth, [break(state, "\r\n") | text])
+
+  defp read_braces(<<"\n", rest::binary>>, state, depth, text),
+    do: read_braces(rest, newline(state), depth, [break(state, "\n") | text])
+
+  defp read_braces(<<character::utf8, rest::binary>>, state, depth, text),
+    do: read_braces(rest, advance(state, 1), depth, [<<character::utf8>> | text])
+
+  defp read_braces(<<byte, rest::binary>>, state, depth, text),
+    do: read_braces(rest, advance(state, 1), depth, [<<byte>> | text])
+
+  # A heredoc reaches this module with its indentation stripped, so a continuation line of
+  # a body opens `indent` columns to the left of where the file has it; writing the spaces
+  # back puts a parse of the body on the file's own columns.
+  defp break(state, newline), do: [newline, String.duplicate(" ", state.indent)]
 
   defp newline(state), do: %{state | line: state.line + 1, column: state.indent + 1}
   defp advance(state, count), do: %{state | column: state.column + count}

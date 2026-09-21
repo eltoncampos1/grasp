@@ -16,16 +16,26 @@ defmodule Grasp.Index.Extract do
   (`Enum\n.map(list, f)`) starts the range one line above the name the compiler reports.
 
   A `~H` sigil in a definition body contributes call sites too: `Grasp.Index.Heex` scans
-  the template for component tags, and the sites it returns join the ones the Elixir AST
-  produced. A heredoc `~H\"""` starts on the line after the sigil, with the `indentation`
-  Sourceror records on the sigil's string stripped from every line, which is where the file
-  has it too. A single-line `~H"..."` is the one place a site's key and its range part
-  ways: Phoenix compiles it as though it began on the next line at column 1, so the site is
-  keyed there — where the tracer reports its tags — while the `range` stays on the sigil's
-  own line, three columns past the `~`, where the reader sees the tag. A site made from a
-  `render` call whose second argument is a literal atom or string also carries that literal
-  as `template`, with any `.html` suffix removed, which is the name of the template the
-  call renders.
+  the template for component tags and for interpolations, and the sites both produce join
+  the ones the Elixir AST produced. A heredoc `~H\"""` starts on the line after the sigil,
+  with the `indentation` Sourceror records on the sigil's string stripped from every line,
+  which is where the file has it too. A single-line `~H"..."` is the one place a site's key
+  and its range part ways: Phoenix compiles it as though it began on the next line at
+  column 1, so the site is keyed there — where the tracer reports its calls — while the
+  `range` stays on the sigil's own line, three columns past the `~`, where the reader sees
+  the code. A site made from a `render` call whose second argument is a literal atom or
+  string also carries that literal as `template`, with any `.html` suffix removed, which is
+  the name of the template the call renders.
+
+  An interpolation is Elixir, so its body is parsed rather than skipped: `Sourceror` reads
+  it at the file position `Grasp.Index.Heex` reports, and the same walk that reads a clause
+  body collects its call sites, so a call written in a tag body, an attribute value or an
+  EEx expression tag is a site a reader can click. A body that is only part of an
+  expression — the `if ... do` half of a block — is retried with an `end` appended, and a
+  body no parse can make sense of (`else`, `end`, a comment) contributes nothing. Every
+  site also records its `callee`, the call as it is written, because the compiler reports
+  the calls of a `{...}` interpolation with a line and no column at all: `Grasp.Index.Join`
+  places those by name, arity and the module the source spells out.
 
   Each definition also records where its clause heads are: `head_positions` is the
   `{line, column}` of the function name in every clause and `head_ranges` the matching
@@ -38,11 +48,19 @@ defmodule Grasp.Index.Extract do
 
   @type range :: %{start: {pos_integer(), pos_integer()}, end: {pos_integer(), pos_integer()}}
   @type position :: {pos_integer(), pos_integer()}
+  @type callee :: %{module: String.t() | nil, name: atom(), arity: non_neg_integer()}
+  # `callee` is the call as written: `module` is the literal receiver — an alias joined
+  # with "." (`"Greeter"`, `"SampleApp.Greeter"`) or an Erlang module's own text — and is
+  # `nil` for a local or imported call and for a receiver that is an expression
+  # (`mod.f(x)`); `name` is the function and `arity` the arity as written, which for a
+  # capture (`&Mod.f/2`) is the one after the slash. A component tag has no callee: the
+  # compiler always reports it with a column, so it is never placed by name.
   @type call_site :: %{
           line: pos_integer(),
           column: pos_integer(),
           range: range(),
-          template: String.t() | nil
+          template: String.t() | nil,
+          callee: callee() | nil
         }
   # `:template` is not a kind this module reads: `Grasp.Index.Templates` builds a definition
   # of that kind, in this same shape, for every file an `embed_templates` pattern matches.
@@ -321,16 +339,66 @@ defmodule Grasp.Index.Extract do
         _ -> {head, []}
       end
 
-    searched = defaults(signature) ++ guard ++ rest
+    collect_sites(defaults(signature) ++ guard ++ rest)
+  end
 
+  @doc """
+  Call sites for the Elixir written inside one interpolation body.
+
+  `text` is parsed at `line` and `column`, the file position of its first character, so
+  every site it yields carries the file's own coordinates. A body that does not parse is
+  retried with an `end` appended, which is what an expression tag that opens a block
+  (`<%= if allowed?(@user) do %>`) needs; a body that still does not parse yields nothing.
+  """
+  @spec expression_sites(String.t(), pos_integer(), pos_integer()) :: [call_site()]
+  def expression_sites(text, line, column)
+      when is_binary(text) and is_integer(line) and is_integer(column) do
+    options = [line: line, column: column]
+
+    case Sourceror.parse_string(text, options) do
+      {:ok, ast} ->
+        collect_sites(ast)
+
+      {:error, _reason} ->
+        case Sourceror.parse_string(text <> "\nend", options) do
+          {:ok, ast} -> collect_sites(ast)
+          {:error, _reason} -> []
+        end
+    end
+  end
+
+  @doc """
+  Every call site a template's text holds: its component tags and its interpolations.
+
+  The position arguments are `Grasp.Index.Heex.tag_sites/3`'s. Sites are returned in
+  document order, one per position, which is the order and the shape `Grasp.Index.Join`
+  reads them in.
+  """
+  @spec template_sites(String.t(), {pos_integer(), non_neg_integer()}, pos_integer() | nil) :: [
+          call_site()
+        ]
+  def template_sites(text, first_line_and_indent, first_line_column \\ nil) do
+    interpolated =
+      text
+      |> Heex.interpolations(first_line_and_indent, first_line_column)
+      |> Enum.flat_map(&expression_sites(&1.text, &1.line, &1.column))
+
+    (Heex.tag_sites(text, first_line_and_indent, first_line_column) ++ interpolated)
+    |> Enum.sort_by(&{&1.line, &1.column})
+    |> Enum.uniq_by(&{&1.line, &1.column})
+  end
+
+  # One walk reads a clause body and an interpolation body alike, so a call written in a
+  # template is the same kind of site as a call written in Elixir.
+  defp collect_sites(ast) do
     {_, sites} =
-      Macro.prewalk(searched, [], fn
-        {:&, _, [{:/, _, [target, _arity]}]} = node, sites ->
-          {node, add_site(sites, target)}
+      Macro.prewalk(ast, [], fn
+        {:&, _, [{:/, _, [target, arity]}]} = node, sites ->
+          {node, add_site(sites, target, written_arity(arity))}
 
         {:sigil_H, _meta, [{:<<>>, _str_meta, [content]}, _modifiers]} = node, sites
         when is_binary(content) ->
-          {node, Enum.reverse(tag_sites(node)) ++ add_site(sites, node)}
+          {node, Enum.reverse(sigil_sites(node)) ++ add_site(sites, node)}
 
         {{:., _, _}, _, args} = node, sites when is_list(args) ->
           {node, add_site(sites, node)}
@@ -346,45 +414,77 @@ defmodule Grasp.Index.Extract do
     sites |> Enum.reverse() |> Enum.uniq_by(&{&1.line, &1.column})
   end
 
+  defp written_arity({:__block__, _meta, [arity]}) when is_integer(arity), do: arity
+  defp written_arity(_other), do: nil
+
   defp defaults({_name, _meta, args}) when is_list(args),
     do: for({:\\, _, [_arg, default]} <- args, do: default)
 
   defp defaults(_head), do: []
 
-  defp add_site(sites, node) do
+  defp add_site(sites, node, arity \\ nil) do
     case call_range(node) do
       nil ->
         sites
 
       {line, column, range} ->
-        [%{line: line, column: column, range: range, template: template(node)} | sites]
+        site = %{
+          line: line,
+          column: column,
+          range: range,
+          template: template(node),
+          callee: callee(node, arity)
+        }
+
+        [site | sites]
     end
   end
 
+  defp callee({{:., _, [receiver, name]}, _meta, args}, arity) when is_atom(name),
+    do: %{module: receiver_name(receiver), name: name, arity: arity || argument_count(args)}
+
+  defp callee({name, _meta, args}, arity) when is_atom(name),
+    do: %{module: nil, name: name, arity: arity || argument_count(args)}
+
+  defp callee(_node, _arity), do: nil
+
+  defp argument_count(args) when is_list(args), do: length(args)
+  defp argument_count(_args), do: 0
+
+  # Only a receiver the source spells out is recorded. `mod.f(x)` names a module no parser
+  # can know, and a call placed by name against it would match anything.
+  defp receiver_name({:__aliases__, _meta, parts}) do
+    if Enum.all?(parts, &is_atom/1), do: Enum.map_join(parts, ".", &Atom.to_string/1)
+  end
+
+  defp receiver_name({:__block__, _meta, [atom]}) when is_atom(atom), do: inspect(atom)
+  defp receiver_name(_expression), do: nil
+
   # `~H"""` content reaches the compiler with the heredoc's indentation stripped, starting on
   # the line below the sigil, which is where these file positions put it too.
-  defp tag_sites({:sigil_H, meta, [{:<<>>, str_meta, [content]}, _modifiers]}) do
+  defp sigil_sites({:sigil_H, meta, [{:<<>>, str_meta, [content]}, _modifiers]}) do
     with line when is_integer(line) <- meta[:line],
          column when is_integer(column) <- meta[:column] do
       delimiter = meta[:delimiter] || str_meta[:delimiter]
 
       if delimiter in ~w(""" '''),
-        do: Heex.tag_sites(content, {line + 1, str_meta[:indentation] || 0}),
-        else: inline_tag_sites(content, line, column)
+        do: template_sites(content, {line + 1, str_meta[:indentation] || 0}),
+        else: inline_sigil_sites(content, line, column)
     else
       _ -> []
     end
   end
 
   # `Phoenix.Component.sigil_H/2` hands EEx `line: caller line + 1` and `indentation: 0`
-  # whatever the delimiter, so the compiler reports the tags of a single-line `~H"..."` one
+  # whatever the delimiter, so the compiler reports the calls of a single-line `~H"..."` one
   # line below the sigil at their column within the content. `Grasp.Index.Join` keys a site
   # by line and column and renders its range, so the site carries the compiler's position as
   # the key and the file's own — three columns past the `~`, after the sigil name and its
-  # opening quote — as the range the reader clicks.
-  defp inline_tag_sites(content, line, column) do
-    keys = Heex.tag_sites(content, {line + 1, 0})
-    ranges = Heex.tag_sites(content, {line, 0}, column + 3)
+  # opening quote — as the range the reader clicks. Both lists come from one function, so
+  # they hold the same sites in the same order and zip.
+  defp inline_sigil_sites(content, line, column) do
+    keys = template_sites(content, {line + 1, 0})
+    ranges = template_sites(content, {line, 0}, column + 3)
 
     Enum.zip_with(keys, ranges, &%{&1 | range: &2.range})
   end

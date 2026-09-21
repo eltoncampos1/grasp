@@ -10,13 +10,15 @@ defmodule Grasp.Index.Templates do
   path. The pattern is looked for under the embed's `:root`, resolved against the directory
   of the module that embeds it, which is also where it is looked for when no `:root` is
   given. A definition per match is what those
-  calls land on, and it gives the template's component tags — scanned by
-  `Grasp.Index.Heex` — a range a reader can click. The whole file is the definition: it
-  spans line 1 to its last line and its source is the file's text.
+  calls land on, and it gives the template's component tags and the calls written inside
+  its interpolations — both read by `Grasp.Index.Extract` — a range a reader can click.
+  The whole file is the definition: it spans line 1 to its last line and its source is the
+  file's text.
 
-  Only a `.heex` template carries call sites. HEEx is the engine whose tags compile to
-  component calls, so an `.eex` template is a record with no sites: the calls the tracer
-  reports inside it still land on it, and nothing in it is clickable.
+  Only a `.heex` template carries call sites, for its tags and its interpolations alike.
+  HEEx is the engine whose tags compile to component calls and whose `{...}` and
+  `<%= ... %>` bodies are Elixir, so an `.eex` template is a record with no sites: the
+  calls the tracer reports inside it still land on it, and nothing in it is clickable.
 
   A pattern may reach out of the directory it is written in (`"../shared_html/*"`) but not
   out of the project: every match is expanded to a canonical path, one outside the root is
@@ -24,7 +26,7 @@ defmodule Grasp.Index.Templates do
   name the index and git both use.
   """
 
-  alias Grasp.Index.{Extract, Heex}
+  alias Grasp.Index.Extract
 
   @doc """
   Definitions for the templates `embeds` match, under the project root `root`.
@@ -117,8 +119,13 @@ defmodule Grasp.Index.Templates do
       start_line: 1,
       end_line: line_count(source),
       source: source,
-      # HEEx is the engine whose tags compile to component calls; an EEx template has none.
-      call_sites: if(Path.extname(file) == ".heex", do: Heex.tag_sites(source, {1, 0}), else: []),
+      # HEEx is the engine whose tags compile to component calls and whose interpolations
+      # are Elixir; an EEx template has neither.
+      call_sites:
+        if(Path.extname(file) == ".heex",
+          do: Extract.template_sites(source, {1, 0}, nil),
+          else: []
+        ),
       head_positions: [],
       head_ranges: []
     }

@@ -63,15 +63,80 @@ defmodule Grasp.Index.JoinTest do
   end
 
   test "keeps a column-less call to an indexed definition as a hidden call", %{defs: defs} do
-    events = [event(:run, 2, 6, nil, {Grasp.JoinTest.Sample, :helper, 1}, :remote)]
+    events = [event(:run, 2, 7, nil, {Grasp.JoinTest.Sample, :helper, 1}, :remote)]
 
     [run] = Join.join(defs, events) |> Enum.filter(&(&1.name == :run))
 
     assert run.calls == []
 
     assert run.hidden_calls == [
-             %{target: "Grasp.JoinTest.Sample.helper/1", kind: :remote, line: 6}
+             %{target: "Grasp.JoinTest.Sample.helper/1", kind: :remote, line: 7}
            ]
+  end
+
+  @named_range %{start: {6, 26}, end: {6, 31}}
+
+  test "places a column-less event on the site that wrote the same call", %{defs: defs} do
+    defs = with_site(defs, :run, named_site("Greeter"))
+    events = [event(:run, 2, 6, nil, {SampleApp.Greeter, :greet, 1}, :remote)]
+
+    [run] = defs |> Join.join(events) |> Enum.filter(&(&1.name == :run))
+
+    assert run.calls == [
+             %{target: "SampleApp.Greeter.greet/1", kind: :remote, range: @named_range}
+           ]
+
+    assert run.hidden_calls == []
+  end
+
+  test "reads the written module as a suffix of the module the compiler resolved",
+       %{defs: defs} do
+    defs = with_site(defs, :run, named_site("Greeter"))
+    events = [event(:run, 2, 6, nil, {Other.Greeter, :greet, 1}, :remote)]
+
+    [run] = defs |> Join.join(events) |> Enum.filter(&(&1.name == :run))
+
+    assert [%{target: "Other.Greeter.greet/1", range: @named_range}] = run.calls
+  end
+
+  test "leaves a column-less event whose module is not the written one", %{defs: defs} do
+    defs = with_site(defs, :run, named_site("Greeter"))
+    events = [event(:run, 2, 6, nil, {Greeting, :greet, 1}, :remote)]
+
+    [run] = defs |> Join.join(events) |> Enum.filter(&(&1.name == :run))
+
+    assert run.calls == []
+    assert run.hidden_calls == []
+  end
+
+  test "places a column-less event on a site written without a module", %{defs: defs} do
+    defs = with_site(defs, :run, named_site(nil))
+    events = [event(:run, 2, 6, nil, {SampleApp.Greeter, :greet, 1}, :remote)]
+
+    [run] = defs |> Join.join(events) |> Enum.filter(&(&1.name == :run))
+
+    assert [%{target: "SampleApp.Greeter.greet/1", range: @named_range}] = run.calls
+  end
+
+  test "hands two events on one line to two sites in document order", %{defs: defs} do
+    second = %{named_site("Greeter") | column: 40, range: %{start: {6, 40}, end: {6, 45}}}
+    defs = defs |> with_site(:run, named_site("Greeter")) |> with_site(:run, second)
+
+    event = event(:run, 2, 6, nil, {SampleApp.Greeter, :greet, 1}, :remote)
+
+    [run] = defs |> Join.join([event, event]) |> Enum.filter(&(&1.name == :run))
+
+    assert Enum.map(run.calls, & &1.range) == [@named_range, second.range]
+  end
+
+  test "never places a column-less event on a site with no callee", %{defs: defs} do
+    defs = with_site(defs, :run, %{named_site("Greeter") | callee: nil})
+    events = [event(:run, 2, 6, nil, {SampleApp.Greeter, :greet, 1}, :remote)]
+
+    [run] = defs |> Join.join(events) |> Enum.filter(&(&1.name == :run))
+
+    assert run.calls == []
+    assert run.hidden_calls == []
   end
 
   test "drops a column-less call whose line is outside the definition span", %{defs: defs} do
@@ -339,6 +404,26 @@ defmodule Grasp.Index.JoinTest do
                range: %{start: {3, 5}, end: {3, 21}}
              }
            ]
+  end
+
+  defp named_site(module) do
+    %{
+      line: 6,
+      column: 26,
+      range: @named_range,
+      template: nil,
+      callee: %{module: module, name: :greet, arity: 1}
+    }
+  end
+
+  defp with_site(definitions, name, site) do
+    Enum.map(definitions, fn
+      %{name: ^name} = definition ->
+        %{definition | call_sites: definition.call_sites ++ [site]}
+
+      definition ->
+        definition
+    end)
   end
 
   defp render_event do
