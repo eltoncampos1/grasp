@@ -18,8 +18,9 @@ defmodule Grasp.Index.Extract do
   A `~H` sigil in a definition body contributes call sites too: `Grasp.Index.Heex` scans the
   template for component tags and yields the body of every interpolation, this module parses
   those bodies, and the sites the two produce join the ones the Elixir AST produced. The
-  sigil itself is not one of them — a call whose name begins with `sigil_` never becomes a
-  site, since the macro behind a sigil builds a literal rather than calling anything. A heredoc
+  sigil itself is not one of them — a local call whose name begins with `sigil_` never becomes
+  a site, since the macro behind a sigil builds a literal rather than calling anything, and
+  `Grasp.Index.Join` drops every `sigil_`-named target whatever form it was written in. A heredoc
   `~H\"""` starts on the line after the sigil, with the `indentation` Sourceror records on
   the sigil's string stripped from every line, which is where the file has it too. A
   single-line `~H"..."` is the one place a site's key and its range part ways: Phoenix
