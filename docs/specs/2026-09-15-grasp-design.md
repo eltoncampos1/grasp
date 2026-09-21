@@ -966,6 +966,18 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   compiler never defined, so the embed is globbed and named as if the option were not
   there.
 
+### Known gaps (milestone 7.4)
+
+- **Rendering is per patch.** An assistant entry is re-rendered from Markdown on every line
+  of CLI output; long transcripts pay for it. A cache keyed by entry text is the fix if it
+  shows.
+- **Function links resolve against the live index.** A function the agent named that the
+  index does not hold — one it read in a dependency — stays inline code.
+- **A queued prompt runs with the settings of the run before it.** Model and mode picked
+  while a prompt waits apply to the run after it.
+- **The clipboard needs a secure context.** Copy buttons do nothing over plain HTTP on a
+  host other than localhost; the browser refuses the API there.
+
 ### Known gaps (milestone 7.3)
 
 - **Only literal paths and `~p` are followed.** A route written through a helper
@@ -1182,6 +1194,34 @@ conversation.
   closes the run with its cost. Lines that are not JSON (stderr is merged) are kept as a
   log shown when the run fails. Stop kills the OS process. One run at a time per session;
   a second prompt while running is refused.
+- **Rendering.** An assistant entry is Markdown. `GraspWeb.ChatMarkdown` renders it
+  server-side with MDEx — GitHub-flavoured (tables, strikethrough, task lists, autolinks),
+  raw HTML sanitised against an explicit allow-list, so model output can never inject markup
+  — highlights fenced code with Lumis so a snippet in the chat reads like the card it came
+  from, and turns every function id the index holds (`Mod.fun/arity`, in backticks or in
+  prose) into a button that opens that function's card. A user entry stays plain text.
+- **Working state and streaming.** The CLI runs with `--include-partial-messages`, so text
+  arrives as deltas: `Grasp.Agent.Stream` folds them into a partial assistant entry that the
+  full block replaces when it lands, and the panel reads token by token. While a run is live
+  the panel shows a thinking row (three animated dots) whenever nothing is streaming, a
+  spinner on the tool call under way, and a status line with the elapsed time (the runner
+  publishes `started_at`; the hook ticks the seconds) and the number of tool calls this turn;
+  Send is a Stop button for the duration.
+- **Tool rows.** Consecutive tool calls fold into one group, "Used N tools", open while one is
+  running and closed once all are done; each row carries a human label — "Searched “award”",
+  "Read MyApp.Wallets.credit/3", "Arranged 4 cards", "Ran mix format" — its duration, and,
+  when it failed, the tool's error text under it. A finished turn ends with its cost, its
+  number of turns and its wall time, from the `result` event.
+- **Prompt box and queue.** The prompt is a textarea that grows to six lines: Enter sends,
+  Shift+Enter breaks a line, ArrowUp on an empty box recalls the previous prompt. A prompt
+  sent during a run is queued, shown under the log with a way to withdraw it, and starts when
+  the run ends; Stop and New empty the queue. An empty transcript offers starting prompts —
+  what changed (in PR mode), explain the focused card, publish the comments, follow the first
+  route — each sent as typed.
+- **Scrolling, failures, copying.** The log follows new output only while the reader is at
+  its bottom; otherwise a "latest" pill offers the way down. A failed run shows the CLI's log
+  inline under the error with a Retry button that sends the last prompt again. Every
+  assistant message and every code fence has a copy button.
 - The runner broadcasts its transcript on `agent:<name>`; `ReviewLive` subscribes, so
   every tab on the session sees the same conversation, and card changes arrive through
   the ordinary session broadcast because the agent went through MCP like any other client.
@@ -1428,6 +1468,10 @@ request switches the working tree" is closed.
    - Milestone 7.3: routes are edges — `href`, `hx-*`, form actions and `~p` sigils resolve
      against the router to calls of kind `route`, drawn dashed to the controller action or
      LiveView they reach.
+   - Milestone 7.4: the chat panel — Markdown with highlighted fences and links to cards,
+     token streaming, working state, folded tool rows with labels and durations, a growing
+     prompt box with a queue and suggestions, sticky scrolling, inline failures with Retry,
+     copy buttons.
 7. In-app Grasp: one dev dependency mounted in the host's endpoint, the tracer riding the
    host's code reloader for incremental indexing, pull requests reviewed from worktrees
    (see [Part 4](#part-4--in-app-grasp)).
