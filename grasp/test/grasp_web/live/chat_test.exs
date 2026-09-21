@@ -49,15 +49,18 @@ defmodule GraspWeb.ChatTest do
     assert has_element?(view, ~s(#chat pre.fence[data-lang="elixir"]))
     assert has_element?(view, ~s(#chat pre.fence span.l-module), "SampleApp")
 
-    # An id the fixture index holds is a button; one it does not stays as written.
-    assert has_element?(view, ~s(#chat button.fn[phx-click="open_root"]), @greeter)
+    # An id the fixture index holds is a button; one it does not stays as written. The button
+    # carries the id and no event: the panel's hook, not the answer's markup, names the event.
+    assert has_element?(view, ~s(#chat button.fn[data-fn="#{@greeter}"]), @greeter)
     assert has_element?(view, "#chat code", "Nope.Missing.fun/1")
+    refute has_element?(view, "#chat-log [phx-click]")
 
-    html = render(view)
-    refute html =~ "script"
-    refute html =~ "alert(1)"
+    log = view |> element("#chat-log") |> render()
+    refute log =~ "script"
+    refute log =~ "alert(1)"
 
-    view |> element(~s(#chat button.fn[phx-value-id="#{@greeter}"])) |> render_click()
+    # What the hook pushes when that button is clicked.
+    view |> element("#chat") |> render_hook("open_root", %{"id" => @greeter})
     assert has_element?(view, ~s(.card[data-function-id="#{@greeter}"]))
   end
 

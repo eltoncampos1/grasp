@@ -1,6 +1,12 @@
-// The transcript is server state, so the hook only does the three things a render cannot:
+// The transcript is server state, so the hook only does the four things a render cannot:
 // keep the log pinned to the newest entry, empty the input once its value has been sent,
-// and put the caret in that input the moment the panel opens.
+// put the caret in that input the moment the panel opens, and turn a click on a function
+// link into the event that opens its card.
+//
+// That last one is why an answer's markup carries no event bindings of its own. An answer
+// is written by the model, and the sanitiser therefore strips every `phx-` attribute from
+// it; a function link is a button carrying `data-fn`, and this hook is the only thing that
+// maps it to an event, so the model can name an id but never an event.
 //
 // Nothing is cached across patches: a node held from `mounted()` is a node a later patch
 // could have replaced, and writing to the detached original fails silently.
@@ -13,6 +19,12 @@ const Chat = {
         const input = this.input()
         if (input) input.value = ""
       }, 0)
+    })
+
+    // Delegated for the same reason: every patch rewrites the transcript's markup.
+    this.el.addEventListener("click", (event) => {
+      const link = event.target.closest(".msg .fn[data-fn]")
+      if (link) this.pushEvent("open_root", { id: link.dataset.fn })
     })
 
     this.wasOpen = false

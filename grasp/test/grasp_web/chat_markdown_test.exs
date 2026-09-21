@@ -39,7 +39,47 @@ defmodule GraspWeb.ChatMarkdownTest do
     html = render("See `#{@greeter}` for the greeting.")
 
     assert html =~
-             ~s(<button type="button" class="fn" phx-click="open_root" phx-value-id="#{@greeter}">#{@greeter}</button>)
+             ~s(<button type="button" class="fn" data-fn="#{@greeter}">#{@greeter}</button>)
+
+    refute html =~ "phx-"
+  end
+
+  test "a button the answer wrote reaches no event" do
+    html = render(~s|<button phx-click="chat_reset">Click to continue</button>|)
+
+    refute html =~ "phx-"
+    refute html =~ "chat_reset"
+  end
+
+  test "a button dressed as a function link reaches no event" do
+    html =
+      render(
+        ~s|<button type="button" class="fn" phx-click="comment_delete" phx-value-id="3">See details</button>|
+      )
+
+    refute html =~ "phx-"
+    refute html =~ "comment_delete"
+  end
+
+  test "an anchor the answer wrote reaches no event" do
+    html = render(~s|<a href="/x" phx-click="chat_reset">go</a>|)
+
+    refute html =~ "phx-"
+    refute html =~ "chat_reset"
+  end
+
+  test "a function id in link text stays inside the link" do
+    html = render("[Foo.bar/1](https://example.com)", ["Foo.bar/1"])
+
+    refute html =~ "<button"
+    assert html =~ "Foo.bar/1</a>"
+  end
+
+  test "a function id inside an autolink stays inside the link" do
+    html = render("https://example.com/Foo.bar/1", ["Foo.bar/1"])
+
+    refute html =~ "<button"
+    assert html =~ "<a"
   end
 
   test "an inline function id the index does not hold stays code" do
@@ -52,7 +92,7 @@ defmodule GraspWeb.ChatMarkdownTest do
   test "a bare function id in prose becomes a card button" do
     html = render("The caller is #{@greeter} and it delegates.")
 
-    assert html =~ ~s(phx-value-id="#{@greeter}")
+    assert html =~ ~s(data-fn="#{@greeter}")
     assert html =~ "The caller is <button"
     assert html =~ "</button> and it delegates."
   end
@@ -60,7 +100,7 @@ defmodule GraspWeb.ChatMarkdownTest do
   test "prose around an unknown id is left alone" do
     html = render("Neither #{@greeter} nor Nope.Missing.fun/1 here.")
 
-    assert html =~ ~s(phx-value-id="#{@greeter}")
+    assert html =~ ~s(data-fn="#{@greeter}")
     assert html =~ "nor Nope.Missing.fun/1 here."
   end
 
@@ -74,7 +114,7 @@ defmodule GraspWeb.ChatMarkdownTest do
   test "an id written against a default-argument arity follows the index" do
     html = render("Call `SampleApp.Greeter.greet/1`.", ["SampleApp.Greeter.greet/1"])
 
-    assert html =~ ~s(phx-value-id="SampleApp.Greeter.greet/1")
+    assert html =~ ~s(data-fn="SampleApp.Greeter.greet/1")
   end
 
   test "a script block is stripped with its content" do
@@ -134,5 +174,35 @@ defmodule GraspWeb.ChatMarkdownTest do
 
   test "empty text renders nothing" do
     assert render("") == ""
+  end
+
+  describe "memoisation" do
+    @cache :grasp_chat_markdown_cache
+
+    test "the same answer resolving the same links is rendered once" do
+      text = "A cached answer about `#{@greeter}` no. #{System.unique_integer([:positive])}."
+      known? = &(&1 == @greeter)
+      before = MapSet.new(:ets.tab2list(@cache), &elem(&1, 0))
+
+      {:safe, html} = ChatMarkdown.render(text, known?)
+
+      [key] =
+        for {key, value} <- :ets.tab2list(@cache),
+            value == html and not MapSet.member?(before, key),
+            do: key
+
+      :ets.insert(@cache, {key, "served from the cache"})
+      assert ChatMarkdown.render(text, known?) == {:safe, "served from the cache"}
+    end
+
+    test "an answer whose ids resolve differently is rendered again" do
+      text = "Another answer about `#{@greeter}` no. #{System.unique_integer([:positive])}."
+
+      {:safe, linked} = ChatMarkdown.render(text, &(&1 == @greeter))
+      {:safe, plain} = ChatMarkdown.render(text, fn _id -> false end)
+
+      assert linked =~ "data-fn"
+      refute plain =~ "data-fn"
+    end
   end
 end

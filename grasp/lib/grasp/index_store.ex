@@ -22,10 +22,12 @@ defmodule Grasp.IndexStore do
   stored mtime older than the file's and the next poll picks the new content up; reading
   it after would pair the old index with the new mtime and never reload.
 
-  The store also owns `Grasp.Highlight`'s parse cache, so the table lives as long as the
-  application, and clears it on every successful load: a memoised parse is keyed by
+  The store also owns the two caches an index is rendered through — `Grasp.Highlight`'s
+  parse cache and `GraspWeb.ChatMarkdown`'s — so both tables live as long as the
+  application, and clears them on every successful load. A memoised parse is keyed by
   function id and carries the line numbers of the span it was computed for, so a stale
-  entry would highlight the new index's source at the old index's coordinates.
+  entry would highlight the new index's source at the old index's coordinates; a memoised
+  answer holds links to the functions the index had when it was rendered.
   """
 
   use GenServer
@@ -89,6 +91,7 @@ defmodule Grasp.IndexStore do
   def init(opts) do
     path = Path.expand(Keyword.get(opts, :path) || configured_path())
     :ok = Grasp.Highlight.ensure_cache()
+    :ok = GraspWeb.ChatMarkdown.ensure_cache()
     state = %{path: path, mtime: nil, last_error: nil}
 
     state =
@@ -152,6 +155,7 @@ defmodule Grasp.IndexStore do
       {:ok, index} ->
         :persistent_term.put(@key, index)
         :ok = Grasp.Highlight.clear_cache()
+        :ok = GraspWeb.ChatMarkdown.clear_cache()
         Phoenix.PubSub.broadcast(Grasp.PubSub, @topic, :index_reloaded)
         {:ok, %{state | path: path, mtime: mtime, last_error: nil}}
 

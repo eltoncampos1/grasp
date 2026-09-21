@@ -955,6 +955,10 @@
           if (input) input.value = "";
         }, 0);
       });
+      this.el.addEventListener("click", (event) => {
+        const link = event.target.closest(".msg .fn[data-fn]");
+        if (link) this.pushEvent("open_root", { id: link.dataset.fn });
+      });
       this.wasOpen = false;
       this.scrollToBottom();
       this.focusWhenOpened();
