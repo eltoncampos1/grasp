@@ -300,6 +300,43 @@ defmodule Grasp.HighlightTest do
              |> LazyHTML.attribute("data-kind") == []
     end
 
+    test "a call written inside a route attribute keeps a span of its own" do
+      record = %{
+        "id" => "SampleAppWeb.SearchHTML.form/1",
+        "kind" => "template",
+        "file" => "lib/sample_app_web/search_html/form.html.heex",
+        "span" => %{"start_line" => 1, "end_line" => 1},
+        "source" => ~S|<a href={~p"/search?#{[q: normalize(@q)]}"}>go</a>| <> "\n",
+        "calls" => [
+          %{
+            "target" => "SampleAppWeb.SearchController.index/2",
+            "kind" => "route",
+            "range" => %{"start" => [1, 9], "end" => [1, 44]},
+            "route" => %{"verb" => "GET", "path" => "/search"}
+          },
+          %{
+            "target" => "SampleApp.Text.normalize/1",
+            "kind" => "remote",
+            "range" => %{"start" => [1, 27], "end" => [1, 36]}
+          }
+        ]
+      }
+
+      doc = render(record, [])
+
+      assert doc
+             |> LazyHTML.query(~s(span.call[data-target="SampleApp.Text.normalize/1"]))
+             |> LazyHTML.text() == "normalize"
+
+      assert doc
+             |> LazyHTML.query(~s(span.call[data-kind="route"] span.call))
+             |> Enum.count() == 0
+
+      assert doc
+             |> LazyHTML.query(~s(span.call[data-target="SampleAppWeb.SearchController.index/2"]))
+             |> Enum.count() == 2
+    end
+
     test "a modified template's diff numbers its own lines and nothing past them" do
       record = %{
         "id" => "SampleAppWeb.PageHTML.edited/1",

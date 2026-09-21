@@ -51,7 +51,9 @@ defmodule Grasp.Index.Incremental do
   VM that cannot see the application at all keeps what the document already held, so
   reading a document built elsewhere does not empty its sidebar. Either way they are
   known before the rebuilt records are written out, because `Grasp.Index.Routes` resolves
-  a template's links against the routes among them.
+  a template's links against the routes among them. Only the rebuilt records are resolved
+  that way, so a route added to or removed from the router reaches an untouched template's
+  edges when that template is next saved, or when the index is next built in full.
 
   ## What it cannot see
 

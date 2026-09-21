@@ -15,10 +15,14 @@ defmodule Grasp.Highlight do
   A call range (from the index, `{line, column}` pairs with an exclusive end column, in
   file coordinates) may start or end inside a run and may span lines; run text is
   therefore split at range boundaries, and consecutive pieces inside the same range on the
-  same line are wrapped together. Output is one `span.line` per source line so the viewer
-  can address lines, with Lumis' classes on highlighted runs and bare text elsewhere. A call
-  the router resolved carries `data-kind="route"` and a `title` reading its verb and path, so
-  a hop over HTTP is told from a function call on the card and on the edge leaving it.
+  same line are wrapped together. Ranges may sit inside one another — a call written in a
+  route attribute's `~p` sigil is inside the attribute's range — and the narrowest range
+  covering a piece is the one that wraps it, so the inner call keeps a span of its own and
+  the outer range is drawn as the parts either side of it. Output is one `span.line` per
+  source line so the viewer can address lines, with Lumis' classes on highlighted runs and
+  bare text elsewhere. A call the router resolved carries `data-kind="route"` and a `title`
+  reading its verb and path, so a hop over HTTP is told from a function call on the card
+  and on the edge leaving it.
 
   `lines/2` and `diff_lines/2` hand those lines back one at a time as `%{side, line, html}`,
   the side telling a line of the current source from one the branch deleted, so a caller can
@@ -527,17 +531,25 @@ defmodule Grasp.Highlight do
   end
 
   # Whitespace is never part of a callee, so a range that continues onto a new line does
-  # not swallow that line's indentation.
+  # not swallow that line's indentation. Where several ranges cover the piece the narrowest
+  # one wraps it, so a call written inside a route attribute keeps its own span and the
+  # attribute's is drawn around it in two parts.
   defp covering(piece, ranges) do
     if String.trim(piece.text) == "" do
       nil
     else
-      Enum.find(ranges, fn range ->
+      ranges
+      |> Enum.filter(fn range ->
         piece.col >= line_bound(range, piece.line, :start) and
           piece.col < line_bound(range, piece.line, :end)
       end)
+      |> Enum.min_by(&width/1, fn -> nil end)
     end
   end
+
+  # Lines first, then columns, so a range held to one line is narrower than any range that
+  # runs over more of them however few characters it takes on this one.
+  defp width(%{start: {sl, sc}, end: {el, ec}}), do: {el - sl, ec - sc}
 
   # The columns a range occupies on `line`: a range covers whole lines between its start and end.
   defp line_bound(%{start: {sl, sc}, end: {el, _ec}}, line, :start),

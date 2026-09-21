@@ -236,8 +236,9 @@ HEEx is code the graph knows, in five parts:
   the attributes of every tag — `href`, `action`, `navigate`, `patch`, `hx-get`, `hx-post`,
   `hx-put`, `hx-patch`, `hx-delete` — and yields a **route site** for each whose value is a
   string literal starting with `/` or a `{…}` whose expression is a `~p` sigil: the verb is
-  the `hx-*` name, `GET` for `href`, `navigate` and `patch`, and for `action` the tag's
-  literal `method` attribute, defaulting to `POST` on `<.form>` and `GET` on `<form>`; the
+  the `hx-*` name, `GET` for `href`, `navigate` and `patch` unless the tag writes a literal
+  `method`, which `<.link method="delete">` does, and for `action` the tag's literal
+  `method` attribute, defaulting to `POST` on `<.form>` and `GET` on `<form>`; the
   path is the literal's segments, or the sigil's with every `#{…}` interpolation read as one
   dynamic segment (a segment that mixes text and interpolation is dynamic as a whole), the
   query string and fragment dropped; the range is the attribute value with its quotes or
@@ -976,6 +977,9 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 - **Attributes inherited by htmx (`hx-get:inherited`, `hx-boost`) are not read.**
 - **A `~p` outside a route attribute is a `GET`.** `redirect(conn, to: ~p"/…")` is one;
   a `~p` handed to a `Req.post/2` is drawn as a `GET` too.
+- **An incremental update re-resolves only the records it rebuilds.** A route added to or
+  removed from the router reaches an untouched template's edges when that template is next
+  saved, or when the index is next built in full.
 
 ### Known gaps (milestone 5.8)
 

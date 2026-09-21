@@ -472,10 +472,12 @@ defmodule Grasp.Index.Extract do
     end
   end
 
-  # `hx-post` says what it is, and `href`, `navigate` and `patch` are followed by a GET.
-  # A form's `action` is whatever its `method` says; with none, a component form is a POST,
-  # since `<.form>` sends everything but a GET as one and writes the real verb into a
-  # hidden `_method` field, while a plain `<form>` is the GET HTML makes it.
+  # `hx-post` says what it is, and carries its own verb whatever else the tag writes.
+  # Every other route attribute takes the tag's literal `method` where it has one, so
+  # `<.link href={~p"/users/1"} method="delete">` is the DELETE it sends, and a GET
+  # otherwise. A form's `action` with no `method` is a POST on a component form, since
+  # `<.form>` sends everything but a GET as one and writes the real verb into a hidden
+  # `_method` field, while a plain `<form>` is the GET HTML makes it.
   defp verb(%{name: "hx-" <> verb}), do: String.upcase(verb)
 
   defp verb(%{name: "action"} = attribute) do
@@ -486,7 +488,7 @@ defmodule Grasp.Index.Extract do
     end
   end
 
-  defp verb(_attribute), do: "GET"
+  defp verb(attribute), do: attribute.method || "GET"
 
   defp component_tag?("." <> _rest), do: true
   defp component_tag?(<<first::utf8, _rest::binary>>), do: first in ?A..?Z
@@ -496,10 +498,11 @@ defmodule Grasp.Index.Extract do
   The segments of a path, or `nil` for text no router could match.
 
   Takes a literal string or the parts of a `~p` sigil's `<<>>` node. A path must start
-  with `/`; everything from the first `?` or `#` on is dropped, as is the empty text
-  between two slashes, so `"/"` is the empty list. A segment an interpolation reaches into
-  is `:dynamic` whole, because the text around the interpolation is no more knowable than
-  the interpolation itself.
+  with a single `/` — a leading `//` is a protocol-relative URL, whose first segment is a
+  host rather than anything a router answers to. Everything from the first `?` or `#` on
+  is dropped, as is the empty text between two slashes, so `"/"` is the empty list. A
+  segment an interpolation reaches into is `:dynamic` whole, because the text around the
+  interpolation is no more knowable than the interpolation itself.
   """
   @spec path_segments(String.t() | [String.t() | term()]) :: [segment()] | nil
   def path_segments(path) when is_binary(path), do: path_segments([path])
@@ -507,7 +510,11 @@ defmodule Grasp.Index.Extract do
   def path_segments(parts) when is_list(parts) do
     items = path_items(parts, [])
 
-    if match?([<<"/", _rest::binary>> | _], items), do: segments(items)
+    case items do
+      [<<"//", _rest::binary>> | _] -> nil
+      [<<"/", _rest::binary>> | _] -> segments(items)
+      _items -> nil
+    end
   end
 
   # Everything up to the first `?` or `#`, with each interpolation standing in for text

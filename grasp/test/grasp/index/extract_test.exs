@@ -464,6 +464,33 @@ defmodule Grasp.Index.ExtractTest do
                Extract.template_route_sites(~S|<form action="/x" method="post">|, {1, 0})
     end
 
+    test "reads a link's literal method as its verb" do
+      assert [%{verb: "DELETE", path: ["users", :dynamic]}] =
+               Extract.template_route_sites(
+                 ~S|<.link href={~p"/users/#{@u}"} method="delete">|,
+                 {1, 0}
+               )
+
+      assert [%{verb: "POST", path: ["hello"]}] =
+               Extract.template_route_sites(
+                 ~S|<.link navigate={~p"/hello"} method="post">|,
+                 {1, 0}
+               )
+
+      assert [%{verb: "GET", path: ["x"]}] =
+               Extract.template_route_sites(~S|<a href="/x">|, {1, 0})
+    end
+
+    test "keeps an htmx attribute's own verb whatever the tag's method says" do
+      assert [%{verb: "GET", path: ["x"]}] =
+               Extract.template_route_sites(~S|<button hx-get="/x" method="post">|, {1, 0})
+    end
+
+    test "reads no route from a protocol-relative URL" do
+      assert Extract.template_route_sites(~S|<a href="//cdn.example.com/app.js">|, {1, 0}) == []
+      assert Extract.path_segments("//x") == nil
+    end
+
     test "reads no route from a path no parse can know or no router can answer" do
       assert Extract.template_route_sites(~S|<a href={@path}>|, {1, 0}) == []
       assert Extract.template_route_sites(~S|<a href="https://example.com/">|, {1, 0}) == []

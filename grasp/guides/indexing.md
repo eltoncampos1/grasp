@@ -59,8 +59,9 @@ their sites in document order rather than by what each one computes.
 controller action or LiveView the router maps it to, so the hop over HTTP is a call site like
 any other. The attributes read are `href`, `action`, `navigate`, `patch` and the htmx verbs
 `hx-get`, `hx-post`, `hx-put`, `hx-patch` and `hx-delete`. An `hx-*` attribute carries its own
-verb; `href`, `navigate` and `patch` are GET; a form `action` takes the tag's literal `method`
-where it has one, POST on a component tag (`<.form>`) and GET on a plain `<form>`. A `~p`
+verb; `href`, `navigate` and `patch` are GET unless the tag writes a literal `method`, which
+`<.link method="delete">` does; a form `action` takes the tag's literal `method` where it has
+one, POST on a component tag (`<.form>`) and GET on a plain `<form>`. A `~p`
 sigil is a GET route wherever it is written — as an attribute value, in an interpolation or in
 a function body — so a controller's `redirect(conn, to: ~p"/greet/bob")` reaches the action
 that path belongs to. Paths are matched against the router's routes segment by segment, an
@@ -68,9 +69,10 @@ interpolated segment matching any one of them, and the most specific route wins:
 over `/users/:id`, and a `:param` over a `*glob`.
 
 The path has to be written where the scanner can read it. One held in an assign
-(`href={@path}`) or built by a helper names no route, and neither does an absolute URL or a
-bare `#fragment`. Attributes are read on the tag that carries them, so an `hx-post` a parent
-element passes down by htmx inheritance reaches no route.
+(`href={@path}`) or built by a helper names no route, and neither does an absolute URL, a
+protocol-relative `//host/path` or a bare `#fragment`. Attributes are read on the tag that
+carries them, so an `hx-post` a parent element passes down by htmx inheritance reaches no
+route.
 
 `--base REF` classifies every function against the merge base of `REF` and `HEAD` — added,
 modified, unchanged or removed — and carries the base version of each modified function's
