@@ -20,9 +20,18 @@ case "$args" in
 esac
 
 echo '{"type":"system","subtype":"init","session_id":"fake-1","mcp_servers":[{"name":"grasp","status":"connected"}]}'
+# The first sentence arrives as deltas and then as the whole block, the way the CLI writes
+# it under --include-partial-messages: the panel must read the block as the same sentence
+# rather than as a second copy of it.
+echo '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Looking"}}}'
+echo '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" at the flow."}}}'
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Looking at the flow."}]}}'
 echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"mcp__grasp__search_functions","input":{"query":"greet","limit":5}}]}}'
 echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"[]"}]}}'
+# Two calls in a row, the second of them failing: the panel folds them into one group and
+# shows the failure's text under its row.
+echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"mcp__grasp__set_cards","input":{"cards":[{"key":"a"},{"key":"b"},{"key":"c"}]}}]}}'
+echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"no such function","is_error":true}]}}'
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":" Done."}]}}'
 # One turn is Markdown — a fence, an id the fixture index holds and one it does not, and a
 # raw script tag — so the panel's rendering and sanitising are exercised end to end. Its
@@ -38,4 +47,4 @@ esac
 # The argv is folded onto one line before escaping: the system prompt spans several lines,
 # and sed's ^/$ anchors would otherwise quote each of them separately.
 escaped=$(printf '%s' "$args" | tr '\n' ' ' | sed 's/\\/\\\\/g; s/"/\\"/g')
-printf '{"type":"result","subtype":"success","is_error":false,"num_turns":2,"total_cost_usd":0.01,"session_id":"fake-1","result":"%s"}\n' "$escaped"
+printf '{"type":"result","subtype":"success","is_error":false,"num_turns":2,"total_cost_usd":0.01,"duration_ms":4200,"session_id":"fake-1","result":"%s"}\n' "$escaped"

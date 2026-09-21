@@ -1,7 +1,13 @@
-// The transcript is server state, so the hook only does the four things a render cannot:
+// The transcript is server state, so the hook only does the five things a render cannot:
 // keep the log pinned to the newest entry, empty the input once its value has been sent,
-// put the caret in that input the moment the panel opens, and turn a click on a function
-// link into the event that opens its card.
+// put the caret in that input the moment the panel opens, turn a click on a function link
+// into the event that opens its card, and count the seconds a live run has been going.
+//
+// The elapsed seconds are counted here rather than rendered because a render per second
+// is a patch per second on a panel that is already being patched by the run itself. The
+// server publishes the millisecond the run started, as `data-elapsed-from`; the timer
+// reads it and stops itself once the attribute is gone, which is how a finished run ends
+// the counting without anything telling the client that it has.
 //
 // That last one is why an answer's markup carries no event bindings of its own. An answer
 // is written by the model, and the sanitiser therefore strips every `phx-` attribute from
@@ -28,13 +34,20 @@ const Chat = {
     })
 
     this.wasOpen = false
+    this.timer = null
     this.scrollToBottom()
     this.focusWhenOpened()
+    this.tick()
   },
 
   updated() {
     this.scrollToBottom()
     this.focusWhenOpened()
+    this.tick()
+  },
+
+  destroyed() {
+    this.stopTicking()
   },
 
   input() {
@@ -52,6 +65,24 @@ const Chat = {
     const open = !this.el.hidden
     if (open && !this.wasOpen) this.input()?.focus()
     this.wasOpen = open
+  },
+
+  tick() {
+    const span = this.el.querySelector("[data-elapsed-from]")
+    if (!span) return this.stopTicking()
+
+    const from = Number(span.dataset.elapsedFrom)
+    if (Number.isFinite(from)) {
+      const seconds = Math.max(0, Math.round((Date.now() - from) / 1000))
+      span.textContent = `${seconds}s`
+    }
+
+    if (!this.timer) this.timer = window.setInterval(() => this.tick(), 1000)
+  },
+
+  stopTicking() {
+    if (this.timer) window.clearInterval(this.timer)
+    this.timer = null
   },
 }
 

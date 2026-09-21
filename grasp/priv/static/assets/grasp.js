@@ -960,12 +960,18 @@
         if (link) this.pushEvent("open_root", { id: link.dataset.fn });
       });
       this.wasOpen = false;
+      this.timer = null;
       this.scrollToBottom();
       this.focusWhenOpened();
+      this.tick();
     },
     updated() {
       this.scrollToBottom();
       this.focusWhenOpened();
+      this.tick();
+    },
+    destroyed() {
+      this.stopTicking();
     },
     input() {
       return this.el.querySelector("#chat-prompt");
@@ -980,6 +986,20 @@
       const open = !this.el.hidden;
       if (open && !this.wasOpen) this.input()?.focus();
       this.wasOpen = open;
+    },
+    tick() {
+      const span = this.el.querySelector("[data-elapsed-from]");
+      if (!span) return this.stopTicking();
+      const from = Number(span.dataset.elapsedFrom);
+      if (Number.isFinite(from)) {
+        const seconds = Math.max(0, Math.round((Date.now() - from) / 1e3));
+        span.textContent = `${seconds}s`;
+      }
+      if (!this.timer) this.timer = window.setInterval(() => this.tick(), 1e3);
+    },
+    stopTicking() {
+      if (this.timer) window.clearInterval(this.timer);
+      this.timer = null;
     }
   };
   var chat_default = Chat;

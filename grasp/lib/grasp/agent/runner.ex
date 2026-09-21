@@ -24,7 +24,10 @@ defmodule Grasp.Agent.Runner do
   rather than leaving one reparented to init.
 
   A run outlives its subscribers, so state lives here rather than in the LiveView. Every
-  change broadcasts `{:agent, name, view}` on `"agent:<name>"`.
+  change broadcasts `{:agent, name, view}` on `"agent:<name>"`. The view carries
+  `started_at`, the wall-clock millisecond the port opened on, so a page that joins
+  mid-run can count the elapsed seconds itself instead of being told them a render at a
+  time; it is nil whenever no run is live.
   """
 
   use GenServer
@@ -61,6 +64,7 @@ defmodule Grasp.Agent.Runner do
        port: nil,
        buffer: "",
        running?: false,
+       started_at: nil,
        model: nil,
        mode: "read"
      }}
@@ -107,7 +111,14 @@ defmodule Grasp.Agent.Runner do
         stream = Stream.prompt(state.stream, prompt)
 
         {:reply, :ok,
-         broadcast(%{state | stream: stream, port: port, buffer: "", running?: true})}
+         broadcast(%{
+           state
+           | stream: stream,
+             port: port,
+             buffer: "",
+             running?: true,
+             started_at: System.system_time(:millisecond)
+         })}
     end
   end
 
@@ -143,7 +154,15 @@ defmodule Grasp.Agent.Runner do
         stream
       end
 
-    {:noreply, broadcast(%{state | stream: stream, port: nil, buffer: "", running?: false})}
+    {:noreply,
+     broadcast(%{
+       state
+       | stream: stream,
+         port: nil,
+         buffer: "",
+         running?: false,
+         started_at: nil
+     })}
   end
 
   # Trapping exits turns a linked process's death into a message; only a port's is routine.
@@ -165,7 +184,7 @@ defmodule Grasp.Agent.Runner do
     end
 
     stream = if reason, do: Stream.error(state.stream, reason), else: state.stream
-    %{state | stream: stream, port: nil, buffer: "", running?: false}
+    %{state | stream: stream, port: nil, buffer: "", running?: false, started_at: nil}
   end
 
   defp kill({:os_pid, pid}), do: System.cmd("kill", ["-TERM", Integer.to_string(pid)])
@@ -180,6 +199,7 @@ defmodule Grasp.Agent.Runner do
     %{
       entries: state.stream.entries,
       running?: state.running?,
+      started_at: state.started_at,
       claude_session_id: state.stream.claude_session_id,
       log: state.stream.log,
       last_result: state.stream.result_text,

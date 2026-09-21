@@ -26,17 +26,33 @@ defmodule GraspWeb.ChatTest do
     assert has_element?(view, ~s(#chat .msg[data-type="user"]), "show me greet")
 
     assert_receive {:agent, ^name, %{running?: false}}, 2_000
-    html = render(view)
-    assert html =~ "Looking at the flow."
+    log = view |> element("#chat-log") |> render()
 
-    assert has_element?(
-             view,
-             ~s(#chat .msg[data-type="tool"][data-status="done"]),
-             "search_functions"
-           )
+    # The block that follows the deltas is the authoritative text, not a second copy of it.
+    assert length(String.split(log, "Looking at the flow.")) == 2
 
-    assert has_element?(view, ~s(#chat .msg[data-type="done"]), "2 turns")
+    assert has_element?(view, ~s(#chat details.tools summary), "Used 2 tools")
+    assert has_element?(view, ~s(#chat .tool[data-status="done"]), ~s(Searched "greet"))
+    assert has_element?(view, ~s(#chat .tool[data-status="error"]), "Arranged 3 cards")
+    assert has_element?(view, ~s(#chat .tool[data-status="error"] pre), "no such function")
+    assert has_element?(view, ~s(#chat .msg[data-type="done"]), "$0.01 · 2 turns · 4.2 s")
+    refute has_element?(view, "#chat .chat__status")
     refute has_element?(view, "#chat button[disabled]", "Send")
+  end
+
+  test "a live run shows that the agent is working", %{view: view, name: name} do
+    view |> element("#toggle-chat") |> render_click()
+    :ok = Grasp.Agent.subscribe(name)
+    view |> form("#chat-form", %{"prompt" => "SLOW one"}) |> render_submit()
+
+    assert has_element?(view, ~s(#chat .msg[data-type="thinking"])) or
+             has_element?(view, ~s(#chat details.tools[open]))
+
+    assert has_element?(view, "#chat .chat__status", "Working")
+    assert has_element?(view, "#chat .chat__status span[data-elapsed-from]")
+
+    assert_receive {:agent, ^name, %{running?: false}}, 2_000
+    refute has_element?(view, ~s(#chat .msg[data-type="thinking"]))
   end
 
   test "an answer renders as Markdown whose function ids open cards", %{view: view, name: name} do

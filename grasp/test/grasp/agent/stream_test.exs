@@ -21,10 +21,13 @@ defmodule Grasp.Agent.StreamTest do
     assert state.log == []
 
     assert [assistant, tool, more, done] = state.entries
-    assert assistant == %{type: :assistant, text: "Looking at the flow."}
-    assert tool == %{type: :tool, name: "search_functions", summary: "greet", status: :done}
-    assert more == %{type: :assistant, text: " Done."}
-    assert done == %{type: :done, cost_usd: 0.01, turns: 2}
+    assert assistant == %{type: :assistant, text: "Looking at the flow.", partial: false}
+
+    assert %{type: :tool, name: "search_functions", summary: "greet", status: :done, detail: nil} =
+             tool
+
+    assert more == %{type: :assistant, text: " Done.", partial: false}
+    assert done == %{type: :done, cost_usd: 0.01, turns: 2, ms: nil}
   end
 
   test "consecutive assistant text blocks merge into one entry" do
@@ -34,7 +37,7 @@ defmodule Grasp.Agent.StreamTest do
         ~s({"type":"assistant","message":{"content":[{"type":"text","text":" three"}]}})
       ])
 
-    assert state.entries == [%{type: :assistant, text: "one two three"}]
+    assert state.entries == [%{type: :assistant, text: "one two three", partial: false}]
   end
 
   test "a text block in a user event is not the agent speaking" do
@@ -108,6 +111,93 @@ defmodule Grasp.Agent.StreamTest do
       ~s({"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Glob","input":{}}]}})
 
     assert [%{type: :tool, name: "Glob", summary: ""}] = fold([bare]).entries
+  end
+
+  describe "streaming deltas" do
+    @delta ~s({"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Look"}}})
+    @delta_more ~s({"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ing at the flow."}}})
+
+    test "text deltas build one partial assistant entry" do
+      state = fold([@delta, @delta_more])
+
+      assert state.entries == [%{type: :assistant, text: "Looking at the flow.", partial: true}]
+    end
+
+    test "the full block replaces the partial entry rather than repeating it" do
+      state = fold([@delta, @delta_more, @text])
+
+      assert state.entries == [%{type: :assistant, text: "Looking at the flow.", partial: false}]
+    end
+
+    test "a delta that follows a settled entry opens a new partial entry" do
+      state = fold([@text, @delta])
+
+      assert state.entries == [
+               %{type: :assistant, text: "Looking at the flow.", partial: false},
+               %{type: :assistant, text: "Look", partial: true}
+             ]
+    end
+
+    test "a delta after a tool call opens an entry of its own" do
+      state = fold([@tool_use, @delta])
+
+      assert [%{type: :tool}, %{type: :assistant, text: "Look", partial: true}] = state.entries
+    end
+
+    test "deltas that are not text leave the transcript alone" do
+      json =
+        ~s({"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"query\":"}}})
+
+      other = ~s({"type":"stream_event","event":{"type":"message_stop"}})
+
+      assert fold([json, other]).entries == []
+    end
+  end
+
+  describe "tool timing and failures" do
+    test "a tool call is clocked from its start to its result" do
+      state =
+        Stream.new()
+        |> Stream.apply(@tool_use, 1_000)
+        |> Stream.apply(@tool_result, 1_340)
+
+      assert [%{type: :tool, status: :done, started_at: 1_000, ms: 340}] = state.entries
+    end
+
+    test "a failed result keeps the tool's error text as the row's detail" do
+      failed =
+        ~s({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"no such function","is_error":true}]}})
+
+      assert [%{status: :error, detail: "no such function"}] = fold([@tool_use, failed]).entries
+    end
+
+    test "an error detail given as content blocks reads the first text block" do
+      failed =
+        ~s({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"boom"}],"is_error":true}]}})
+
+      assert [%{status: :error, detail: "boom"}] = fold([@tool_use, failed]).entries
+    end
+
+    test "a very long error detail is trimmed" do
+      long = String.duplicate("x", 3_000)
+
+      failed =
+        ~s({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"#{long}","is_error":true}]}})
+
+      assert [%{status: :error, detail: detail}] = fold([@tool_use, failed]).entries
+      assert String.length(detail) == 2_000
+    end
+
+    test "a successful result leaves no detail" do
+      assert [%{status: :done, detail: nil}] = fold([@tool_use, @tool_result]).entries
+    end
+  end
+
+  test "the done entry carries the run's wall time" do
+    timed =
+      ~s({"type":"result","subtype":"success","is_error":false,"num_turns":2,"total_cost_usd":0.01,"duration_ms":4200,"result":"ok"})
+
+    assert [%{type: :done, ms: 4200}] = fold([timed]).entries
   end
 
   test "rate limit events, unknown types and blank lines are ignored" do

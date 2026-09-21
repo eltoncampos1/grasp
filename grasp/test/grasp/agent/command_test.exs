@@ -21,6 +21,7 @@ defmodule Grasp.Agent.CommandTest do
              "--output-format",
              "stream-json",
              "--verbose",
+             "--include-partial-messages",
              "--strict-mcp-config",
              "--mcp-config",
              json | rest
@@ -36,6 +37,7 @@ defmodule Grasp.Agent.CommandTest do
     assert ["--max-turns", "60" | rest] = rest
     assert ["--append-system-prompt", system_prompt] = rest
     assert system_prompt =~ ~s(session: "s1")
+    assert "--include-partial-messages" in argv
     refute "--resume" in argv
     refute "--model" in argv
   end
@@ -44,7 +46,7 @@ defmodule Grasp.Agent.CommandTest do
     {"claude", argv} =
       Command.build("fix it", Keyword.merge(@opts, mode: "edit", reindex: "mix grasp.index"))
 
-    assert ["--tools", "Read,Grep,Glob,Edit,Write,Bash" | rest] = Enum.drop(argv, 8)
+    assert ["--tools", "Read,Grep,Glob,Edit,Write,Bash" | rest] = Enum.drop(argv, 9)
 
     assert [
              "--allowedTools",

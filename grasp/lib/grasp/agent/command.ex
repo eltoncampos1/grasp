@@ -3,7 +3,9 @@ defmodule Grasp.Agent.Command do
   Builds the argv that runs the Claude Code CLI headless against this viewer.
 
   The CLI is asked for `stream-json` on stdout so the runner can render a transcript as it
-  arrives, and is pointed with an inline `--mcp-config` at the `/mcp` endpoint Grasp serves
+  arrives, with `--include-partial-messages` so an answer arrives as text deltas and the
+  panel reads word by word rather than a paragraph at a time. It is pointed with an inline
+  `--mcp-config` at the `/mcp` endpoint Grasp serves
   under its mount prefix — the caller supplies that URL, since only it knows where the host
   mounted Grasp. `--strict-mcp-config` keeps the developer's own `.mcp.json` out of the
   run, and the tool allowlist follows the chat's mode. In `read` mode it is the grasp tools
@@ -73,6 +75,7 @@ defmodule Grasp.Agent.Command do
         "--output-format",
         "stream-json",
         "--verbose",
+        "--include-partial-messages",
         "--strict-mcp-config",
         "--mcp-config",
         mcp_config(mcp_url),

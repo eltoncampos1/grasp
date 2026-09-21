@@ -18,13 +18,24 @@ defmodule Grasp.Agent.RunnerTest do
                     %{running?: false, entries: entries, claude_session_id: "fake-1"}},
                    2_000
 
-    assert Enum.map(entries, & &1.type) == [:user, :assistant, :tool, :assistant, :done]
-    assert %{type: :done, cost_usd: 0.01} = List.last(entries)
+    assert Enum.map(entries, & &1.type) == [:user, :assistant, :tool, :tool, :assistant, :done]
+    assert %{type: :done, cost_usd: 0.01, ms: 4200} = List.last(entries)
 
     %{last_result: argv} = Grasp.Agent.get(name)
     assert argv =~ "--strict-mcp-config"
     assert argv =~ "/mcp"
     assert argv =~ ~s(session: "#{name}")
+  end
+
+  test "the view carries the epoch the run started at and drops it when it ends", %{name: name} do
+    assert Grasp.Agent.get(name).started_at == nil
+
+    :ok = Grasp.Agent.send_prompt(name, "SLOW one")
+    assert %{running?: true, started_at: started_at} = Grasp.Agent.get(name)
+    assert is_integer(started_at)
+    assert abs(started_at - System.system_time(:millisecond)) < 5_000
+
+    assert_receive {:agent, ^name, %{running?: false, started_at: nil}}, 2_000
   end
 
   test "a second prompt resumes the CLI session the first one opened", %{name: name} do
