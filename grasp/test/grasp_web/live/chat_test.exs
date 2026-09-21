@@ -47,16 +47,31 @@ defmodule GraspWeb.ChatTest do
     :ok = Grasp.Agent.subscribe(name)
     view |> form("#chat-form", %{"prompt" => "SLOW one"}) |> render_submit()
 
-    assert has_element?(view, ~s(#chat .msg[data-type="thinking"])) or
-             has_element?(view, ~s(#chat details.tools[open]))
-
+    # The dots belong to the status line, which stands for the whole run: nothing is
+    # inserted into or removed from the log between the events of one run.
     assert has_element?(view, "#chat .chat__status", "Working")
+    assert has_element?(view, "#chat .chat__status .dots")
     assert has_element?(view, "#chat .chat__status span[data-elapsed-from]")
+    refute has_element?(view, ~s(#chat .msg[data-type="thinking"]))
 
     assert_receive {:agent, ^name, %{running?: false}}, 2_000
     eventually(view, fn -> not has_element?(view, ~s(#chat button[phx-click="chat_stop"])) end)
     refute has_element?(view, ~s(#chat .msg[data-type="thinking"]))
     refute has_element?(view, "#chat .chat__status")
+  end
+
+  test "a tools group stays open until the run ends", %{view: view, name: name} do
+    view |> element("#toggle-chat") |> render_click()
+    :ok = Grasp.Agent.subscribe(name)
+    view |> form("#chat-form", %{"prompt" => "SLOW one"}) |> render_submit()
+
+    eventually(view, fn -> has_element?(view, ~s(#chat details.tools[open])) end)
+
+    assert_receive {:agent, ^name, %{running?: false}}, 2_000
+    eventually(view, fn -> not has_element?(view, ~s(#chat button[phx-click="chat_stop"])) end)
+
+    assert has_element?(view, ~s(#chat details.tools))
+    refute has_element?(view, ~s(#chat details.tools[open]))
   end
 
   test "an answer renders as Markdown whose function ids open cards", %{view: view, name: name} do

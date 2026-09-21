@@ -2,7 +2,8 @@
 # Stands in for the Claude Code CLI in tests: prints a canned stream-json run whose result
 # echoes the argv, so tests can assert on the flags the runner passed. A prompt containing
 # FAIL exits non-zero after writing to stderr; SLOW keeps the run alive long enough for a
-# second prompt or a stop to land while it is still running, and HANG outlives any test that
+# second prompt or a stop to land while it is still running, with a tool call outstanding for
+# as long as it waits, and HANG outlives any test that
 # does not kill it. With FAKE_CLAUDE_PID_FILE set it records its own pid there, so a test can
 # prove the process is gone rather than only that the transcript says so.
 args="$*"
@@ -39,9 +40,23 @@ echo '{"type":"assistant","message":{"content":[{"type":"text","text":" Done."}]
 # object across lines, so this line is printed rather than echoed.
 printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"\n\nIt calls **greet** in `SampleApp.Greeter.greet/2`, not `Nope.Missing.fun/1`.\n\n```elixir\nSampleApp.Greeter.greet(name, greeting)\n```\n\n<script>alert(1)</script>\n"}]}}'
 
+# A call left outstanding across the sleep, so a run that is still going has a running tool
+# as the last thing in its transcript for a test to read.
+case "$args" in
+  *SLOW*)
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t3","name":"mcp__grasp__get_function","input":{"id":"SampleApp.Greeter.greet/2"}}]}}'
+    ;;
+esac
+
 case "$args" in
   *HANG*) sleep 5 ;;
   *SLOW*) sleep 1 ;;
+esac
+
+case "$args" in
+  *SLOW*)
+    printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"ok"}]}}'
+    ;;
 esac
 
 # The argv is folded onto one line before escaping: the system prompt spans several lines,

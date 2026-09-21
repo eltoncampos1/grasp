@@ -387,15 +387,17 @@ body.grasp-signatures #stage .badge { padding: 0 calc(var(--space-s) / var(--zoo
 .tool[data-status="running"] .tool__label::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-inline-end: 0.4em; border: 1px solid var(--border); border-block-start-color: var(--accent); border-radius: 50%; animation: tool-spin 0.7s linear infinite; }
 .tool pre { flex-basis: 100%; margin: 2px 0 var(--space-xs); padding: var(--space-xs); font-family: var(--mono); background: var(--bg-sunken); border-radius: 4px; color: var(--danger); white-space: pre-wrap; overflow-x: auto; }
 @keyframes tool-spin { to { rotate: 1turn; } }
-.msg[data-type="thinking"] { display: flex; align-items: center; gap: 4px; padding: var(--space-xs) 0; }
-.msg[data-type="thinking"] span { width: 5px; height: 5px; border-radius: 50%; background: var(--fg-faint); animation: thinking-dot 1.2s ease-in-out infinite; }
-.msg[data-type="thinking"] span:nth-child(2) { animation-delay: 0.2s; }
-.msg[data-type="thinking"] span:nth-child(3) { animation-delay: 0.4s; }
+/* The dots sit in the status line, which stands for the whole run, so that nothing the
+   transcript draws comes and goes between the events of one run. */
+.chat__status .dots { display: inline-flex; align-items: center; gap: 4px; margin-inline-end: 4px; }
+.chat__status .dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--fg-faint); animation: thinking-dot 1.2s ease-in-out infinite; }
+.chat__status .dots span:nth-child(2) { animation-delay: 0.2s; }
+.chat__status .dots span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes thinking-dot { 0%, 60%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .tool[data-status="running"] .tool__label::before, .msg[data-type="thinking"] span { animation: none; }
-  .msg[data-type="thinking"] span:nth-child(2) { opacity: 0.6; }
-  .msg[data-type="thinking"] span:nth-child(3) { opacity: 0.85; }
+  .tool[data-status="running"] .tool__label::before, .chat__status .dots span { animation: none; }
+  .chat__status .dots span:nth-child(2) { opacity: 0.6; }
+  .chat__status .dots span:nth-child(3) { opacity: 0.85; }
 }
 .chat__status { padding: 0 var(--space-m) var(--space-xs); color: var(--fg-subtle); font-size: 12px; }
 .msg[data-type="error"] { color: var(--danger); }

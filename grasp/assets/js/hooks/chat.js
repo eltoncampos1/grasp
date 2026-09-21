@@ -217,10 +217,14 @@ const Chat = {
     })
   },
 
+  // Only fences that have not got a button, and none inside a message still being
+  // streamed: the selector is what makes a patch that changed nothing cost no DOM writes,
+  // and a partial message's markup is rewritten on every delta, so a button put in it
+  // would go with the next one.
   fenceButtons() {
-    this.el.querySelectorAll("#chat-log pre.fence").forEach((fence) => {
-      if (fence.querySelector(".copy")) return
+    const fences = `#chat-log .msg:not([data-partial="true"]) pre.fence:not(:has(> button.copy))`
 
+    this.el.querySelectorAll(fences).forEach((fence) => {
       const button = document.createElement("button")
       button.type = "button"
       button.className = "copy"

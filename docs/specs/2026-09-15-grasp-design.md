@@ -1214,13 +1214,17 @@ conversation.
 - **Working state and streaming.** The CLI runs with `--include-partial-messages`, so text
   arrives as deltas: `Grasp.Agent.Stream` folds them into a partial assistant entry that the
   full block replaces when it lands, and the panel reads token by token. While a run is live
-  the panel shows a thinking row (three animated dots) whenever nothing is streaming, a
-  spinner on the tool call under way, and a status line with the elapsed time (the runner
-  publishes `started_at`; the hook ticks the seconds) and the number of tool calls this turn;
+  the panel says so in one place that stands for the whole run: a status line carrying three
+  animated dots, the elapsed time (the runner publishes `started_at`; the hook ticks the
+  seconds) and the number of tool calls this turn, with a spinner on the tool call under
+  way. A row that came and went between the run's events would flicker at tool-call speed,
+  since a line of CLI output is a patch, so nothing is inserted into or removed from the
+  log between them;
   Send stays where it is and a Stop button appears beside it for the duration, so a prompt
   can be queued while a run is live.
-- **Tool rows.** Consecutive tool calls fold into one group, "Used N tools", open while one is
-  running and closed once all are done; each row carries a human label — "Searched “award”",
+- **Tool rows.** Consecutive tool calls fold into one group, "Used N tools", open while one
+  of them is running or while the live run has said nothing since, and closed once the run
+  has moved past the group or ended; each row carries a human label — "Searched “award”",
   "Read MyApp.Wallets.credit/3", "Arranged 4 cards", "Ran mix format" — its duration, and,
   when it failed, the tool's error text under it. A finished turn ends with its cost, its
   number of turns and its wall time, from the `result` event.

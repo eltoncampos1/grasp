@@ -17,10 +17,10 @@ the run, and New conversation starts over.
 
 An answer is rendered Markdown: its code fences are highlighted as the cards are, and every
 `Mod.fun/arity` the index holds is a button that opens that function's card. The words
-arrive as the model writes them, and while a run is live the panel carries a thinking row,
-the elapsed time and the number of tool calls this turn. Consecutive tool calls fold into
-one group — "Used 4 tools" — each row naming in plain words what the agent did and how long
-it took, open while one is running; a call that failed shows the tool's own words under it.
+arrive as the model writes them, and while a run is live a status line under the log
+carries three animated dots, the elapsed time and the number of tool calls this turn.
+Consecutive tool calls fold into one group — "Used 4 tools" — each row naming in plain words
+what the agent did and how long it took, open until the run moves past the group; a call that failed shows the tool's own words under it.
 A turn ends with its cost, its number of turns and its wall time.
 
 The prompt box grows to six lines: Enter sends, Shift+Enter breaks a line, and ArrowUp on an

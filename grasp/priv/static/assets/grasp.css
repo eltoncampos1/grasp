@@ -1325,23 +1325,23 @@ body.grasp-signatures #stage .badge {
     rotate: 1turn;
   }
 }
-.msg[data-type=thinking] {
-  display: flex;
+.chat__status .dots {
+  display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: var(--space-xs) 0;
+  margin-inline-end: 4px;
 }
-.msg[data-type=thinking] span {
+.chat__status .dots span {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: var(--fg-faint);
   animation: thinking-dot 1.2s ease-in-out infinite;
 }
-.msg[data-type=thinking] span:nth-child(2) {
+.chat__status .dots span:nth-child(2) {
   animation-delay: 0.2s;
 }
-.msg[data-type=thinking] span:nth-child(3) {
+.chat__status .dots span:nth-child(3) {
   animation-delay: 0.4s;
 }
 @keyframes thinking-dot {
@@ -1354,13 +1354,13 @@ body.grasp-signatures #stage .badge {
 }
 @media (prefers-reduced-motion: reduce) {
   .tool[data-status=running] .tool__label::before,
-  .msg[data-type=thinking] span {
+  .chat__status .dots span {
     animation: none;
   }
-  .msg[data-type=thinking] span:nth-child(2) {
+  .chat__status .dots span:nth-child(2) {
     opacity: 0.6;
   }
-  .msg[data-type=thinking] span:nth-child(3) {
+  .chat__status .dots span:nth-child(3) {
     opacity: 0.85;
   }
 }
