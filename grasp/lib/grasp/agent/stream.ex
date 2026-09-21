@@ -18,8 +18,11 @@ defmodule Grasp.Agent.Stream do
 
   Tool calls are two events apart — an `assistant` block starts one, a later `user` block
   reports it — so a tool entry is appended `:running` and closed when its result arrives.
-  The result carries the id of the call it answers, but a transcript only ever shows tool
-  calls in the order they were made, so the oldest running entry is the one to close. Each
+  The result names the call it answers, and the entry records that name, because calls the
+  model made together come back in whatever order they finished: closing by position would
+  hang one call's failure and duration on another's row. A result naming nothing the
+  transcript knows falls back to the oldest running entry, which is the order a CLI that
+  does not name its results reports them in. Each
   entry records the clock reading it started at, and closing it subtracts that from the
   reading the closing line came in on, which is why the clock is an argument: a caller
   folding a canned run can pin both readings and get a duration it chose.
@@ -34,6 +37,7 @@ defmodule Grasp.Agent.Stream do
           | %{type: :assistant, text: String.t(), partial: boolean()}
           | %{
               type: :tool,
+              id: String.t() | nil,
               name: String.t(),
               summary: String.t(),
               status: :running | :done | :error,
@@ -74,6 +78,7 @@ defmodule Grasp.Agent.Stream do
   A blank line is ignored, a line that does not decode as a JSON object is logged, and an
   event of an unknown type (or a `rate_limit_event`) leaves the state untouched.
   """
+  @spec apply(t(), String.t()) :: t()
   @spec apply(t(), String.t(), integer()) :: t()
   def apply(state, line, now \\ System.monotonic_time(:millisecond)) do
     case Jason.decode(String.trim(line)) do
@@ -164,6 +169,7 @@ defmodule Grasp.Agent.Stream do
 
     append(state, %{
       type: :tool,
+      id: block["id"],
       name: String.replace_prefix(block["name"] || "", "mcp__grasp__", ""),
       summary: summary(input),
       status: :running,
@@ -175,9 +181,9 @@ defmodule Grasp.Agent.Stream do
 
   defp block(%{"type" => "tool_result"} = block, state, now) do
     if block["is_error"] do
-      close_oldest_running(state, :error, now, detail(block["content"]))
+      close(state, block["tool_use_id"], :error, now, detail(block["content"]))
     else
-      close_oldest_running(state, :done, now, nil)
+      close(state, block["tool_use_id"], :done, now, nil)
     end
   end
 
@@ -261,8 +267,8 @@ defmodule Grasp.Agent.Stream do
     end
   end
 
-  defp close_oldest_running(state, status, now, detail) do
-    case Enum.find_index(state.entries, &(&1.type == :tool and &1.status == :running)) do
+  defp close(state, id, status, now, detail) do
+    case answered(state.entries, id) do
       nil ->
         state
 
@@ -275,6 +281,22 @@ defmodule Grasp.Agent.Stream do
           )
 
         %{state | entries: entries}
+    end
+  end
+
+  # The entry a result answers: the running call it names, or the oldest call still running
+  # when it names one the transcript never saw.
+  defp answered(entries, id) do
+    by_id =
+      is_binary(id) and
+        Enum.find_index(entries, &(&1.type == :tool and &1.status == :running and &1.id == id))
+
+    case by_id do
+      index when is_integer(index) ->
+        index
+
+      _unnamed ->
+        Enum.find_index(entries, &(&1.type == :tool and &1.status == :running))
     end
   end
 

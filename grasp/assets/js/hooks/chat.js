@@ -7,7 +7,10 @@
 // is a patch per second on a panel that is already being patched by the run itself. The
 // server publishes the millisecond the run started, as `data-elapsed-from`; the timer
 // reads it and stops itself once the attribute is gone, which is how a finished run ends
-// the counting without anything telling the client that it has.
+// the counting without anything telling the client that it has. The count is a stopwatch,
+// so a part-second reads as the second it is still in. It compares a server wall-clock
+// reading against the browser's own, which agree on a viewer served from this machine and
+// leave the count pinned at 0s for a client whose clock is behind.
 //
 // That last one is why an answer's markup carries no event bindings of its own. An answer
 // is written by the model, and the sanitiser therefore strips every `phx-` attribute from
@@ -73,7 +76,7 @@ const Chat = {
 
     const from = Number(span.dataset.elapsedFrom)
     if (Number.isFinite(from)) {
-      const seconds = Math.max(0, Math.round((Date.now() - from) / 1000))
+      const seconds = Math.max(0, Math.floor((Date.now() - from) / 1000))
       span.textContent = `${seconds}s`
     }
 

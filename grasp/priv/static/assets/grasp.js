@@ -992,7 +992,7 @@
       if (!span) return this.stopTicking();
       const from = Number(span.dataset.elapsedFrom);
       if (Number.isFinite(from)) {
-        const seconds = Math.max(0, Math.round((Date.now() - from) / 1e3));
+        const seconds = Math.max(0, Math.floor((Date.now() - from) / 1e3));
         span.textContent = `${seconds}s`;
       }
       if (!this.timer) this.timer = window.setInterval(() => this.tick(), 1e3);

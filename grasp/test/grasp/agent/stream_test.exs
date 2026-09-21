@@ -72,7 +72,7 @@ defmodule Grasp.Agent.StreamTest do
     assert [%{type: :tool, status: :error}] = fold([@tool_use, failed]).entries
   end
 
-  test "the oldest running tool is the one a result closes" do
+  test "a result closes the call it names and leaves the others running" do
     second =
       ~s({"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"lib/a.ex"}}]}})
 
@@ -162,6 +162,42 @@ defmodule Grasp.Agent.StreamTest do
         |> Stream.apply(@tool_result, 1_340)
 
       assert [%{type: :tool, status: :done, started_at: 1_000, ms: 340}] = state.entries
+    end
+
+    test "a result closes the call it answers rather than the oldest one" do
+      both =
+        ~s({"type":"assistant","message":{"content":[) <>
+          ~s({"type":"tool_use","id":"t1","name":"mcp__grasp__search_functions","input":{"query":"greet"}},) <>
+          ~s({"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"lib/a.ex"}}]}})
+
+      failed =
+        ~s({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"boom","is_error":true}]}})
+
+      ok =
+        ~s({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"[]"}]}})
+
+      state =
+        Stream.new()
+        |> Stream.apply(both, 1_000)
+        |> Stream.apply(failed, 1_050)
+        |> Stream.apply(ok, 1_400)
+
+      assert [first, second] = state.entries
+      assert %{name: "search_functions", status: :done, ms: 400, detail: nil} = first
+      assert %{name: "Read", status: :error, ms: 50, detail: "boom"} = second
+    end
+
+    test "a result naming no call the transcript knows closes the oldest running one" do
+      second =
+        ~s({"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"lib/a.ex"}}]}})
+
+      stray =
+        ~s({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t9","content":"[]"}]}})
+
+      state = fold([@tool_use, second, stray])
+
+      assert [%{name: "search_functions", status: :done}, %{name: "Read", status: :running}] =
+               state.entries
     end
 
     test "a failed result keeps the tool's error text as the row's detail" do

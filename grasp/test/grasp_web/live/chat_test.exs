@@ -26,6 +26,7 @@ defmodule GraspWeb.ChatTest do
     assert has_element?(view, ~s(#chat .msg[data-type="user"]), "show me greet")
 
     assert_receive {:agent, ^name, %{running?: false}}, 2_000
+    eventually(view, fn -> not has_element?(view, ~s(#chat button[phx-click="chat_stop"])) end)
     log = view |> element("#chat-log") |> render()
 
     # The block that follows the deltas is the authoritative text, not a second copy of it.
@@ -52,7 +53,9 @@ defmodule GraspWeb.ChatTest do
     assert has_element?(view, "#chat .chat__status span[data-elapsed-from]")
 
     assert_receive {:agent, ^name, %{running?: false}}, 2_000
+    eventually(view, fn -> not has_element?(view, ~s(#chat button[phx-click="chat_stop"])) end)
     refute has_element?(view, ~s(#chat .msg[data-type="thinking"]))
+    refute has_element?(view, "#chat .chat__status")
   end
 
   test "an answer renders as Markdown whose function ids open cards", %{view: view, name: name} do
@@ -60,6 +63,7 @@ defmodule GraspWeb.ChatTest do
     :ok = Grasp.Agent.subscribe(name)
     view |> form("#chat-form", %{"prompt" => "show me greet"}) |> render_submit()
     assert_receive {:agent, ^name, %{running?: false}}, 2_000
+    eventually(view, fn -> not has_element?(view, ~s(#chat button[phx-click="chat_stop"])) end)
 
     assert has_element?(view, ~s(#chat .msg[data-type="assistant"] strong), "greet")
     assert has_element?(view, ~s(#chat pre.fence[data-lang="elixir"]))
@@ -126,6 +130,7 @@ defmodule GraspWeb.ChatTest do
     :ok = Grasp.Agent.subscribe(name)
     view |> form("#chat-form", %{"prompt" => "FAIL please"}) |> render_submit()
     assert_receive {:agent, ^name, %{running?: false}}, 2_000
+    eventually(view, fn -> not has_element?(view, ~s(#chat button[phx-click="chat_stop"])) end)
     assert has_element?(view, ~s(#chat .msg[data-type="error"]), "status 3")
     assert has_element?(view, "#chat .chat__debug", "something went wrong on stderr")
   end
@@ -144,5 +149,25 @@ defmodule GraspWeb.ChatTest do
 
     view |> element(~s(#chat button[phx-click="chat_reset"]), "New") |> render_click()
     refute has_element?(view, ~s(#chat .msg[data-type="user"]))
+  end
+
+  # A broadcast the test received is not a broadcast the LiveView has handled: PubSub
+  # dispatches by registry partition, so the subscriber that joined second can be notified
+  # first, and a render asked for in that window shows the run as it was. Every assertion
+  # that reads the panel the moment a run ends waits here until the panel itself says the
+  # run is over — the Stop button is drawn only while one is live.
+  defp eventually(view, predicate, attempts \\ 100) do
+    cond do
+      predicate.() ->
+        :ok
+
+      attempts == 0 ->
+        flunk("the panel never reached the state the test waited for")
+
+      true ->
+        Process.sleep(10)
+        render(view)
+        eventually(view, predicate, attempts - 1)
+    end
   end
 end
