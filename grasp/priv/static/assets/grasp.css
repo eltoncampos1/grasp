@@ -1117,11 +1117,27 @@ body.grasp-signatures #stage .badge {
 .help__body {
   padding: var(--space-m);
   max-height: 80vh;
-  overflow-y: auto;
+  overflow: auto;
+}
+.help__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-m);
+  margin-block-end: var(--space-m);
 }
 .help h2 {
-  margin: 0 0 var(--space-m);
+  margin: 0;
   font-size: 1rem;
+}
+.help__close {
+  padding: 0 var(--space-xs);
+  color: var(--fg-subtle);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.help__close:hover {
+  color: var(--fg);
 }
 .help h3 {
   margin: var(--space-m) 0 var(--space-s);

@@ -723,6 +723,9 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#help h2#help-title", "Keys and gestures")
     refute has_element?(view, "#help[open]")
 
+    # First in the dialog, so it is both the pointer's way out and what showModal() focuses.
+    assert has_element?(view, "#help button.help__close[type='button'][aria-label='Close']")
+
     assert has_element?(view, "#help dt kbd", "Alt+drag")
     assert has_element?(view, "#help dd", "Move every card connected to it.")
     assert render(view) =~ "<kbd>?</kbd>"

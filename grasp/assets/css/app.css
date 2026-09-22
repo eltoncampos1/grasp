@@ -346,8 +346,13 @@ body.grasp-signatures #stage .badge { padding: 0 calc(var(--space-s) / var(--zoo
    is the element's own ::backdrop rather than a rendered sibling; the surface is the palette's. */
 .help { width: min(36rem, 90vw); padding: 0; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); background: var(--bg-raised); color: var(--fg); font-size: 13px; }
 .help::backdrop { background: var(--backdrop); }
-.help__body { padding: var(--space-m); max-height: 80vh; overflow-y: auto; }
-.help h2 { margin: 0 0 var(--space-m); font-size: 1rem; }
+/* Scrolls on both axes: the key column is sized to its content and cannot shrink, so on a
+   narrow window the list is scrolled rather than spilled past the dialog's edge. */
+.help__body { padding: var(--space-m); max-height: 80vh; overflow: auto; }
+.help__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-m); margin-block-end: var(--space-m); }
+.help h2 { margin: 0; font-size: 1rem; }
+.help__close { padding: 0 var(--space-xs); color: var(--fg-subtle); font-size: 1.25rem; line-height: 1; }
+.help__close:hover { color: var(--fg); }
 .help h3 { margin: var(--space-m) 0 var(--space-s); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-muted); }
 /* The key column is as wide as its widest chord and no wider, so the meanings all start
    against the same edge. */

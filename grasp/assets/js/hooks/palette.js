@@ -4,6 +4,9 @@ const Palette = {
     this.wasOpen = false
 
     this.onKeydownWindow = (e) => {
+      // The help dialog is modal, so a palette opened under it would be inert and waiting
+      // there once the reader presses Escape.
+      if (document.getElementById("help")?.open) return
       if ((e.metaKey || e.ctrlKey) && e.key?.toLowerCase() === "k") {
         e.preventDefault()
         this.pushEvent("palette_show", {})

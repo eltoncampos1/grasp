@@ -5,6 +5,8 @@ const Help = {
   mounted() {
     this.onKeydown = (e) => {
       if (e.key !== "?") return
+      // A chord that happens to carry "?" belongs to whoever claims the chord, not to the list.
+      if (e.metaKey || e.ctrlKey || e.altKey) return
       // "?" is a character, so a field the reader is typing in keeps it, and the palette's own
       // search box is open over the canvas whenever the palette is.
       if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return
@@ -27,7 +29,7 @@ const Help = {
     // A modal dialog's backdrop is painted by the dialog itself, so a click that lands on the
     // element rather than on anything inside it is a click outside the list.
     this.onClickDialog = (e) => {
-      if (e.target === this.el) this.el.close()
+      if (e.target === this.el || e.target.closest?.(".help__close")) this.el.close()
     }
 
     window.addEventListener("keydown", this.onKeydown)

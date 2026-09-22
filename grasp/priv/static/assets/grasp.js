@@ -5,6 +5,7 @@
       this.input = this.el.querySelector("input[name=q]");
       this.wasOpen = false;
       this.onKeydownWindow = (e) => {
+        if (document.getElementById("help")?.open) return;
         if ((e.metaKey || e.ctrlKey) && e.key?.toLowerCase() === "k") {
           e.preventDefault();
           this.pushEvent("palette_show", {});
@@ -1435,6 +1436,7 @@
     mounted() {
       this.onKeydown = (e) => {
         if (e.key !== "?") return;
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
         if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
         if (document.getElementById("palette")?.dataset.open === "true") return;
         e.preventDefault();
@@ -1448,7 +1450,7 @@
         this.toggle();
       };
       this.onClickDialog = (e) => {
-        if (e.target === this.el) this.el.close();
+        if (e.target === this.el || e.target.closest?.(".help__close")) this.el.close();
       };
       window.addEventListener("keydown", this.onKeydown);
       document.addEventListener("click", this.onClickDocument);

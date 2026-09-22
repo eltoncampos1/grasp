@@ -16,7 +16,10 @@ defmodule GraspWeb.Help do
     ~H"""
     <dialog id="help" class="help" phx-hook="Help" phx-update="ignore" aria-labelledby="help-title">
       <div class="help__body">
-        <h2 id="help-title">Keys and gestures</h2>
+        <div class="help__head">
+          <h2 id="help-title">Keys and gestures</h2>
+          <button type="button" class="help__close" aria-label="Close">×</button>
+        </div>
 
         <h3>Mouse</h3>
         <dl>
