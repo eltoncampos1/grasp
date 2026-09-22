@@ -27,7 +27,9 @@ defmodule Grasp.Index.Jobs do
   `entries` are entry points in the JSON shape the document holds them in, as
   `Grasp.Index.Builder.entry_point_json/1` writes them; only the `oban_worker` ones are
   read. A call keeps its range and its place in the record's calls, and where the rewrite
-  leaves a record holding two calls of the same target, kind and range, one is kept.
+  leaves a record holding two calls of the same target, kind and range, one is kept. The
+  call the edge stands for is kept under `:via`, so the edge can be undone and drawn again
+  against another set of workers.
   """
   @spec resolve([Join.function_record()], [map()]) :: [Join.function_record()]
   def resolve(records, entries) do
@@ -71,7 +73,8 @@ defmodule Grasp.Index.Jobs do
         target: perform,
         kind: :enqueue,
         range: call.range,
-        job: %{worker: worker, queue: queue}
+        job: %{worker: worker, queue: queue},
+        via: %{target: target, kind: call.kind}
       }
     else
       _not_enqueueing -> call

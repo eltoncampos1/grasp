@@ -13,6 +13,7 @@ defmodule Grasp.Index.IncrementalTest do
   @html "lib/sample_app_web/greet_html.ex"
   @template "lib/sample_app_web/greet_html/show.html.heex"
   @controller "lib/sample_app_web/greet_controller.ex"
+  @mount "SampleAppWeb.HelloLive.mount/3"
 
   @changed_greeter ~S'''
   defmodule SampleApp.Greeter do
@@ -315,6 +316,51 @@ defmodule Grasp.Index.IncrementalTest do
     end
   end
 
+  describe "update/5 over a file that did not change" do
+    test "draws a route edge on a record it did not rebuild",
+         %{document: document, root: root} do
+      copy(root, @greeter)
+
+      routeless =
+        map_record(document, "SampleAppWeb.GreetHTML.show/1", fn record ->
+          Map.update!(
+            record,
+            "calls",
+            &Enum.reject(&1, fn call -> call["target"] == @mount end)
+          )
+        end)
+
+      {:ok, updated} = update(routeless, root, [@greeter], [])
+
+      assert %{"kind" => "route", "route" => %{"verb" => "GET", "path" => "/hello"}} =
+               updated
+               |> fetch("SampleAppWeb.GreetHTML.show/1")
+               |> Map.fetch!("calls")
+               |> Enum.find(&(&1["target"] == @mount))
+    end
+
+    test "reverts an enqueue edge on a record it did not rebuild when the worker is gone",
+         %{document: document, root: root} do
+      copy(root, @greeter)
+
+      workerless =
+        Map.update!(
+          document,
+          "entry_points",
+          &Enum.reject(&1, fn entry -> entry["kind"] == "oban_worker" end)
+        )
+
+      {:ok, updated} = update(workerless, root, [@greeter], [])
+
+      calls = updated |> fetch("SampleAppWeb.GreetController.mail/2") |> Map.fetch!("calls")
+
+      assert Enum.find(calls, &(&1["target"] == "SampleApp.Workers.Mailer.perform/1")) == nil
+
+      assert %{"kind" => "remote", "range" => %{"start" => [19, 12], "end" => [19, 40]}} =
+               Enum.find(calls, &(&1["target"] == "SampleApp.Workers.Mailer.new/1"))
+    end
+  end
+
   describe "update/5 over a source that enqueues a job" do
     test "resolves the call against the worker the document knows",
          %{document: document, root: root} do
@@ -463,6 +509,14 @@ defmodule Grasp.Index.IncrementalTest do
 
     {sha, 0} = System.cmd("git", ["rev-parse", "HEAD"], cd: root)
     %{root: root, base_sha: String.trim(sha), paths: ["lib"]}
+  end
+
+  defp map_record(document, id, fun) do
+    Map.update!(document, "functions", fn records ->
+      Enum.map(records, fn record ->
+        if record["id"] == id, do: fun.(record), else: record
+      end)
+    end)
   end
 
   defp by_id(records), do: Map.new(records, &{&1["id"], &1})

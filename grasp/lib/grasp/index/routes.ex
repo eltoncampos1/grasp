@@ -23,6 +23,10 @@ defmodule Grasp.Index.Routes do
   A site no route answers to becomes nothing: a link out to another site, a path served by
   a plug the index does not hold, and a path this pass reads wrongly all look the same
   here, and a call into a function no one named would be worse than a missing edge.
+
+  A record keeps its sites once they are resolved. They are the input this pass reads, and
+  the document carries them so an update can match them against the routes it finds rather
+  than against the routes the build that wrote the record found.
   """
 
   alias Grasp.Index.Join
@@ -33,9 +37,8 @@ defmodule Grasp.Index.Routes do
   Appends a call of kind `:route` to every record for each route site that resolves.
 
   `entries` are entry points in the JSON shape the document holds them in, as
-  `Grasp.Index.Builder.entry_point_json/1` writes them. Records come back without their
-  `:route_sites`: the sites have said all they can say, and what the document carries is
-  calls.
+  `Grasp.Index.Builder.entry_point_json/1` writes them. Records keep their `:route_sites`:
+  the document carries them so an update can resolve them again.
   """
   @spec resolve([Join.function_record()], [map()]) :: [map()]
   def resolve(records, entries) do
@@ -72,14 +75,13 @@ defmodule Grasp.Index.Routes do
   defp resolve_record(record, routes) do
     case Map.get(record, :route_sites, []) do
       [] ->
-        Map.delete(record, :route_sites)
+        record
 
       sites ->
         calls = record.calls ++ Enum.flat_map(sites, &call(&1, routes))
 
-        record
-        |> Map.delete(:route_sites)
-        |> Map.put(
+        Map.put(
+          record,
           :calls,
           calls |> Enum.uniq() |> Enum.sort_by(&{&1.range.start, &1.target, &1.kind})
         )

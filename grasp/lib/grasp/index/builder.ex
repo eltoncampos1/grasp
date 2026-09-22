@@ -27,8 +27,8 @@ defmodule Grasp.Index.Builder do
   are what `Grasp.Index.Routes` resolves a template's links and `~p` sigils against.
 
   `run/1` is the full build, and every stage it walks — `source_files/2`, `extract/2`,
-  `Grasp.Index.Join.join/3`, `entry_points/2`, `classify/3`, `Grasp.Index.Routes.resolve/2`,
-  `Grasp.Index.Jobs.resolve/2`, `document/5` — is a function of its own, because
+  `Grasp.Index.Join.join/3`, `entry_points/2`, `classify/3`,
+  `Grasp.Index.Resolve.resolve/2`, `document/5` — is a function of its own, because
   `Grasp.Index.Incremental` runs the same stages over the handful of files a save touched
   and has to produce records of exactly the same shape.
   """
@@ -38,9 +38,8 @@ defmodule Grasp.Index.Builder do
     Changes,
     EntryPoints,
     Extract,
-    Jobs,
     Join,
-    Routes,
+    Resolve,
     Templates,
     Tracer
   }
@@ -102,8 +101,7 @@ defmodule Grasp.Index.Builder do
     report_skipped(detected.skipped)
     entries = Enum.map(detected.entry_points, &entry_point_json/1)
 
-    records =
-      functions |> classify(base, paths) |> Routes.resolve(entries) |> Jobs.resolve(entries)
+    records = functions |> classify(base, paths) |> Resolve.resolve(entries)
 
     document =
       document(
@@ -259,41 +257,18 @@ defmodule Grasp.Index.Builder do
       "file" => record.file,
       "span" => %{"start_line" => record.span.start_line, "end_line" => record.span.end_line},
       "source" => record.source,
-      "calls" => Enum.map(record.calls, &call_json/1),
+      "calls" => Enum.map(record.calls, &Resolve.call_json/1),
       "hidden_calls" =>
         Enum.map(
           record.hidden_calls,
           &%{"target" => &1.target, "kind" => Atom.to_string(&1.kind), "line" => &1.line}
         ),
+      "route_sites" =>
+        record |> Map.get(:route_sites, []) |> Enum.map(&Resolve.route_site_json/1),
       "change" => Map.get(record, :change, "unchanged"),
       "base_source" => Map.get(record, :base_source),
       "removed" => Map.get(record, :removed, false)
     }
-  end
-
-  # A call of kind `:route` carries the route it reaches, so a reader is told which one of
-  # a controller's actions the link goes to without opening the router. A call of kind
-  # `:enqueue` carries the worker and the queue the job runs on.
-  defp call_json(call) do
-    json = %{
-      "target" => call.target,
-      "kind" => Atom.to_string(call.kind),
-      "range" => %{
-        "start" => Tuple.to_list(call.range.start),
-        "end" => Tuple.to_list(call.range.end)
-      }
-    }
-
-    case call do
-      %{route: %{verb: verb, path: path}} ->
-        Map.put(json, "route", %{"verb" => verb, "path" => path})
-
-      %{job: %{worker: worker, queue: queue}} ->
-        Map.put(json, "job", %{"worker" => worker, "queue" => queue})
-
-      _call ->
-        json
-    end
   end
 
   @doc "The JSON shape of one entry point."

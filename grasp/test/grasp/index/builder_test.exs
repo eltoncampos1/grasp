@@ -233,6 +233,24 @@ defmodule Grasp.Index.BuilderTest do
            )
   end
 
+  test "the document keeps the inputs its edges are resolved from", %{index: index} do
+    {:ok, show} = Grasp.Index.fetch_function(index, "SampleAppWeb.GreetHTML.show/1")
+
+    assert %{
+             "verb" => "GET",
+             "path" => ["greet", "bob"],
+             "range" => %{"start" => [3, 9], "end" => [3, 21]}
+           } in show["route_sites"]
+
+    {:ok, mail} = Grasp.Index.fetch_function(index, "SampleAppWeb.GreetController.mail/2")
+
+    assert %{"via" => %{"target" => "SampleApp.Workers.Mailer.new/1", "kind" => "remote"}} =
+             call(mail, "SampleApp.Workers.Mailer.perform/1")
+
+    {:ok, greet} = Grasp.Index.fetch_function(index, "SampleApp.Greeter.greet/2")
+    assert greet["route_sites"] == []
+  end
+
   test "reaches the template a controller renders and the component a template calls",
        %{index: index} do
     {:ok, controller} = Grasp.Index.fetch_function(index, "SampleAppWeb.GreetController.show/2")

@@ -48,11 +48,12 @@ defmodule Grasp.Index.RoutesTest do
     assert calls(site("GET", ["nowhere"])) == []
   end
 
-  test "returns a record with no route sites unchanged, and without the key" do
+  test "returns a record with no route sites unchanged" do
     record = %{id: "SampleApp.Greeter.greet/2", calls: []}
+    siteless = Map.put(record, :route_sites, [])
 
     assert Routes.resolve([record], entries()) == [record]
-    assert Routes.resolve([Map.put(record, :route_sites, [])], entries()) == [record]
+    assert Routes.resolve([siteless], entries()) == [siteless]
   end
 
   test "keeps a call per site when two of them reach the same action" do
@@ -78,7 +79,7 @@ defmodule Grasp.Index.RoutesTest do
     }
 
     assert [resolved] = Routes.resolve([record], entries())
-    refute Map.has_key?(resolved, :route_sites)
+    assert resolved.route_sites == record.route_sites
 
     assert Enum.map(resolved.calls, & &1.target) == [@mount, "SampleApp.Greeter.greet/1"]
   end
@@ -90,7 +91,7 @@ defmodule Grasp.Index.RoutesTest do
     record = %{id: "SampleAppWeb.GreetHTML.show/1", calls: [], route_sites: route_sites}
 
     [resolved] = Routes.resolve([record], entries())
-    refute Map.has_key?(resolved, :route_sites)
+    assert resolved.route_sites == route_sites
     resolved.calls
   end
 

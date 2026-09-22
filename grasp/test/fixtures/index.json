@@ -156,6 +156,7 @@
       "module": "SampleApp.Application",
       "name": "start",
       "removed": false,
+      "route_sites": [],
       "source": "  @impl true\n  def start(_type, _args), do: Supervisor.start_link([SampleApp.Counter], strategy: :one_for_one)",
       "span": {
         "end_line": 6,
@@ -192,6 +193,7 @@
       "module": "SampleApp.Counter",
       "name": "start_link",
       "removed": false,
+      "route_sites": [],
       "source": "  def start_link(opts), do: GenServer.start_link(__MODULE__, 0, opts)",
       "span": {
         "end_line": 5,
@@ -213,6 +215,7 @@
       "module": "SampleApp.Counter",
       "name": "init",
       "removed": false,
+      "route_sites": [],
       "source": "  @impl true\n  def init(count), do: {:ok, count}",
       "span": {
         "end_line": 8,
@@ -234,6 +237,7 @@
       "module": "SampleApp.Counter",
       "name": "handle_call",
       "removed": false,
+      "route_sites": [],
       "source": "  @impl true\n  def handle_call(:next, _from, count), do: {:reply, count + 1, count + 1}",
       "span": {
         "end_line": 11,
@@ -255,6 +259,7 @@
       "module": "SampleApp.Formatter",
       "name": "wrap",
       "removed": false,
+      "route_sites": [],
       "source": "  @doc \"Wraps text in brackets.\"\n  @spec wrap(String.t()) :: String.t()\n  def wrap(text), do: \"[\" <> text <> \"]\"",
       "span": {
         "end_line": 6,
@@ -291,6 +296,7 @@
       "module": "SampleApp.Formatter",
       "name": "shout",
       "removed": false,
+      "route_sites": [],
       "source": "  @doc \"Upcases text and adds an exclamation mark.\"\n  @spec shout(String.t()) :: String.t()\n  def shout(text), do: String.upcase(text) <> \"!\"",
       "span": {
         "end_line": 10,
@@ -342,6 +348,7 @@
       "module": "SampleApp.Greeter",
       "name": "greet",
       "removed": false,
+      "route_sites": [],
       "source": "  @doc \"Greets someone, loudly if asked.\"\n  @spec greet(String.t(), boolean()) :: String.t()\n  def greet(name, loud? \\\\ false) do\n    text = Formatter.wrap(name)\n    if loud?, do: shout(text), else: text\n  end",
       "span": {
         "end_line": 11,
@@ -392,6 +399,7 @@
       "module": "SampleApp.Greeter",
       "name": "greet_all",
       "removed": false,
+      "route_sites": [],
       "source": "  @doc \"Greets everyone.\"\n  @spec greet_all([String.t()]) :: [String.t()]\n  def greet_all(names), do: Enum.map(names, &greet/1)",
       "span": {
         "end_line": 15,
@@ -428,6 +436,7 @@
       "module": "SampleApp.Greeter.Nested",
       "name": "hello",
       "removed": false,
+      "route_sites": [],
       "source": "    @doc \"Greets from inside.\"\n    @spec hello() :: String.t()\n    def hello, do: SampleApp.Greeter.greet(\"nested\")",
       "span": {
         "end_line": 22,
@@ -464,6 +473,7 @@
       "module": "SampleApp.Supervisor",
       "name": "start_link",
       "removed": false,
+      "route_sites": [],
       "source": "  @doc \"Starts the supervisor.\"\n  @spec start_link(keyword()) :: Supervisor.on_start()\n  def start_link(opts), do: Supervisor.start_link(__MODULE__, :ok, opts)",
       "span": {
         "end_line": 7,
@@ -500,6 +510,7 @@
       "module": "SampleApp.Supervisor",
       "name": "init",
       "removed": false,
+      "route_sites": [],
       "source": "  @impl true\n  def init(:ok), do: Supervisor.init([], strategy: :one_for_one)",
       "span": {
         "end_line": 10,
@@ -536,6 +547,7 @@
       "module": "SampleApp.Workers.Mailer",
       "name": "perform",
       "removed": false,
+      "route_sites": [],
       "source": "  @impl Oban.Worker\n  def perform(%Oban.Job{args: %{\"name\" => name}}), do: {:ok, SampleApp.Greeter.greet(name)}",
       "span": {
         "end_line": 6,
@@ -586,6 +598,7 @@
       "module": "SampleAppWeb.GreetController",
       "name": "show",
       "removed": false,
+      "route_sites": [],
       "source": "  @doc \"Greets the named person.\"\n  def show(conn, %{\"name\" => name}) do\n    render(conn, :show, name: SampleApp.Greeter.greet(name))\n  end",
       "span": {
         "end_line": 9,
@@ -636,6 +649,7 @@
       "module": "SampleAppWeb.GreetController",
       "name": "create",
       "removed": false,
+      "route_sites": [],
       "source": "  @doc \"Greets loudly.\"\n  def create(conn, %{\"name\" => name}), do: text(conn, SampleApp.Greeter.greet(name, true))",
       "span": {
         "end_line": 12,
@@ -690,6 +704,25 @@
       "module": "SampleAppWeb.GreetController",
       "name": "again",
       "removed": false,
+      "route_sites": [
+        {
+          "path": [
+            "greet",
+            "bob"
+          ],
+          "range": {
+            "end": [
+              15,
+              66
+            ],
+            "start": [
+              15,
+              52
+            ]
+          },
+          "verb": "GET"
+        }
+      ],
       "source": "  @doc \"Sends the reader back to a greeting.\"\n  def again(conn, _params), do: redirect(conn, to: ~p\"/greet/bob\")",
       "span": {
         "end_line": 15,
@@ -719,7 +752,11 @@
               12
             ]
           },
-          "target": "SampleApp.Workers.Mailer.perform/1"
+          "target": "SampleApp.Workers.Mailer.perform/1",
+          "via": {
+            "kind": "remote",
+            "target": "SampleApp.Workers.Mailer.new/1"
+          }
         },
         {
           "kind": "imported",
@@ -744,6 +781,7 @@
       "module": "SampleAppWeb.GreetController",
       "name": "mail",
       "removed": false,
+      "route_sites": [],
       "source": "  @doc \"Queues a greeting to be mailed.\"\n  def mail(conn, %{\"name\" => name}) do\n    _job = SampleApp.Workers.Mailer.new(%{\"name\" => name})\n    text(conn, \"queued\")\n  end",
       "span": {
         "end_line": 21,
@@ -765,6 +803,7 @@
       "module": "SampleAppWeb.GreetHTML",
       "name": "badge",
       "removed": false,
+      "route_sites": [],
       "source": "  @doc \"A small label.\"\n  def badge(assigns) do\n    ~H\"\"\"\n    <span>{@label}</span>\n    \"\"\"\n  end",
       "span": {
         "end_line": 14,
@@ -801,6 +840,7 @@
       "module": "SampleAppWeb.GreetingComponent",
       "name": "handle_event",
       "removed": false,
+      "route_sites": [],
       "source": "  def handle_event(\"shout\", _params, socket), do: {:noreply, assign(socket, loud: true)}",
       "span": {
         "end_line": 5,
@@ -837,6 +877,7 @@
       "module": "SampleAppWeb.GreetingComponent",
       "name": "render",
       "removed": false,
+      "route_sites": [],
       "source": "  def render(assigns) do\n    ~H\"\"\"\n    <span>{SampleApp.Greeter.greet(@name)}</span>\n    \"\"\"\n  end",
       "span": {
         "end_line": 11,
@@ -873,6 +914,7 @@
       "module": "SampleAppWeb.HelloLive",
       "name": "mount",
       "removed": false,
+      "route_sites": [],
       "source": "  def mount(_params, _session, socket), do: {:ok, assign(socket, name: \"world\")}",
       "span": {
         "end_line": 5,
@@ -909,6 +951,7 @@
       "module": "SampleAppWeb.HelloLive",
       "name": "handle_event",
       "removed": false,
+      "route_sites": [],
       "source": "  def handle_event(\"rename\", %{\"name\" => name}, socket),\n    do: {:noreply, assign(socket, name: name)}",
       "span": {
         "end_line": 8,
@@ -959,6 +1002,7 @@
       "module": "SampleAppWeb.HelloLive",
       "name": "render",
       "removed": false,
+      "route_sites": [],
       "source": "  def render(assigns) do\n    ~H\"\"\"\n    <p>{SampleApp.Greeter.greet(@name)}</p>\n    <SampleAppWeb.GreetingComponent.render name={@name} />\n    \"\"\"\n  end",
       "span": {
         "end_line": 15,
@@ -980,6 +1024,7 @@
       "module": "SampleAppWeb.RequestId",
       "name": "init",
       "removed": false,
+      "route_sites": [],
       "source": "  def init(opts), do: opts",
       "span": {
         "end_line": 5,
@@ -1016,6 +1061,7 @@
       "module": "SampleAppWeb.RequestId",
       "name": "call",
       "removed": false,
+      "route_sites": [],
       "source": "  def call(conn, _opts), do: Plug.Conn.put_resp_header(conn, \"x-request-id\", \"1\")",
       "span": {
         "end_line": 7,
@@ -1190,6 +1236,57 @@
       "module": "SampleAppWeb.GreetHTML",
       "name": "show",
       "removed": false,
+      "route_sites": [
+        {
+          "path": [
+            "greet",
+            "bob"
+          ],
+          "range": {
+            "end": [
+              3,
+              21
+            ],
+            "start": [
+              3,
+              9
+            ]
+          },
+          "verb": "GET"
+        },
+        {
+          "path": [
+            "greet"
+          ],
+          "range": {
+            "end": [
+              8,
+              29
+            ],
+            "start": [
+              8,
+              17
+            ]
+          },
+          "verb": "POST"
+        },
+        {
+          "path": [
+            "hello"
+          ],
+          "range": {
+            "end": [
+              9,
+              29
+            ],
+            "start": [
+              9,
+              17
+            ]
+          },
+          "verb": "GET"
+        }
+      ],
       "source": "<.badge label=\"hi\" />\n<SampleAppWeb.GreetingComponent.render name={@name} />\n<a href=\"/greet/bob\">again</a>\n<p>{SampleApp.Greeter.greet(@name)}</p>\n<%= if Greeter.greet(@name) do %>\n  <span class={Greeter.greet(@name)}>{Greeter.greet(@name)}</span>\n<% end %>\n<button hx-post={~p\"/greet\"}>shout</button>\n<.link navigate={~p\"/hello\"}>live</.link>\n",
       "span": {
         "end_line": 9,

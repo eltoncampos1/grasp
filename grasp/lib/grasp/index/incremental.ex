@@ -49,13 +49,14 @@ defmodule Grasp.Index.Incremental do
 
   Entry points and module behaviours are recomputed from the modules the VM has loaded. A
   VM that cannot see the application at all keeps what the document already held, so
-  reading a document built elsewhere does not empty its sidebar. Either way they are
-  known before the rebuilt records are written out, because `Grasp.Index.Routes` resolves
-  a template's links against the routes among them, and `Grasp.Index.Jobs` resolves an
-  enqueueing call against the workers among them the same way. Only the rebuilt records are
-  resolved that way, so a route added to or removed from the router, or a worker added or
-  dropped, reaches an untouched record's edges when that record's file is next saved, or
-  when the index is next built in full.
+  reading a document built elsewhere does not empty its sidebar. Either way they are known
+  before the records are written out, because every record is resolved against them:
+  `Grasp.Index.Resolve` matches a template's links and an enqueueing call against the
+  routes and workers among the entry points. Both the rebuilt records and the kept ones go
+  through it — the document carries each record's own inputs, so a route added to or
+  removed from the router, or a worker added or dropped, moves the edges of a record whose
+  file this update did not touch. A document written without those inputs has none to
+  resolve, and its kept records stand until the index is next built in full.
 
   ## What it cannot see
 
@@ -83,7 +84,7 @@ defmodule Grasp.Index.Incremental do
 
   require Logger
 
-  alias Grasp.Index.{Builder, Changes, EntryPoints, Jobs, Join, Routes, Templates}
+  alias Grasp.Index.{Builder, Changes, EntryPoints, Join, Resolve, Templates}
 
   @type base_context :: %{root: String.t(), base_sha: String.t(), paths: [String.t()]}
 
@@ -136,12 +137,13 @@ defmodule Grasp.Index.Incremental do
     {entry_points, behaviours} =
       detect(document, project["app"], MapSet.union(ids(kept), record_ids(records)))
 
+    refreshed = Enum.map(kept, &Resolve.refresh(&1, entry_points))
+
     functions =
       records
-      |> Routes.resolve(entry_points)
-      |> Jobs.resolve(entry_points)
+      |> Resolve.resolve(entry_points)
       |> Enum.map(&Builder.function_json/1)
-      |> then(&sort_functions(kept ++ &1))
+      |> then(&sort_functions(refreshed ++ &1))
 
     modules =
       sort_modules(

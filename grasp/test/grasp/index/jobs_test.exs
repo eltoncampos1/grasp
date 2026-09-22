@@ -13,8 +13,14 @@ defmodule Grasp.Index.JobsTest do
              target: @perform,
              kind: :enqueue,
              range: @range,
-             job: %{worker: "SampleApp.Workers.Mailer", queue: "mail"}
+             job: %{worker: "SampleApp.Workers.Mailer", queue: "mail"},
+             via: %{target: "SampleApp.Workers.Mailer.new/1", kind: :remote}
            }
+  end
+
+  test "an enqueue call remembers the call it stands for" do
+    assert [%{via: via}] = resolve([call("SampleApp.Workers.Mailer.new/2", :imported)])
+    assert via == %{target: "SampleApp.Workers.Mailer.new/2", kind: :imported}
   end
 
   test "new/2 enqueues too" do
