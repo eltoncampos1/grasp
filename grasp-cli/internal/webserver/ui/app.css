@@ -66,7 +66,9 @@ kbd { font-family: var(--mono); font-size: 10px; background: var(--bg); border: 
 .callers-menu { position: absolute; top: 22px; left: 0; z-index: 30; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; min-width: 280px; max-height: 260px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
 .callers-menu div { padding: 5px 10px; font-family: var(--mono); font-size: 11.5px; cursor: pointer; word-break: break-all; }
 .callers-menu div:hover { background: var(--bg); color: var(--accent); }
-.card-body { overflow: auto; max-height: 64vh; }
+/* the card shows its whole code — no inner scrollbar; long lines scroll
+   horizontally only */
+.card-body { overflow-x: auto; }
 .card.collapsed .card-body, .card.collapsed .card-sub { display: none; }
 
 #world.sig .card-body, #world.sig .card-sub { display: none; }

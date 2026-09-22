@@ -24,11 +24,12 @@ type chatRunner struct {
 }
 
 // Tool allowlists per mode, after upstream grasp: read-only gives the agent
-// the project's files and nothing that writes; edit adds Edit/Write and a
-// Bash narrowed to commands that do not change the checked-out branch.
+// the project's files, grasp's own MCP tools and nothing that writes; edit
+// adds Edit/Write and a Bash narrowed to commands that do not change the
+// checked-out branch.
 var chatTools = map[string]string{
-	"read": "Read,Grep,Glob",
-	"edit": "Read,Grep,Glob,Edit,Write,Bash(mix:*),Bash(go:*),Bash(git status),Bash(git diff:*),Bash(git fetch:*),Bash(gh pr view:*)",
+	"read": "Read,Grep,Glob,mcp__grasp",
+	"edit": "Read,Grep,Glob,mcp__grasp,Edit,Write,Bash(mix:*),Bash(go:*),Bash(git status),Bash(git diff:*),Bash(git fetch:*),Bash(gh pr view:*)",
 }
 
 var chatModels = map[string]bool{"haiku": true, "sonnet": true, "opus": true, "fable": true}
@@ -96,11 +97,16 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// grasp's own MCP server rides along inline — registered per spawn, never
+	// written into any profile.
+	mcpConfig := fmt.Sprintf(`{"mcpServers":{"grasp":{"type":"http","url":"http://127.0.0.1:%d/mcp"}}}`, s.boundPort)
+
 	args := []string{
 		"-p", req.Message,
 		"--output-format", "stream-json", "--verbose",
 		"--max-turns", "60",
 		"--allowedTools", tools,
+		"--mcp-config", mcpConfig,
 		"--append-system-prompt", s.chatSystemPrompt(),
 	}
 	if resume != "" {
@@ -208,8 +214,12 @@ func (s *Server) chatSystemPrompt() string {
 	b.WriteString("Do NOT start a review, read files, or run tools unless the message actually calls for it — ")
 	b.WriteString("a greeting or a test message gets a short, direct reply with no tool use. ")
 	b.WriteString("When the user does ask you to review, read .grasp/review.md first for the team's rules.\n\n")
+	b.WriteString("The grasp MCP tools read the same index the canvas draws and arrange the cards the ")
+	b.WriteString("reviewer is looking at: prefer list_changes/get_function/find_paths over grepping, and ")
+	b.WriteString("use set_cards/open_card/focus_card/highlight_card to show what you mean on the canvas. ")
+	b.WriteString("Comments you add with add_comment appear on the reviewer's cards.\n\n")
 	b.WriteString("Reference, for when a question needs it:\n")
-	b.WriteString("- The call-graph index the canvas draws is the JSON at " + s.IndexPath +
+	b.WriteString("- The call-graph index is also the JSON at " + s.IndexPath +
 		" (functions with source, span, calls, and a change classification against the review base).\n")
 
 	if data, err := os.ReadFile(s.IndexPath); err == nil {

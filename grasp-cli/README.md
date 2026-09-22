@@ -87,6 +87,30 @@ as its working directory, primed with the review's changed functions and `.grasp
   `git diff`/`git fetch`/`gh pr view` — nothing that changes the checked-out branch.
 - Model select (default/haiku/sonnet/opus/fable), one run at a time, 60-turn cap, Stop kills
   the run, follow-ups resume the same conversation per session, `new` starts over.
+- The agent gets **grasp's MCP server** wired in automatically (inline `--mcp-config`, no
+  profile mutation), so it drives the canvas you are looking at.
+
+## The MCP server
+
+`grasp web` serves an MCP endpoint at `/mcp` on the viewer's port (loopback-only). The chat
+panel's agent connects automatically; any MCP client can register it:
+
+```bash
+claude mcp add --transport http grasp http://127.0.0.1:4040/mcp
+```
+
+Reading tools answer from the index: `list_changes` (the first call of a PR review),
+`search_functions`, `get_function` (source + callers + callees + open comments),
+`get_callers`/`get_callees`, `find_paths` (call paths down to a function), `list_modules`,
+`list_entry_points`, `reload_index`, `list_sessions`, `get_session`.
+
+Arranging tools drive the browser tab reading the session, which applies and autosaves:
+`set_cards` (replace the canvas with a whole graph in one call, laid out by the flow engine),
+`open_card`, `close_card`, `focus_card`, `set_view`, `highlight_card` (pans to a line and tints
+it). Comments: `list_comments`, `add_comment` (line or range, either side), `reply_comment`,
+`resolve_comment`, `publish_comments`.
+
+Ask the chat "show me the flow from X into Y" and watch the chain assemble on the canvas.
 
 ## Claude profiles
 

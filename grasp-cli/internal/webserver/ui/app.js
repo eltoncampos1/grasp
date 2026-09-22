@@ -249,6 +249,7 @@ function applyTransform() {
 
 function openCard(id, { fromId, key, side }) {
   if (!byId.has(id)) return;
+  if (fromId && !S.cards.has(fromId)) fromId = undefined;
   setFocus(id);
   if (S.cards.has(id)) {
     if (fromId && !S.edges.some(e => e.from === fromId && e.to === id)) S.edges.push({ from: fromId, to: id, key });
@@ -1197,6 +1198,100 @@ function walkColumn(dir) {
   if (next) { setFocus(next[0]); ensureVisible(next[0]); }
 }
 
+// ---------- agent-driven canvas (MCP) ----------
+function applyCanvasCommand(cmd) {
+  if (cmd.op === 'comments_changed') { COMMENTS_refresh(); renderSidebar(); return; }
+  if (cmd.session && cmd.session !== S.name) return;
+  switch (cmd.op) {
+    case 'open_card':
+      openCard(cmd.function_id, cmd.called_by ? { fromId: cmd.called_by, key: callKey(cmd.called_by, cmd.function_id) } : {});
+      break;
+    case 'close_card':
+      if (S.cards.has(cmd.function_id)) closeCard(cmd.function_id, false);
+      break;
+    case 'focus_card':
+      if (!S.cards.has(cmd.function_id)) openCard(cmd.function_id, {});
+      else { setFocus(cmd.function_id); ensureVisible(cmd.function_id); }
+      break;
+    case 'set_view': {
+      const st = S.cards.get(cmd.function_id);
+      if (st) { st.view = cmd.view; renderCanvas(); scheduleSave(); }
+      break;
+    }
+    case 'set_cards':
+      applySetCards(cmd);
+      break;
+    case 'highlight_card':
+      applyHighlight(cmd);
+      break;
+  }
+}
+
+function callKey(fromId, toId) {
+  const from = byId.get(fromId);
+  const c = from && from.calls.find(c => c.target === toId);
+  return c ? toId + '@' + c.range.start[0] + ':' + c.range.start[1] : undefined;
+}
+
+// Replace the whole canvas with the agent's graph and lay it out afresh.
+function applySetCards(cmd) {
+  S.cards = new Map();
+  S.edges = [];
+  const byKey = new Map();
+  for (const c of cmd.cards || []) {
+    const id = c.function_id;
+    if (!byId.has(id)) continue;
+    if (!S.cards.has(id)) {
+      const fn = byId.get(id);
+      S.cards.set(id, { x: 0, y: 0, view: fn.base_source != null ? 'diff' : 'source', fold: false, collapsed: false, root: !c.parent_key, expanded: new Set() });
+    }
+    byKey.set(c.key, id);
+    if (c.parent_key && byKey.has(c.parent_key)) {
+      const from = byKey.get(c.parent_key);
+      if (from !== id && !S.edges.some(e => e.from === from && e.to === id))
+        S.edges.push({ from, to: id, key: callKey(from, id) });
+    }
+  }
+  S.focus = byKey.size ? byKey.values().next().value : null;
+  renderCanvas();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    for (const [id] of S.cards) { const el = cardEl(id); if (el) heights.set(id, el.offsetHeight); }
+    layoutCanvas(); renderCanvas();
+    S.pan = { x: 0, y: 0 };
+    applyTransform(); scheduleSave();
+  }));
+}
+
+function applyHighlight(cmd) {
+  if (!S.cards.has(cmd.function_id)) openCard(cmd.function_id, {});
+  setFocus(cmd.function_id);
+  requestAnimationFrame(() => {
+    const el = cardEl(cmd.function_id);
+    if (!el) return;
+    const rows = [...el.querySelectorAll('td.ln:not(.old)')]
+      .filter(td => {
+        const n = parseInt(td.textContent, 10);
+        return n >= cmd.line && n <= (cmd.end_line || cmd.line);
+      })
+      .map(td => td.parentElement);
+    rows.forEach(r => r.classList.add('inrange'));
+    setTimeout(() => { rows.forEach(r => r.classList.remove('inrange')); }, 4000);
+    const target = rows[0] || el;
+    const wr = $('#world').getBoundingClientRect();
+    const rr = target.getBoundingClientRect();
+    panTo((rr.left - wr.left) / S.zoom, (rr.top - wr.top) / S.zoom);
+  });
+}
+
+function panTo(wx, wy) {
+  const vp = $('#viewport');
+  S.pan.x = vp.clientWidth * 0.25 - wx * S.zoom;
+  S.pan.y = vp.clientHeight * 0.35 - wy * S.zoom;
+  applyTransform();
+  requestAnimationFrame(drawEdges);
+  scheduleSave();
+}
+
 // ---------- boot ----------
 (async function boot() {
   if (!(await loadAll(false))) return;
@@ -1211,6 +1306,9 @@ function walkColumn(dir) {
         if (want !== name && IDX.review) await loadSession(want);
         else { renderCanvas(); applyTransform(); }
       }
+    });
+    es.addEventListener('canvas', e => {
+      try { applyCanvasCommand(JSON.parse(e.data)); } catch { /* malformed command */ }
     });
   }
 })();

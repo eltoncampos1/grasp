@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/eltoncampos1/grasp-cli/internal/comments"
@@ -40,15 +41,56 @@ type Server struct {
 	Comments *comments.Store
 	Agent    AgentConfig
 
-	chat *chatRunner
+	chat      *chatRunner
+	bus       *eventBus
+	idx       idxCache
+	boundPort int
+}
+
+// eventBus fans canvas commands out to every connected viewer tab.
+type eventBus struct {
+	mu   sync.Mutex
+	subs map[chan string]bool
+}
+
+func newEventBus() *eventBus { return &eventBus{subs: map[chan string]bool{}} }
+
+func (b *eventBus) subscribe() chan string {
+	ch := make(chan string, 16)
+	b.mu.Lock()
+	b.subs[ch] = true
+	b.mu.Unlock()
+	return ch
+}
+
+func (b *eventBus) unsubscribe(ch chan string) {
+	b.mu.Lock()
+	delete(b.subs, ch)
+	b.mu.Unlock()
+}
+
+func (b *eventBus) publish(msg string) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for ch := range b.subs {
+		select {
+		case ch <- msg:
+			n++
+		default: // a stalled tab drops the command rather than blocking the tool
+		}
+	}
+	return n
 }
 
 // Run serves on 127.0.0.1 until the process is stopped. onReady is called
 // with the URL once the listener is up — the place to open a browser from.
 func (s *Server) Run(onReady func(url string)) error {
 	s.chat = newChatRunner()
+	s.bus = newEventBus()
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/mcp", s.handleMCP)
 	mux.HandleFunc("/", s.page)
 	mux.HandleFunc("/assets/", s.asset)
 	mux.HandleFunc("/api/index", s.index)
@@ -77,6 +119,7 @@ func (s *Server) Run(onReady func(url string)) error {
 	if port != s.Port {
 		fmt.Printf("port %d is taken (another grasp?) — serving on %d\n", s.Port, port)
 	}
+	s.boundPort = port
 	if onReady != nil {
 		onReady(fmt.Sprintf("http://127.0.0.1:%d", port))
 	}
@@ -240,6 +283,8 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	defer ticker.Stop()
 	heartbeat := time.NewTicker(25 * time.Second)
 	defer heartbeat.Stop()
+	commands := s.bus.subscribe()
+	defer s.bus.unsubscribe(commands)
 
 	fmt.Fprint(w, "event: hello\ndata: ok\n\n")
 	flusher.Flush()
@@ -248,6 +293,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
+		case msg := <-commands:
+			fmt.Fprintf(w, "event: canvas\ndata: %s\n\n", msg)
+			flusher.Flush()
 		case <-heartbeat.C:
 			fmt.Fprint(w, ": ping\n\n")
 			flusher.Flush()
