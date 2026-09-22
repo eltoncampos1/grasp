@@ -21,7 +21,42 @@ let zTop = 10;
 let spaceHeld = false;
 
 function emptySession(name) {
-  return { name, cards: new Map(), edges: [], focus: null, pan: { x: 0, y: 0 }, zoom: 1 };
+  return { name, cards: new Map(), edges: [], groups: [], focus: null, pan: { x: 0, y: 0 }, zoom: 1 };
+}
+
+// ---------- groups ----------
+// A group of cards is drawn as a frame around the cards themselves, wherever
+// they sit, so two flows on one canvas read apart. The frame follows its
+// cards; a card belongs to at most one group.
+function groupOf(id) {
+  return S.groups.find(g => g.cards.includes(id)) || null;
+}
+
+function pruneGroups() {
+  S.groups = S.groups.filter(g => {
+    g.cards = g.cards.filter(c => S.cards.has(c));
+    return g.cards.length > 0;
+  });
+}
+
+function groupSelection() {
+  const ids = selected.size ? [...selected] : (S.focus ? [S.focus] : []);
+  const members = ids.filter(id => S.cards.has(id));
+  if (!members.length) return;
+  pushHistory();
+  for (const g of S.groups) g.cards = g.cards.filter(c => !members.includes(c));
+  S.groups.push({ id: 'g_' + Math.random().toString(36).slice(2, 8), title: '', cards: members });
+  pruneGroups();
+  renderCanvas(); scheduleSave();
+}
+
+function ungroupSelection() {
+  const ids = selected.size ? [...selected] : (S.focus ? [S.focus] : []);
+  if (!ids.length) return;
+  pushHistory();
+  for (const g of S.groups) g.cards = g.cards.filter(c => !ids.includes(c));
+  pruneGroups();
+  renderCanvas(); scheduleSave();
 }
 
 // ---------- data ----------
@@ -64,6 +99,7 @@ async function loadSession(name) {
       const doc = await r.json();
       for (const c of doc.cards || []) if (byId.has(c.id)) S.cards.set(c.id, { x: c.x, y: c.y, view: c.view || 'source', fold: !!c.fold, collapsed: !!c.collapsed, root: !!c.root, expanded: new Set() });
       S.edges = (doc.edges || []).filter(e => S.cards.has(e.from) && S.cards.has(e.to));
+      S.groups = (doc.groups || []).map(g => ({ id: g.id, title: g.title || '', cards: (g.cards || []).filter(c => S.cards.has(c)) })).filter(g => g.cards.length);
       S.focus = doc.focus && S.cards.has(doc.focus) ? doc.focus : null;
       if (doc.pan) S.pan = doc.pan;
       if (doc.zoom) S.zoom = doc.zoom;
@@ -87,7 +123,7 @@ async function saveSession() {
   if (!S) return;
   const doc = {
     cards: [...S.cards.entries()].map(([id, c]) => ({ id, x: Math.round(c.x), y: Math.round(c.y), view: c.view, fold: c.fold, collapsed: c.collapsed, root: c.root })),
-    edges: S.edges, focus: S.focus, pan: { x: Math.round(S.pan.x), y: Math.round(S.pan.y) }, zoom: S.zoom,
+    edges: S.edges, groups: S.groups, focus: S.focus, pan: { x: Math.round(S.pan.x), y: Math.round(S.pan.y) }, zoom: S.zoom,
   };
   await fetch('/api/sessions/' + encodeURIComponent(S.name), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(doc) }).catch(() => {});
 }
@@ -265,7 +301,12 @@ function openCard(id, { fromId, key, side }) {
   pushHistory();
   const pos = place(fromId, side);
   S.cards.set(id, { x: pos.x, y: pos.y, view: 'source', fold: false, collapsed: false, root: !fromId, expanded: new Set() });
-  if (fromId) S.edges.push({ from: side === 'left' ? id : fromId, to: side === 'left' ? fromId : id, key });
+  if (fromId) {
+    S.edges.push({ from: side === 'left' ? id : fromId, to: side === 'left' ? fromId : id, key });
+    // a card opened from another joins the group of the card it came from
+    const g = groupOf(fromId);
+    if (g && !g.cards.includes(id)) g.cards.push(id);
+  }
   renderCanvas();
   ensureVisible(id);
   scheduleSave();
@@ -303,6 +344,7 @@ function closeCard(id, subtree) {
     S.edges = S.edges.filter(e => S.cards.has(e.from) && S.cards.has(e.to));
   }
   if (S.focus === id) S.focus = [...S.cards.keys()].pop() || null;
+  pruneGroups();
   renderCanvas();
   scheduleSave();
 }
@@ -334,7 +376,7 @@ function renderCanvas() {
 function snapshot() {
   return JSON.stringify({
     cards: [...S.cards.entries()].map(([id, c]) => ({ id, x: c.x, y: c.y, view: c.view, fold: c.fold, collapsed: c.collapsed, root: c.root })),
-    edges: S.edges, focus: S.focus, pan: S.pan, zoom: S.zoom,
+    edges: S.edges, groups: S.groups, focus: S.focus, pan: S.pan, zoom: S.zoom,
   });
 }
 
@@ -351,6 +393,7 @@ function undo() {
   S.cards = new Map(doc.cards.filter(c => byId.has(c.id))
     .map(c => [c.id, { x: c.x, y: c.y, view: c.view, fold: c.fold, collapsed: c.collapsed, root: c.root, expanded: new Set() }]));
   S.edges = doc.edges.filter(e => S.cards.has(e.from) && S.cards.has(e.to));
+  S.groups = (doc.groups || []).map(g => ({ id: g.id, title: g.title, cards: g.cards.filter(c => S.cards.has(c)) })).filter(g => g.cards.length);
   S.focus = doc.focus && S.cards.has(doc.focus) ? doc.focus : null;
   S.pan = doc.pan; S.zoom = doc.zoom;
   renderCanvas(); applyTransform(); scheduleSave();
@@ -1204,6 +1247,7 @@ function drawEdges() {
       '<polygon points="' + x2 + ',' + y2 + ' ' + tip + ',' + (y2 - 4) + ' ' + tip + ',' + (y2 + 4) + '" fill="' + color + '" fill-opacity=".8"/>';
   });
   svg.innerHTML = html;
+  drawFrames();
   svg.querySelectorAll('path').forEach(p => p.addEventListener('dblclick', () => {
     const e = S.edges[+p.dataset.i];
     if (!e) return;
@@ -1218,6 +1262,48 @@ function drawEdges() {
     const far = dist(e.from) > dist(e.to) ? e.from : e.to;
     setFocus(far); ensureVisible(far);
   }));
+}
+
+// frameRect computes a group's frame in world coordinates: the members'
+// bounding box plus padding, with headroom for the title inside the top edge.
+const FRAME_PAD = 20, FRAME_TOP = 46;
+function frameRect(g) {
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const id of g.cards) {
+    const c = S.cards.get(id);
+    if (!c) continue;
+    x1 = Math.min(x1, c.x); y1 = Math.min(y1, c.y);
+    x2 = Math.max(x2, c.x + W(id)); y2 = Math.max(y2, c.y + (heights.get(id) || EST_H));
+  }
+  if (x1 === Infinity) return null;
+  return { x: x1 - FRAME_PAD, y: y1 - FRAME_TOP, w: x2 - x1 + 2 * FRAME_PAD, h: y2 - y1 + FRAME_TOP + FRAME_PAD };
+}
+
+function drawFrames() {
+  const world = $('#world');
+  world.querySelectorAll('.frame').forEach(el => el.remove());
+  const svg = $('#edgesvg');
+  for (const g of S.groups) {
+    const r = frameRect(g);
+    if (!r) continue;
+    const el = document.createElement('div');
+    el.className = 'frame';
+    el.dataset.gid = g.id;
+    Object.assign(el.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px' });
+    el.innerHTML = '<div class="frame-title">' +
+      '<b class="ftext">' + esc(g.title || 'Untitled group') + '</b>' +
+      '<span>' + g.cards.length + ' card' + (g.cards.length === 1 ? '' : 's') + '</span>' +
+      '<button class="fungroup" title="take the frame away, leave the cards">ungroup</button></div>';
+    // the title stays readable however far out the zoom is
+    el.querySelector('.frame-title').style.transform = 'scale(' + Math.min(3, 1 / S.zoom) + ')';
+    el.querySelector('.fungroup').addEventListener('click', e => {
+      e.stopPropagation();
+      pushHistory();
+      S.groups = S.groups.filter(x => x.id !== g.id);
+      renderCanvas(); scheduleSave();
+    });
+    world.insertBefore(el, svg);
+  }
 }
 
 // ---------- palette ----------
@@ -1379,6 +1465,11 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     selected = new Set(S.cards.keys());
     paintSelected();
+    return;
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
+    e.preventDefault();
+    if (e.shiftKey) ungroupSelection(); else groupSelection();
     return;
   }
   if (e.key === 'Escape') {
