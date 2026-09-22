@@ -736,6 +736,47 @@ of them, and a taken name simply opens that session), and a delete control on ev
 session but the one shown. Deleting removes the file, stops the session and ends its agent
 conversation; any tab on it is sent to the default session.
 
+#### Module clusters
+
+The cards of one module cluster: inside a flow, every card whose function belongs to the same
+module is framed together, and the cards in no flow cluster the same way in the groupless
+section. Membership is derived from the card's function id and never stored — no tool makes a
+module cluster, no session file names one, and the same module open in two flows is two
+clusters, one per flow. The node carries its module as `data-module`, which is the text before
+the function's `name/arity`; a stub card clusters by the module of the function it stands for.
+
+A module frame is drawn round wherever its cards are, as a flow frame is, nested inside the
+flow's frame: the flow's extent is the union of its module frames, so a flow frame closes
+round its modules with its own padding, and a module frame closes round its cards with less
+(`MODULE_PAD`) and a lighter border. Its label is the module name, kept one size on screen at
+any zoom like a flow title. The hook draws both frame and label into the frames layer it
+already owns; the label takes the pointer so that dragging it carries every card of the
+cluster, through `move_cards`, the way a flow title carries its group, and a click on it does
+nothing. Because a card cannot leave its module, a card dragged away stretches the module
+frame with it, exactly as a card dragged out of a flow stretches the flow's frame; two module
+frames may come to overlap by dragging, and placement is what keeps them apart. A drop is
+still decided by the flow frames alone: a module frame changes no membership.
+
+While clusters are drawn, a card's header shows only `fun/arity`: the frame carries the module,
+and the card narrows by the width of its module name. The cards in a cluster are the reader's
+to arrange: nothing inside a module frame snaps, sorts or stacks, and a card lands where the
+placement rules below put it and then moves only when the reader or a push moves it.
+
+Placement reads clusters two ways. A card whose module already has a cluster in its flow
+lands adjacent to that cluster rather than beside the call that opened it: the candidates are
+the four clear spots against the cluster's frame — to its right, below it, above it and to its
+left, each swept clear the way any candidate is — and the one nearest the card's ideal spot
+(beside the call, level with it) wins. A card whose module has no cluster yet in its flow is
+placed by the ordinary rule, nearest the call. In both cases the module frames of the other
+modules in the same flow are obstacles, cleared by `MODULE_PAD + GAP_Y` so that two module
+frames end a gap apart when laid out, on top of the flow frames of other flows, which stay
+obstacles as before.
+
+The toolbar's `modules` toggle (or the `m` key) turns clusters off: the frames and labels go,
+headers show the full id again, and placement returns to nearest-the-call. Clusters are on by
+default, the state is the browser's like signature mode, and "reset layout" lays the canvas
+out under whichever setting is current.
+
 ### Card
 
 - Header: entry-point badges (a route's `VERB /path` in full, since neither the title nor
