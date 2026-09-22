@@ -66,3 +66,66 @@
 - [ ] **Step 1: Implement** the three z-index values and the opacity; keep the comments beside them true (the `.frames` comment says "under the cards" — still true; add one sentence on `.connectors` stating the layer is above the cards so an edge is never hidden by one, and below the headers so a frame's title stays readable).
 - [ ] **Step 2: Docs.** Spec §Layout edge paragraph: one sentence that edges are drawn over the cards and under the frame headers; `reviewing.md` where edges are introduced (grep "edge"): same fact in one clause.
 - [ ] **Step 3: Gates and commit.** `mix assets.build`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix test`. Commit `app.css`, `grasp/priv/static/assets/grasp.css`, the spec and the guide. Message: `An edge is never hidden behind a card` plus trailer.
+
+---
+
+### Task 4: A decorated function keeps its doc and spec
+
+**Files:** modify `grasp/lib/grasp/index/extract.ex` (`@attached_attributes`, moduledoc line ~8), `grasp/test/grasp/index/extract_test.exs`, `grasp/test/grasp/index/builder_test.exs`; create `grasp/test/fixtures/sample_app/lib/sample_app/audited.ex`; regenerate `grasp/test/fixtures/index.json`; docs wherever the attached attributes are listed (`grep -rn "@impl" docs/specs/2026-09-15-grasp-design.md grasp/guides/indexing.md` and fix the list where it enumerates them).
+
+**Rule (the spec):** `@decorate` joins the attached attributes: `@attached_attributes [:doc, :spec, :impl, :deprecated, :since, :decorate]`. A definition written as `@doc … @spec … @decorate … def …` spans from the `@doc`; one written `@decorate … def …` spans from the `@decorate`. Nothing else about the walk changes: any other attribute or expression between the attributes and the `def` still resets the chain.
+
+- [ ] **Step 1: Unit test** in `extract_test.exs`, beside "groups clauses and attaches doc, spec and leading comments to the span" (read it for the helpers it uses):
+
+```elixir
+  test "a decorator attribute attaches like a doc or a spec" do
+    source = """
+    defmodule Acme.Audited do
+      @doc "Greets with a trail."
+      @spec greet(String.t()) :: String.t()
+      @decorate trace()
+      def greet(name), do: name
+
+      @decorate trace()
+      def wave, do: :ok
+    end
+    """
+
+    [greet, wave] = definitions(source)   # use the file's own helper name
+    assert greet.span.start_line == 2
+    assert String.starts_with?(greet.source, "@doc")
+    assert wave.span.start_line == 7
+    assert String.starts_with?(wave.source, "@decorate")
+  end
+```
+Run; expect `start_line == 5` for `greet` (the chain reset).
+
+- [ ] **Step 2: Implement** — add `:decorate` to `@attached_attributes`; the moduledoc list gains `` `@decorate` ``. Run; expect pass.
+
+- [ ] **Step 3: Fixture module** `grasp/test/fixtures/sample_app/lib/sample_app/audited.ex`:
+
+```elixir
+defmodule SampleApp.Audited do
+  @moduledoc "A function whose definition carries a decorator attribute."
+  Module.register_attribute(__MODULE__, :decorate, accumulate: true)
+
+  @doc "Greets and leaves a trail."
+  @spec greet(String.t()) :: String.t()
+  @decorate :trace
+  def greet(name), do: SampleApp.Greeter.greet(name)
+end
+```
+(A registered, accumulating attribute compiles without an unused-attribute warning and needs no decorator library; confirm the sample app compiles warning-free.) In `builder_test.exs` add:
+
+```elixir
+  test "a decorated function spans from its doc", %{index: index} do
+    {:ok, greet} = Grasp.Index.fetch_function(index, "SampleApp.Audited.greet/1")
+    assert greet["span"] == %{"start_line" => 5, "end_line" => 8}
+    assert String.starts_with?(greet["source"], "@doc")
+    assert call(greet, "SampleApp.Greeter.greet/1")
+  end
+```
+
+- [ ] **Step 4: Regenerate the fixture index** (recipe at the top of `regenerate.exs`), gates from `grasp/`: `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix test`, `mix test --include integration`. Expected: one record and one module added to the fixture; nothing else moves (a `modules` entry and possibly the `entry_points` block untouched).
+
+- [ ] **Step 5: Commit** by path. Message: `A decorated function keeps its doc and spec` plus trailer.
