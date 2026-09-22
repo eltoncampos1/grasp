@@ -2,7 +2,7 @@ defmodule GraspWeb.ReviewLive do
   @moduledoc """
   The review page: a sidebar that starts from the project's entry points — routes, jobs,
   live views, processes — with the module list as its last group, the card canvas, and the
-  Cmd+K palette. Which sidebar groups arrive open is the sidebar's decision, taken from the
+  palette (⌘K or `/`). Which sidebar groups arrive open is the sidebar's decision, taken from the
   index and the open review threads at mount and again whenever the index reloads, and owned
   by whoever clicks in between.
   State is the session's forest plus the loaded index; both arrive by PubSub so any change

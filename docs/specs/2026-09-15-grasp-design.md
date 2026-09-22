@@ -491,7 +491,7 @@ with the result, which the session stores (`Forest.place/2`, filling only positi
 empty, so a stale placement never undoes a drag). Placement is beside the opener, and an
 opener counts only within the card's own group: a callee is aimed to the right of the
 placed card of its own group whose call site opened it (`GAP_X` 48 px), level with that
-call site, and settles in the clear spot nearest there (below); a caller opened to the left
+call site, and settles in the clear spot nearest there, above or below it; a caller opened to the left
 goes left of its target, top-aligned; a card reached only from another group is a root of
 its own group instead, since standing it beside that opener would put it inside a frame it
 does not belong to. A root with peers of its section already placed opens a row under the
@@ -1602,7 +1602,8 @@ request switches the working tree" is closed.
      appears or goes moves the edges of a function whose file nothing recompiled.
    - Milestone 7.7: `h` `j` `k` `l` walk the graph beside the arrows, `z` folds and `/`
      opens the palette; a callee lands in the clear spot nearest its call site; edges are
-     drawn over the cards rather than under them.
+     drawn over the cards rather than under them; `@decorate` joins the attributes a
+     definition's span starts from.
 7. In-app Grasp: one dev dependency mounted in the host's endpoint, the tracer riding the
    host's code reloader for incremental indexing, pull requests reviewed from worktrees
    (see [Part 4](#part-4--in-app-grasp)).
