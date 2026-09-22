@@ -680,6 +680,17 @@ function diffTable(fn, st) {
   const table = mkCodeTable();
   const tbody = table.tBodies[0];
 
+  // The new side's lines are the current source, so its calls are clickable
+  // here too — an added call opens its callee straight from the diff. Base
+  // (deleted) lines have no call info in the index and stay plain.
+  const callsByLine = new Map();
+  for (const c of fn.calls) {
+    if (c.range.start[0] !== c.range.end[0]) continue;
+    const l = c.range.start[0];
+    if (!callsByLine.has(l)) callsByLine.set(l, []);
+    callsByLine.get(l).push(c);
+  }
+
   const visible = new Array(rows.length).fill(true);
   if (st.fold) {
     rows.forEach((r, k) => { visible[k] = r.t !== 'ctx'; });
@@ -713,9 +724,12 @@ function diffTable(fn, st) {
     tr.className = r.t === 'ctx' ? '' : r.t;
     if ((r.o != null && inThreadRange(fn, r.o, 'base')) || (absNew != null && inThreadRange(fn, absNew, 'new'))) tr.classList.add('inrange');
     const sign = r.t === 'add' ? '+' : r.t === 'del' ? '−' : '';
+    const code = absNew != null
+      ? lineHTML(r.text, callsByLine.get(absNew) || [], lang)
+      : highlightRange(r.text, 0, r.text.length, tokenize(r.text, lang));
     tr.innerHTML = '<td class="ln old" title="comment on the base side">' + (r.o != null ? r.o : '') + '</td>' +
       '<td class="ln" title="comment">' + (absNew != null ? absNew : '') + '</td>' +
-      '<td class="sign">' + sign + '</td><td class="codecell">' + highlightRange(r.text, 0, r.text.length, tokenize(r.text, lang)) + '</td>';
+      '<td class="sign">' + sign + '</td><td class="codecell">' + code + '</td>';
     const [oldLn, newLn] = tr.querySelectorAll('.ln');
     if (r.o != null) oldLn.addEventListener('click', e => lineClick(e, fn, r.o, 'base'));
     if (absNew != null) newLn.addEventListener('click', e => lineClick(e, fn, absNew, 'new'));
@@ -725,6 +739,7 @@ function diffTable(fn, st) {
     k++;
     if (k < rows.length && !visible[k - 1] && visible[k]) runIdx++;
   }
+  wireCalls(table, fn.id);
   return table;
 }
 
