@@ -1011,9 +1011,9 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 
 - **Cards can come to overlap.** Placement avoids overlap only at the moment a card is
   placed. A card that later grows (diff view, all lines, a thread) pushes the cards under it
-  down by what it grew; a card dragged onto another stays where it is. A push moves cards and
-  not frames, so a grown card can reach into another group's frame. Reset layout untangles
-  them.
+  down by what it grew, and gives them back when it shrinks as long as they stand where the
+  push left them; a card dragged onto another stays where it is. A push moves cards and not
+  frames, so a grown card can reach into another group's frame. Reset layout untangles them.
 - **A session saved before positions loads laid out afresh.** A version 1 file carries
   offsets from an automatic layout that no longer exists; it loads with every position
   empty and is placed again.

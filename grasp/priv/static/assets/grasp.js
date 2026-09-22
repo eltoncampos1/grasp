@@ -123,6 +123,7 @@
   var FRAME_TITLE_GAP = 8;
   var GAP_X = 48;
   var GAP_Y = 16;
+  var PUSH_MEMORY = 32;
   var STAGE_PAD = 48;
   var attr = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   var Canvas = {
@@ -1254,6 +1255,7 @@
       this.draw();
       const stack = this.pushes.get(grown.id) || [];
       stack.push({ dy: shift, cards: tops });
+      if (stack.length > PUSH_MEMORY) stack.shift();
       this.pushes.set(grown.id, stack);
     },
     // A push undone: a card that shrinks back lets the cards it pushed return, newest push

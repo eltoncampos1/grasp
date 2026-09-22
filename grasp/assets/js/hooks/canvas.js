@@ -66,6 +66,8 @@ const FRAME_TITLE_GAP = 8
 // GAP_Y between a card and whatever it would otherwise have landed on.
 const GAP_X = 48
 const GAP_Y = 16
+// How many pushes a card remembers, newest first, for a shrink to undo.
+const PUSH_MEMORY = 32
 // Room round the block the cards cover, which the stage claims as its own size: a floor for
 // the layers stretched across it and something for the resize observer to see. It is also the
 // containing block the nodes are positioned in, which is why a node takes an intrinsic width —
@@ -1601,8 +1603,12 @@ const Canvas = {
     // The frames and the edges are drawn from the boxes as they stand, so they follow the move
     // rather than waiting for the render.
     this.draw()
+    // A push that can never be retracted — its cards dragged away or closed — stays on the
+    // stack, and a card streaming a thread grows many times over, so the stack keeps only the
+    // most recent pushes; the oldest are the ones least likely to be undone.
     const stack = this.pushes.get(grown.id) || []
     stack.push({dy: shift, cards: tops})
+    if (stack.length > PUSH_MEMORY) stack.shift()
     this.pushes.set(grown.id, stack)
   },
 
