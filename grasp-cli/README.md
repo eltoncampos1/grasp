@@ -9,14 +9,27 @@ independent of it. See [SPEC.md](SPEC.md) for the design and roadmap.
 **Languages:** Elixir, JavaScript/TypeScript (JSX/TSX included), Go. The index format is
 language-neutral; more languages are a tree-sitter grammar plus an extractor away.
 
-## Build
+## Install
+
+Requirements: Go 1.25+, a C compiler (the tree-sitter grammars compile in via cgo), `git`, and
+the GitHub CLI (`gh`) signed in for the pull-request features. The chat panel and the MCP agent
+run the [Claude Code](https://claude.com/claude-code) CLI, which is optional for everything else.
 
 ```bash
-go build -o grasp .
-cp grasp ~/.local/bin/   # or anywhere on PATH
+git clone https://github.com/eltoncampos1/grasp-cli
+cd grasp-cli
+make install        # builds and symlinks into ~/.local/bin (PREFIX=... to change)
 ```
 
-Requires Go 1.25+ and a C compiler (the tree-sitter grammars compile in via cgo).
+`make install` links rather than copies, so updating is just:
+
+```bash
+git pull && make build   # the installed grasp is the new build, nothing to re-install
+```
+
+> `go install …@latest` does not work yet: the Elixir grammar's Go module declares a path it is
+> not served from, which needs the `replace` directive in go.mod — and `go install` ignores
+> replaces. Clone and `make install`; prebuilt release binaries are on the roadmap.
 
 ## Quick start
 

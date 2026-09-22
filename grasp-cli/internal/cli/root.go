@@ -11,7 +11,8 @@ import (
 	"github.com/eltoncampos1/grasp-cli/internal/gitx"
 )
 
-var version = "0.1.0-dev"
+// version is stamped by the Makefile via -ldflags at build time.
+var version = "dev"
 
 var rootCmd = &cobra.Command{
 	Use:     "grasp",

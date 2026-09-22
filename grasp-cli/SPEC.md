@@ -220,6 +220,13 @@ viewer swaps to it, session-per-commit (`pr-N-<sha7>`). Costs one index build pe
 ## Open questions and risks
 
 - **Name** — collides with upstream; decide before publishing.
+- **`go install @latest` is blocked** — the Elixir grammar module
+  (github.com/elixir-lang/tree-sitter-elixir) declares its path as
+  github.com/tree-sitter/tree-sitter-elixir, which forces a `replace` directive that
+  `go install remote@latest` ignores. Install is clone + `make install` until the grammar is
+  vendored or prebuilt binaries ship (goreleaser).
+- **License** — pick one before publishing (Apache-2.0 keeps things simple next to the
+  upstream inspiration and the grammar dependencies).
 - **Heuristic precision** — if syntactic resolution proves too loose in practice, pull SCIP
   forward.
 - **Upstream relationship** — the index schema is shared on purpose; worth talking to the
