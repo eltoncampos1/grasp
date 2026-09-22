@@ -763,6 +763,10 @@ defmodule GraspWeb.ReviewLiveTest do
     assert html =~ ~r{<kbd>z</kbd></dt>\s*<dd>\s*Fold the unchanged lines\.}
     refute html =~ ~r{<kbd>h</kbd></dt>}
 
+    # Module clusters have a key of their own and a gesture of their own.
+    assert html =~ ~r{<kbd>m</kbd></dt>\s*<dd>\s*Module frames round the cards\.}
+    assert has_element?(view, "#help dd", "Move every card of that module in the flow.")
+
     for heading <- ["Mouse", "Keys", "Chat"] do
       assert has_element?(view, "#help h3", heading)
     end

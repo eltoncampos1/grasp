@@ -151,6 +151,8 @@ its shortcut when you hover or tab to it.
   also take ⌘0 for their own page zoom and reset both.
 - **fit** (`f`) — bring every card on the canvas into view at once.
 - **signatures** (`s`) — turn the cards down to their signatures.
+- **modules** (`m`) — frame the cards of each module inside their flow, under the module's
+  name. See [Reviewing](reviewing.md).
 - **reset layout** — lay every card out again.
 - **ask** (⌘I) — open the chat panel. See [The agent](agent.md).
 - **?** (`?`) — the list of every key and gesture the canvas answers.

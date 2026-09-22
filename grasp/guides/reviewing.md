@@ -68,6 +68,31 @@ A card opened from another — a callee by clicking a call, a caller from the ca
 joins the group of the card it was opened from when it is new to the canvas, so it lands
 beside that card inside the same frame.
 
+### Module clusters
+
+Inside each group, the cards whose functions come from one module are framed together under
+the module's name, in a lighter frame within the group's own. A flow then reads as the
+modules it passes through rather than as a row of cards, and the cards in no group cluster
+the same way. Which cluster a card falls into follows from the function it holds and nothing
+else, so there is nothing to create and nothing to name.
+
+- **Drag a module's label** to carry every card of that cluster together, the way a frame's
+  title carries a whole group. The label opens nothing: it names the cluster, and a press
+  that does not move does nothing.
+- **The cards inside a cluster are yours to arrange.** Nothing snaps, sorts or stacks them —
+  put them side by side, one under another or well apart, and the frame closes round wherever
+  they stand, as a group's frame does.
+- **modules** in the toolbar, or the `m` key, draws the frames or takes them away. While they
+  are drawn a card's header reads `fun/arity` alone, since the frame round it carries the
+  module name.
+- **A card lands beside its module.** Open a call to a module that already has cards in that
+  flow and the card is placed against that cluster rather than beside the call, so a module
+  stays in one block as the flow grows. The first card of a module lands beside the call that
+  opened it, like any other.
+- A cluster belongs to one flow, so a module open in two flows is framed once in each. Which
+  group a card is in is still decided by the group frames alone: dropping a card inside a
+  module frame moves it nowhere.
+
 ## Cards
 
 A card is one function: its header, its `file:line`, and its syntax-highlighted source with

@@ -627,11 +627,11 @@ scale runs from 5% to 250%: far enough out that a canvas of a hundred cards is r
 shape, and no further in than a card is worth reading at. A toolbar floats at the bottom
 centre of the canvas, the way drawing tools place theirs, and carries the sidebar toggle,
 zoom out, a zoom readout that resets to 100% when clicked, zoom in, fit, the signature-mode
-toggle (below), "reset layout", the chat toggle and a help button (`?`); the chat panel
-docks above it. That button and the `?` key open the keys-and-gestures list
-(`GraspWeb.Help`), a modal `<dialog>` of every gesture and chord the toolbar has no room to
-show. Nothing in it is session state, so it is rendered once, marked `phx-update="ignore"`,
-and opened, closed and toggled by the `Help` hook alone: `showModal()` brings Escape, the
+toggle and the module-clusters toggle (both below), "reset layout", the chat toggle and a
+help button (`?`); the chat panel docks above it. That button and the `?` key open the
+keys-and-gestures list (`GraspWeb.Help`), a modal `<dialog>` of every gesture and chord the
+toolbar has no room to show. Nothing in it is session state, so it is rendered once, marked
+`phx-update="ignore"`, and opened, closed and toggled by the `Help` hook alone: `showModal()` brings Escape, the
 focus trap and the backdrop from the platform, and no patch can close it behind the reader's
 back. `?` is a character, so a reader typing in a field keeps it, a chord carrying it
 belongs to whoever claims the chord, and the key is left alone while the palette is open.
@@ -743,7 +743,8 @@ module is framed together, and the cards in no flow cluster the same way in the 
 section. Membership is derived from the card's function id and never stored — no tool makes a
 module cluster, no session file names one, and the same module open in two flows is two
 clusters, one per flow. The node carries its module as `data-module`, which is the text before
-the function's `name/arity`; a stub card clusters by the module of the function it stands for.
+the function's `name/arity` — an id with no module part stands for its own module — and a
+stub card clusters by the module of the function it stands for.
 
 A module frame is drawn round wherever its cards are, as a flow frame is, nested inside the
 flow's frame: the flow's extent is the union of its module frames, so a flow frame closes
@@ -767,10 +768,20 @@ lands adjacent to that cluster rather than beside the call that opened it: the c
 the four clear spots against the cluster's frame — to its right, below it, above it and to its
 left, each swept clear the way any candidate is — and the one nearest the card's ideal spot
 (beside the call, level with it) wins. A card whose module has no cluster yet in its flow is
-placed by the ordinary rule, nearest the call. In both cases the module frames of the other
-modules in the same flow are obstacles, cleared by `MODULE_PAD + GAP_Y` so that two module
-frames end a gap apart when laid out, on top of the flow frames of other flows, which stay
-obstacles as before.
+placed by the ordinary rule, nearest the call, and so is a root — a card the pass reaches from
+no call of its own flow — whichever way its module stands.
+
+A card is placed clear of every module frame but its own cluster's, wherever that cluster
+stands, and of the flow frames of the flows that are not its own; its own two frames are no
+obstacle to it, since it belongs inside both and each grows round it where it lands. What it
+leaves a frame is `GAP_Y` plus the padding its own frames reach beyond it on that side, so the
+frames it grows end a gap clear of their neighbour rather than cutting into it. Against a
+cluster of its own flow that is `MODULE_PAD + GAP_Y`, the two standing inside one flow frame
+neither has to clear; against a cluster of another flow the card's own flow frame has to clear
+it too, so its padding counts as well (`MODULE_PAD + FRAME_PAD + GAP_Y` for a grouped card) —
+a cluster of the groupless section has no flow frame of its own standing between the two, which
+is why the case arises; and against another flow's frame it is `FRAME_PAD` plus the card's own
+module padding plus `GAP_Y`.
 
 The toolbar's `modules` toggle (or the `m` key) turns clusters off: the frames and labels go,
 headers show the full id again, and placement returns to nearest-the-call. Clusters are on by
@@ -782,10 +793,11 @@ out under whichever setting is current.
 - Header: entry-point badges (a route's `VERB /path` in full, since neither the title nor
   the body carries it; the kind for every other kind, spelled as a reader says it — "live
   route", "worker", "GenServer" — since its label is what the title already says),
-  `Mod.fun/arity`, `file:line` that opens the `--editor` URL scheme, change badge,
-  Source/Diff toggle, callers menu, collapse, close. Which card's callers menu is open is
-  server state (`callers_open`); opening it closes a frame rename under way and the other way
-  round, so one panel stands at a time and a patch cannot drop it.
+  `Mod.fun/arity`, or `fun/arity` while module clusters are drawn, `file:line` that opens the
+  `--editor` URL scheme, change badge, Source/Diff toggle, callers menu, collapse, close.
+  Which card's callers menu is open is server state (`callers_open`); opening it closes a
+  frame rename under way and the other way round, so one panel stands at a time and a patch
+  cannot drop it.
 - A selected card carries `data-selected` and a dashed outline, which a stub carries too:
   a stub dragged into a frame is in that group like any other card and needs the same way
   out of it. Grouping is a canvas gesture rather than a control on the card, so the header
@@ -1096,6 +1108,24 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   other expression is a value no parser can know, and guessing it would name a function the
   compiler never defined, so the embed is globbed and named as if the option were not
   there.
+
+### Known gaps (milestone 7.9)
+
+- **Dragged module frames overlap.** Placement is what holds one cluster clear of the next;
+  a reader who drags a card, or a whole cluster by its label, across another module's cards is
+  left with the two frames over one another. "Reset layout" lays them out apart again.
+- **A module of one card wears a frame.** A cluster is drawn round whatever cards of a module
+  a flow holds, one included, so a flow that opens a card each from six modules is six frames.
+  Nothing merges a frame with its neighbour and nothing drops one for holding too little.
+- **A cluster is per flow.** Membership is the card's module inside the card's section, so a
+  module open in two flows is two clusters, each framed, dragged and placed against on its own,
+  and there is no gesture that gathers the cards of one module across flows.
+- **A groupless card can stand inside a flow frame's padding.** The cards in no flow have no
+  frame of their own for a placement to clear, so where the binding obstacle is a grouped card
+  itself the two end one `GAP_Y` apart and the flow frame closing round that card reaches over
+  the groupless one by the rest of its padding. While the clusters are drawn the groupless
+  card's own module frame is the obstacle instead, and what a flow frame closes over is at most
+  the `MODULE_PAD` between that frame's edge and the card inside it.
 
 ### Known gaps (milestone 7.5)
 
@@ -1654,6 +1684,11 @@ request switches the working tree" is closed.
      grew, and the cards those run into after them, in one `move_cards`; a card that shrinks
      back gives that room again, newest push first, and only while the cards it pushed are
      still where the push left them.
+   - Milestone 7.9: module clusters — inside each flow the cards of one module are framed
+     together under the module's name, the toolbar's `modules` toggle and the `m` key draw the
+     frames or drop them, dragging a label carries every card of the cluster, and a card whose
+     module already stands in its flow lands beside that cluster and clear of the frames of the
+     modules and the flows it is not in.
 7. In-app Grasp: one dev dependency mounted in the host's endpoint, the tracer riding the
    host's code reloader for incremental indexing, pull requests reviewed from worktrees
    (see [Part 4](#part-4--in-app-grasp)).
