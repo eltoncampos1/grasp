@@ -1073,6 +1073,12 @@ defmodule GraspWeb.ReviewLiveTest do
     refute has_element?(view, "#flow-none[data-grouped]")
   end
 
+  test "a node names the module its card belongs to", %{view: view, name: name} do
+    Session.open_root(name, @greet)
+
+    assert has_element?(view, "#node-1[data-module='SampleApp.Greeter'] #card-1")
+  end
+
   test "a caller opened from a framed card is drawn inside that frame", %{
     view: view,
     name: name

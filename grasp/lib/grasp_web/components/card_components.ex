@@ -51,7 +51,10 @@ defmodule GraspWeb.CardComponents do
     card = Forest.card(assigns.forest, assigns.card_id)
     {x, y} = card.position || {0, 0}
 
-    assigns = assign(assigns, card: card, x: x, y: y)
+    # A function id with no module part stands for its own module, clustering alone.
+    module = module_of(card.function_id) || card.function_id
+
+    assigns = assign(assigns, card: card, x: x, y: y, module: module)
 
     ~H"""
     <div
@@ -60,6 +63,7 @@ defmodule GraspWeb.CardComponents do
       data-card={@card.id}
       data-depth={@depth}
       data-group={@card.group || ""}
+      data-module={@module}
       data-unplaced={@card.position == nil}
       style={"--x: #{@x}px; --y: #{@y}px"}
     >
