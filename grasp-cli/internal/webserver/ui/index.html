@@ -15,8 +15,10 @@
   <span class="counts" id="counts"></span>
   <span class="spacer"></span>
   <select id="sessionSel" title="session"></select>
+  <button id="undoBtn" title="undo the last canvas change" disabled>undo <kbd>⌘Z</kbd></button>
   <button id="resetBtn" title="lay the cards out again">reset layout</button>
   <button id="sigBtn" title="signatures only">signatures <kbd>s</kbd></button>
+  <button id="sendReviewBtn" title="publish the threads to the PR, with final considerations">send review</button>
   <button id="askBtn">ask <kbd>⌘I</kbd></button>
   <button id="paletteBtn">search <kbd>⌘K</kbd></button>
 </header>
@@ -64,6 +66,18 @@
       <textarea id="chatText" placeholder="ask about this review… (Enter sends)"></textarea>
     </div>
   </aside>
+</div>
+<div id="reviewModal" hidden>
+  <div class="box review-box">
+    <b>send review to GitHub</b>
+    <div id="reviewInfo" class="review-info"></div>
+    <textarea id="reviewBody" placeholder="final considerations (optional) — posted as a top-level review comment"></textarea>
+    <div class="row">
+      <button id="reviewSend">send review</button>
+      <button id="reviewCancel">cancel</button>
+      <span id="reviewStatus" class="review-info"></span>
+    </div>
+  </div>
 </div>
 <div id="palette" hidden>
   <div class="box">

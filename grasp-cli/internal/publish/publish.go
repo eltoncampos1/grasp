@@ -55,6 +55,54 @@ func Run(root string, number int, log func(string)) (Summary, error) {
 	return sum, nil
 }
 
+// RunThread publishes one thread by id.
+func RunThread(root string, number int, threadID string, log func(string)) error {
+	headSha, err := prHeadSha(root, number)
+	if err != nil {
+		return err
+	}
+	store := comments.NewStore(root)
+	doc, err := store.Load()
+	if err != nil {
+		return err
+	}
+	for _, t := range doc.Threads {
+		if t.ID != threadID {
+			continue
+		}
+		if t.PublishedURL != "" {
+			return fmt.Errorf("thread already published: %s", t.PublishedURL)
+		}
+		url, err := postThread(root, number, headSha, t)
+		if err != nil {
+			return err
+		}
+		if _, err := store.MarkPublished(t.ID, url); err != nil {
+			return err
+		}
+		log(fmt.Sprintf("✓ %s:%d → %s", t.File, t.Line, url))
+		return nil
+	}
+	return fmt.Errorf("no thread %s", threadID)
+}
+
+// SubmitReview posts a top-level review body on the pull request — the
+// "final considerations" box — as a COMMENT review.
+func SubmitReview(root string, number int, body string) (string, error) {
+	out, err := gh(root, "api", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/reviews", number),
+		"-f", "body="+body, "-f", "event=COMMENT")
+	if err != nil {
+		return "", err
+	}
+	var resp struct {
+		HTMLURL string `json:"html_url"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		return "", err
+	}
+	return resp.HTMLURL, nil
+}
+
 // CurrentPR resolves the pull request the checked-out branch is open on.
 func CurrentPR(root string) (int, error) {
 	out, err := gh(root, "pr", "view", "--json", "number", "--jq", ".number")

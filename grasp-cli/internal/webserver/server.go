@@ -96,6 +96,8 @@ func (s *Server) Run(onReady func(url string)) error {
 	mux.HandleFunc("/api/index", s.index)
 	mux.HandleFunc("/api/config", s.config)
 	mux.HandleFunc("/api/comments", s.comments)
+	mux.HandleFunc("/api/publish", s.handlePublish)
+	mux.HandleFunc("/api/review", s.handleReview)
 	mux.HandleFunc("/api/sessions", s.sessions)
 	mux.HandleFunc("/api/sessions/", s.sessions)
 	mux.HandleFunc("/api/chat", s.handleChat)

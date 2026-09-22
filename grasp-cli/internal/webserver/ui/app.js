@@ -11,6 +11,9 @@ const CARD_W = 620, GAP_X = 70, GAP_Y = 30, EST_H = 320;
 let IDX = null, byId = new Map(), callersOf = new Map(), COMMENTS = { threads: [] }, CFG = {};
 let S = null;                 // session: {name, cards: Map, edges: [], focus, pan, zoom}
 let heights = new Map();      // card id -> measured px height
+let widths = new Map();       // card id -> measured px width (cards size to their code)
+const W = id => widths.get(id) || CARD_W;
+let undoStack = [];           // canvas snapshots, session-local
 let sigMode = false;
 let composing = null;         // {fnId, file, line, endLine, side}
 let allModulesShown = false;
@@ -252,14 +255,14 @@ function openCard(id, { fromId, key, side }) {
   if (fromId && !S.cards.has(fromId)) fromId = undefined;
   setFocus(id);
   if (S.cards.has(id)) {
-    if (fromId && !S.edges.some(e => e.from === fromId && e.to === id)) S.edges.push({ from: fromId, to: id, key });
+    if (fromId && !S.edges.some(e => e.from === fromId && e.to === id)) { pushHistory(); S.edges.push({ from: fromId, to: id, key }); }
     renderCanvas();
     const el = cardEl(id); if (el) el.classList.add('flash');
     ensureVisible(id);
     scheduleSave();
     return;
   }
-  const fn = byId.get(id);
+  pushHistory();
   const pos = place(fromId, side);
   S.cards.set(id, { x: pos.x, y: pos.y, view: 'source', fold: false, collapsed: false, root: !fromId, expanded: new Set() });
   if (fromId) S.edges.push({ from: side === 'left' ? id : fromId, to: side === 'left' ? fromId : id, key });
@@ -276,16 +279,18 @@ function place(fromId, side) {
     return { x: 40, y };
   }
   const from = S.cards.get(fromId);
-  const x = side === 'left' ? from.x - CARD_W - GAP_X : from.x + CARD_W + GAP_X;
+  const x = side === 'left' ? from.x - CARD_W - GAP_X : from.x + W(fromId) + GAP_X;
   let y = from.y;
   const collides = yy => [...S.cards.entries()].some(([id, c]) =>
-    Math.abs(c.x - x) < CARD_W && yy < c.y + (heights.get(id) || EST_H) + 10 && yy + EST_H > c.y - 10);
+    x < c.x + W(id) + 10 && x + CARD_W > c.x - 10 &&
+    yy < c.y + (heights.get(id) || EST_H) + 10 && yy + EST_H > c.y - 10);
   let guard = 0;
   while (collides(y) && guard++ < 200) y += 60;
   return { x, y };
 }
 
 function closeCard(id, subtree) {
+  pushHistory();
   S.cards.delete(id);
   S.edges = S.edges.filter(e => e.from !== id && e.to !== id);
   if (subtree) {
@@ -316,17 +321,48 @@ function renderCanvas() {
   $('#hint').style.display = S.cards.size === 0 ? '' : 'none';
   for (const [id] of S.cards) world.appendChild(buildCard(byId.get(id)));
   requestAnimationFrame(() => {
-    for (const [id] of S.cards) { const el = cardEl(id); if (el) heights.set(id, el.offsetHeight); }
+    for (const [id] of S.cards) {
+      const el = cardEl(id);
+      if (el) { heights.set(id, el.offsetHeight); widths.set(id, el.offsetWidth); }
+    }
     drawEdges();
   });
 }
+
+// ---------- undo ----------
+function snapshot() {
+  return JSON.stringify({
+    cards: [...S.cards.entries()].map(([id, c]) => ({ id, x: c.x, y: c.y, view: c.view, fold: c.fold, collapsed: c.collapsed, root: c.root })),
+    edges: S.edges, focus: S.focus, pan: S.pan, zoom: S.zoom,
+  });
+}
+
+function pushHistory() {
+  undoStack.push(snapshot());
+  if (undoStack.length > 30) undoStack.shift();
+  $('#undoBtn').disabled = false;
+}
+
+function undo() {
+  const snap = undoStack.pop();
+  if (!snap) return;
+  const doc = JSON.parse(snap);
+  S.cards = new Map(doc.cards.filter(c => byId.has(c.id))
+    .map(c => [c.id, { x: c.x, y: c.y, view: c.view, fold: c.fold, collapsed: c.collapsed, root: c.root, expanded: new Set() }]));
+  S.edges = doc.edges.filter(e => S.cards.has(e.from) && S.cards.has(e.to));
+  S.focus = doc.focus && S.cards.has(doc.focus) ? doc.focus : null;
+  S.pan = doc.pan; S.zoom = doc.zoom;
+  renderCanvas(); applyTransform(); scheduleSave();
+  $('#undoBtn').disabled = undoStack.length === 0;
+}
+$('#undoBtn').addEventListener('click', undo);
 
 function ensureVisible(id) {
   const c = S.cards.get(id);
   if (!c) return;
   const vp = $('#viewport'), vw = vp.clientWidth, vh = vp.clientHeight;
   const sx = c.x * S.zoom + S.pan.x, sy = c.y * S.zoom + S.pan.y;
-  const w = CARD_W * S.zoom, h = Math.min(heights.get(id) || EST_H, 500) * S.zoom;
+  const w = W(id) * S.zoom, h = Math.min(heights.get(id) || EST_H, 500) * S.zoom;
   if (sx < 0) S.pan.x -= sx - 30;
   if (sy < 40) S.pan.y -= sy - 70;
   if (sx + w > vw) S.pan.x -= sx + w - vw + 30;
@@ -397,6 +433,7 @@ window.addEventListener('mouseup', () => {
 
 $('#resetBtn').addEventListener('click', resetLayout);
 function resetLayout() {
+  pushHistory();
   layoutCanvas();
   S.pan = { x: 0, y: 0 };
   renderCanvas(); applyTransform(); scheduleSave();
@@ -454,7 +491,7 @@ function layoutCanvas() {
       if (i > 0 && i % perRow === 0) { y += rowH + GAP_Y; x = 40; rowH = 0; }
       const c = S.cards.get(id);
       c.x = x; c.y = y;
-      x += CARD_W + GAP_X;
+      x += W(id) + GAP_X;
       rowH = Math.max(rowH, H(id));
     });
   }
@@ -502,8 +539,18 @@ function layoutFlow(nodes, out, inn, H, yStart) {
     }
   }
 
-  // coordinates: x by layer; y stacked, nudged toward the mean of the
-  // neighbors already placed so edges run near-horizontal
+  // coordinates: x cumulative by each layer's widest card; y stacked, nudged
+  // toward the mean of the neighbors already placed so edges run
+  // near-horizontal
+  const colX = [];
+  let xCursor = 40;
+  cols.forEach((col, d) => {
+    colX[d] = xCursor;
+    let widest = CARD_W;
+    for (const n of col) widest = Math.max(widest, W(n));
+    xCursor += widest + GAP_X;
+  });
+
   const yOf = new Map();
   let maxBottom = yStart;
   cols.forEach((col, d) => {
@@ -517,7 +564,7 @@ function layoutFlow(nodes, out, inn, H, yStart) {
       }
       yOf.set(n, want);
       const c = S.cards.get(n);
-      c.x = 40 + d * (CARD_W + GAP_X);
+      c.x = colX[d];
       c.y = want;
       cursor = want + H(n) + GAP_Y;
       maxBottom = Math.max(maxBottom, cursor);
@@ -892,6 +939,7 @@ function threadRow(t, colspan) {
       '<button class="reply">reply</button>' +
       '<button class="resolve">' + (t.resolved ? 'reopen' : 'resolve') + '</button>' +
       '<button class="del">delete</button>' +
+      (t.published_url ? '' : '<button class="sendgh" title="post this thread to the PR now">send to GitHub</button>') +
     '</div>';
   if (t.resolved) box.addEventListener('click', e => { if (!e.target.closest('button, textarea')) box.classList.toggle('expanded'); });
   const ta = box.querySelector('textarea');
@@ -901,8 +949,19 @@ function threadRow(t, colspan) {
   });
   box.querySelector('.resolve').addEventListener('click', () => api({ action: t.resolved ? 'unresolve' : 'resolve', thread: t.id }));
   box.querySelector('.del').addEventListener('click', () => api({ action: 'delete', thread: t.id }));
+  const sendgh = box.querySelector('.sendgh');
+  if (sendgh) sendgh.addEventListener('click', () => publishThread(t.id, sendgh));
   td.appendChild(box); tr.appendChild(td);
   return tr;
+}
+
+async function publishThread(threadID, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'sending…'; }
+  const r = await fetch('/api/publish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ thread: threadID }) });
+  if (!r.ok) { alert(await r.text()); if (btn) { btn.disabled = false; btn.textContent = 'send to GitHub'; } return; }
+  const out = await r.json();
+  COMMENTS = out.comments;
+  renderCanvas(); renderSidebar();
 }
 
 function composerRow(colspan) {
@@ -913,18 +972,23 @@ function composerRow(colspan) {
   box.className = 'composer';
   const range = composing.endLine ? composing.line + '–' + composing.endLine : '' + composing.line;
   box.innerHTML = '<textarea placeholder="comment on line ' + esc(range) + '…"></textarea>' +
-    '<div class="row"><button class="send">comment</button><button class="cancel">cancel</button>' +
-    '<span class="hint">⌘⏎ sends · shift+click a line number extends the range</span></div>';
+    '<div class="row"><button class="send">comment</button>' +
+    '<button class="sendGh" title="save the thread and post it to the PR right away">comment &amp; send to GitHub</button>' +
+    '<button class="cancel">cancel</button>' +
+    '<span class="hint">⌘⏎ comments · shift+click a line number extends the range</span></div>';
   const ta = box.querySelector('textarea');
-  const send = () => {
+  const send = async (alsoPublish) => {
     if (!ta.value.trim()) return;
-    api({ action: 'add', function: composing.fnId, file: composing.file, line: composing.line, end_line: composing.endLine || 0, side: composing.side, body: ta.value });
+    const payload = { action: 'add', function: composing.fnId, file: composing.file, line: composing.line, end_line: composing.endLine || 0, side: composing.side, body: ta.value };
     composing = null;
+    const doc = await apiRaw(payload);
+    if (doc && alsoPublish && doc.threads.length) await publishThread(doc.threads[doc.threads.length - 1].id, null);
   };
-  box.querySelector('.send').addEventListener('click', send);
+  box.querySelector('.send').addEventListener('click', () => send(false));
+  box.querySelector('.sendGh').addEventListener('click', () => send(true));
   box.querySelector('.cancel').addEventListener('click', () => { composing = null; renderCanvas(); });
   ta.addEventListener('keydown', e => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') send();
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') send(false);
     if (e.key === 'Escape') { composing = null; renderCanvas(); e.stopPropagation(); }
   });
   td.appendChild(box); tr.appendChild(td);
@@ -932,11 +996,41 @@ function composerRow(colspan) {
   return tr;
 }
 
-async function api(payload) {
+async function apiRaw(payload) {
   const r = await fetch('/api/comments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  if (r.ok) { COMMENTS = await r.json(); renderCanvas(); renderSidebar(); }
-  else alert(await r.text());
+  if (!r.ok) { alert(await r.text()); return null; }
+  COMMENTS = await r.json();
+  renderCanvas(); renderSidebar();
+  return COMMENTS;
 }
+
+async function api(payload) { await apiRaw(payload); }
+
+// ---------- send review (all threads + final considerations) ----------
+$('#sendReviewBtn').addEventListener('click', () => {
+  const unpublished = COMMENTS.threads.filter(t => !t.published_url).length;
+  $('#reviewInfo').textContent = unpublished + ' unpublished thread' + (unpublished === 1 ? '' : 's') +
+    ' will be posted as review comments. Nothing syncs without this button.';
+  $('#reviewStatus').textContent = '';
+  $('#reviewBody').value = '';
+  $('#reviewModal').hidden = false;
+  $('#reviewBody').focus();
+});
+$('#reviewCancel').addEventListener('click', () => { $('#reviewModal').hidden = true; });
+$('#reviewModal').addEventListener('mousedown', e => { if (e.target === $('#reviewModal')) $('#reviewModal').hidden = true; });
+$('#reviewSend').addEventListener('click', async () => {
+  const btn = $('#reviewSend');
+  btn.disabled = true;
+  $('#reviewStatus').textContent = 'sending…';
+  const r = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: $('#reviewBody').value.trim() }) });
+  btn.disabled = false;
+  if (!r.ok) { $('#reviewStatus').textContent = await r.text(); return; }
+  const out = await r.json();
+  COMMENTS = out.comments;
+  renderCanvas(); renderSidebar();
+  $('#reviewStatus').textContent = out.log[out.log.length - 1] || 'done';
+  setTimeout(() => { $('#reviewModal').hidden = true; }, 1600);
+});
 
 function initials(name) {
   return (name || '?').split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
@@ -965,11 +1059,11 @@ function drawEdges() {
       x1 = (r.right - wr.left) / S.zoom;
       y1 = (r.top + r.height / 2 - wr.top) / S.zoom;
     } else {
-      x1 = from.x + CARD_W;
+      x1 = from.x + W(e.from);
       y1 = from.y + 20;
     }
-    const rightward = to.x >= from.x + CARD_W / 2;
-    const x2 = rightward ? to.x : to.x + CARD_W;
+    const rightward = to.x >= from.x + W(e.from) / 2;
+    const x2 = rightward ? to.x : to.x + W(e.to);
     const y2 = to.y + 22;
     if (!rightward && srcEl == null) x1 = from.x;
     const mx = (x1 + x2) / 2;
@@ -988,7 +1082,7 @@ function drawEdges() {
     const center = { x: vp.clientWidth / 2, y: vp.clientHeight / 2 };
     const dist = id => {
       const c = S.cards.get(id);
-      const sx = (c.x + CARD_W / 2) * S.zoom + S.pan.x, sy = c.y * S.zoom + S.pan.y;
+      const sx = (c.x + W(id) / 2) * S.zoom + S.pan.x, sy = c.y * S.zoom + S.pan.y;
       return Math.hypot(sx - center.x, sy - center.y);
     };
     const far = dist(e.from) > dist(e.to) ? e.from : e.to;
@@ -1150,6 +1244,7 @@ document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i') { e.preventDefault(); toggleChat(); return; }
   if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
   if (e.key === 'Escape') {
     if (!$('#palette').hidden) closePalette();
     else if (composing) { composing = null; renderCanvas(); }
@@ -1234,7 +1329,9 @@ function callKey(fromId, toId) {
 }
 
 // Replace the whole canvas with the agent's graph and lay it out afresh.
+// One undo (⌘Z) brings the reviewer's own arrangement back.
 function applySetCards(cmd) {
+  pushHistory();
   S.cards = new Map();
   S.edges = [];
   const byKey = new Map();
