@@ -47,7 +47,7 @@ and the .gitignore entries for everything else under .grasp/.`,
 
 		languages := detectLanguages(root)
 		if len(languages) == 0 {
-			logln("warning: no TypeScript/JavaScript files found — the v0 indexer only speaks those")
+			logln("warning: no Elixir, JS/TS or Go files found — the indexer speaks those")
 		} else {
 			logln("languages: %s", strings.Join(languages, ", "))
 		}
@@ -130,14 +130,18 @@ func detectLanguages(root string) []string {
 			continue
 		}
 		switch strings.ToLower(filepath.Ext(p)) {
+		case ".ex", ".exs":
+			counts["elixir"]++
 		case ".ts", ".tsx", ".mts", ".cts":
 			counts["typescript"]++
 		case ".js", ".jsx", ".mjs", ".cjs":
 			counts["javascript"]++
+		case ".go":
+			counts["go"]++
 		}
 	}
 	var langs []string
-	for _, l := range []string{"typescript", "javascript"} {
+	for _, l := range []string{"elixir", "typescript", "javascript", "go"} {
 		if counts[l] > 0 {
 			langs = append(langs, l)
 		}
