@@ -247,7 +247,9 @@ route a template links to, a job a function queues — are edges beside them:
   body, a bare `{~p"/…"}` — is a route site with verb `GET` ranged over the sigil, found by
   the extractor's AST walk; a sigil that sits inside a route attribute is counted once, as
   the attribute's site. Any other value (`{@path}`, a route helper, an external URL) yields
-  nothing. Route sites travel on the definition and through the join unchanged;
+  nothing. Route sites travel on the definition and through the join unchanged, and a
+  resolved record keeps them: they are written to the document under `route_sites`, which is
+  what lets an update match a record's sites against the routes it finds.
   `Grasp.Index.Routes.resolve/2` turns them into calls once the entry points are known,
   matching verb and segments against every `route` and `live_route` entry (a `:param`
   segment matches any one site segment, a `*glob` the rest, a dynamic site segment any one
@@ -255,23 +257,26 @@ route a template links to, a job a function queues — are edges beside them:
   route segments, a glob counting most — since the entry-point list is sorted and not in the
   router's declaration order. A resolved site is a call `%{target, kind: :route, range,
   route: %{verb, path}}` whose `path` is the route's own pattern; an unresolved one is
-  dropped. The same pass runs in the incremental update against the document's entry points.
+  dropped. The same pass runs in the incremental update, over every record the document
+  holds, against the entry points that update finds.
 - **Jobs are edges.** Putting an Oban job on a queue is a hop as well: a call to `new/1` or
   `new/2` on a module whose `perform/1` is an `oban_worker` entry point is a call of kind
   `enqueue` on that `perform/1`, so the enqueueing function is a caller of the worker and
   the site is a hop the reader follows to the work it sets in motion.
   `Grasp.Index.Jobs.resolve/2` makes the rewrite once the entry points are known — after
   entry-point detection, in the builder and in the incremental update alike — and a resolved
-  call is `%{target, kind: :enqueue, range, job: %{worker, queue}}`: the worker is the
-  module the call named, the queue the one that module's `__opts__/0` declares, `"default"`
-  where it declares none. The entry points rather than the definitions say which modules are
-  workers: a worker that writes a `new/1` of its own — Oban makes both overridable — is
-  redirected all the same, and a `new/1` on any other module is left as it is. The call
-  keeps its range and its place among the record's calls, and where the rewrite leaves a
-  record holding two calls of the same target, kind and range, one is kept. The span renders
-  as `data-kind="enqueue"`, titled `Oban job · Worker · queue`, and its edge to the worker
-  is drawn dashed, as a route's is: neither hop hands control straight from one end to the
-  other.
+  call is `%{target, kind: :enqueue, range, job: %{worker, queue}, via: %{target, kind}}`:
+  the worker is the module the call named, the queue the one that module's `__opts__/0`
+  declares, `"default"` where it declares none, and `via` the call the edge stands for — the
+  target and kind the compiler reported — so the edge can be undone and derived again
+  against another set of workers. The entry points rather than the definitions say which
+  modules are workers: a worker that writes a `new/1` of its own — Oban makes both
+  overridable — is redirected all the same, and a `new/1` on any other module is left as it
+  is. The call keeps its range and its place among the record's calls, and where the rewrite
+  leaves a record holding two calls of the same target, kind and range, one is kept. The span
+  renders as `data-kind="enqueue"`, titled `Oban job · Worker · queue`, and its edge to the
+  worker is drawn dashed, as a route's is: neither hop hands control straight from one end to
+  the other.
 
 Against a base ref, a template's `change` compares the whole file with the base commit's
 copy (`git show <base>:<path>`): a template the base does not have is added, one whose text
@@ -303,12 +308,17 @@ touched is unchanged.
       // a route site the router resolved: a call of kind "route" carrying the route it matched
       // { "target": "MyAppWeb.UserController.show/2", "kind": "route",
       //   "range": { "start": [3, 9], "end": [3, 21] }, "route": { "verb": "GET", "path": "/users/:id" } }
-      // an enqueueing call the workers resolved: a call of kind "enqueue" carrying the worker
-      // and the queue it runs on
+      // an enqueueing call the workers resolved: a call of kind "enqueue" carrying the worker,
+      // the queue it runs on, and under "via" the call it stands for
       // { "target": "MyApp.Workers.Forex.perform/1", "kind": "enqueue",
       //   "range": { "start": [50, 5], "end": [50, 30] },
-      //   "job": { "worker": "MyApp.Workers.Forex", "queue": "forex" } }
+      //   "job": { "worker": "MyApp.Workers.Forex", "queue": "forex" },
+      //   "via": { "target": "MyApp.Workers.Forex.new/1", "kind": "remote" } }
       "hidden_calls": [ { "target": "MyAppWeb.CoreComponents.button/1", "kind": "remote", "line": 50 } ],
+      // every record carries the route sites the route pass reads; a null path segment is
+      // one the template computes
+      "route_sites": [ { "verb": "GET", "path": ["users", null],
+                         "range": { "start": [3, 9], "end": [3, 21] } } ],
       "change": "modified", "base_source": "...", "removed": false
     }
   ],
@@ -1036,9 +1046,6 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   `Oban.insert_all/2`, or a worker module held in a variable names no worker where the call
   is written, so nothing redirects it to a `perform/1` and it stays the call the compiler
   reported.
-- **An incremental update re-resolves only the records it rebuilds.** A worker added or
-  dropped reaches an untouched record's edges when that record's file is next saved, or when
-  the index is next built in full — the rule routes follow.
 - **Dragged frames overlap.** Placement is what keeps the frames clear of one another; a
   reader who drags a card or a group across another frame is left with the overlap, and the
   later section wins a drop inside both. "Reset layout" lays them out apart again.
@@ -1084,9 +1091,6 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 - **Attributes inherited by htmx (`hx-get:inherited`, `hx-boost`) are not read.**
 - **A `~p` outside a route attribute is a `GET`.** `redirect(conn, to: ~p"/…")` is one;
   a `~p` handed to a `Req.post/2` is drawn as a `GET` too.
-- **An incremental update re-resolves only the records it rebuilds.** A route added to or
-  removed from the router reaches an untouched template's edges when that template is next
-  saved, or when the index is next built in full.
 
 ### Known gaps (milestone 5.8)
 
@@ -1421,11 +1425,15 @@ performs — the incremental compile that follows a save — reports its call ev
 Events accumulate; 300 ms after the last one, the reindexer updates the index incrementally:
 it takes the set of project files the events name, re-extracts those files with Sourceror
 (a file that no longer exists drops its definitions), joins the new events to the new
-definitions, recomputes entry points from the modules now loaded, classifies the changed
-files against the base commit the document records as `git.base_sha` (the commit is verified
-once per flush, then each changed file's base source comes from `git show`; nothing is
-cached — a flush reads only the files the save touched, and a git that cannot answer leaves
-the records with the classification they already had), writes the whole document back to the index file and reloads the store. Cards
+definitions, recomputes entry points from the modules now loaded, resolves every record the
+document holds against them — the rebuilt records and the kept ones alike, since the document
+carries each record's own inputs, so a route or a worker that appears or goes moves the edges
+of a function whose file nothing recompiled, while a record written without those inputs is
+left as it is — classifies the changed files against the base commit the document records as
+`git.base_sha` (the commit is verified once per flush, then each changed file's base source
+comes from `git show`; nothing is cached — a flush reads only the files the save touched, and
+a git that cannot answer leaves the records with the classification they already had), writes
+the whole document back to the index file and reloads the store. Cards
 therefore follow a save within a second or two, with no `mix grasp.index` run. The 300 ms
 throttle on the tracer's notifications is held per compiler process, in that process's own
 dictionary, so a compile of a thousand files costs of the order of one message per file.
@@ -1577,6 +1585,9 @@ request switches the working tree" is closed.
      each section out clear of the other sections' frames, so the frames come out a gap apart
      instead of interleaving; the zoom reaches 5%; Alt and drag carries a whole flow; `?`
      opens the keys-and-gestures list.
+   - Milestone 7.6: an update resolves every record — the document carries each record's
+     route sites and the call an enqueue edge stands for, so a route or a worker that
+     appears or goes moves the edges of a function whose file nothing recompiled.
 7. In-app Grasp: one dev dependency mounted in the host's endpoint, the tracer riding the
    host's code reloader for incremental indexing, pull requests reviewed from worktrees
    (see [Part 4](#part-4--in-app-grasp)).

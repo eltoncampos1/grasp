@@ -118,18 +118,20 @@ that cannot be read or parsed is reported and skipped; only its definitions are 
 Once Grasp is running in your dev server it installs the same tracer into the VM's compiler
 options, so every compile your code reloader performs after a save reports its calls too.
 A third of a second after the last one, Grasp re-extracts the files the compile touched,
-rebuilds their records, recomputes entry points from the modules now loaded, reclassifies the
-changed files against the base commit the document records, writes the document back and
-reloads the store. Cards follow a save within a second or two, with no `mix grasp.index` run.
+rebuilds their records, recomputes entry points from the modules now loaded, resolves every
+record in the document against those entry points — so a route or a worker that appears or
+goes moves the edges of a function whose file nothing recompiled — reclassifies the changed
+files against the base commit the document records, writes the document back and reloads the
+store. Cards follow a save within a second or two, with no `mix grasp.index` run.
 
 What that path cannot see is what the full build is for:
 
 - a compile that happened before Grasp started;
 - a change to which files are compiled at all;
 - a branch switch, a new `--base`, a dependency;
-- a Grasp upgrade: a record is re-read only when its file recompiles, so an edge a newer
-  Grasp knows how to follow — a route, a queued job — reaches untouched functions only after
-  a full build.
+- a Grasp upgrade: a document written by an earlier Grasp carries no inputs for the edges a
+  later one derives, so the first build after an upgrade is a full one; a route or a worker
+  added afterwards reaches every record on the next save.
 
 A batch naming more than fifty project files is a rebuild rather than a save: the reindexer
 says so and leaves the index to `mix grasp.index`. Reindexing also pauses, once and with a
