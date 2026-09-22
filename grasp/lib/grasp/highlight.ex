@@ -20,9 +20,10 @@ defmodule Grasp.Highlight do
   covering a piece is the one that wraps it, so the inner call keeps a span of its own and
   the outer range is drawn as the parts either side of it. Output is one `span.line` per
   source line so the viewer can address lines, with Lumis' classes on highlighted runs and
-  bare text elsewhere. A call the router resolved carries `data-kind="route"` and a `title`
-  reading its verb and path, so a hop over HTTP is told from a function call on the card
-  and on the edge leaving it.
+  bare text elsewhere. A call that is not a function call carries a `data-kind` and a `title`
+  naming what it reaches — `"route"` with the verb and path the router matched, `"enqueue"`
+  with the worker and the queue it runs on — so a hop over HTTP or onto a queue is told from
+  a function call on the card and on the edge leaving it.
 
   `lines/2` and `diff_lines/2` hand those lines back one at a time as `%{side, line, html}`,
   the side telling a line of the current source from one the branch deleted, so a caller can
@@ -239,6 +240,7 @@ defmodule Grasp.Highlight do
           target: call["target"],
           kind: call["kind"],
           route: call["route"],
+          job: call["job"],
           start: {sl, sc},
           end: {el, ec}
         }
@@ -502,7 +504,7 @@ defmodule Grasp.Highlight do
         %{target: target} = range ->
           attrs =
             ~s( data-target="#{escape(target)}") <>
-              route_attrs(range) <>
+              kind_attrs(range) <>
               edge_attrs(open, target) <>
               ~s( data-external="#{escape(to_string(external?.(target)))}" phx-click="open_call" phx-value-card="#{escape(to_string(card_id))}" phx-value-target="#{escape(target)}") <>
               if target == highlighted_call, do: ~s( data-highlight="true"), else: ""
@@ -512,13 +514,16 @@ defmodule Grasp.Highlight do
     end)
   end
 
-  # A hop the router resolved reads as an HTTP request rather than a function call, so the
-  # span says which kind it is and carries the verb and path the reader would otherwise have
-  # to look up in the router.
-  defp route_attrs(%{kind: "route", route: %{"verb" => verb, "path" => path}}),
+  # A hop that is not a function call — an HTTP request the router resolved, a job put on
+  # a queue — says which kind it is, and the title carries what the reader would otherwise
+  # have to look up: the route's verb and path, or the worker and the queue it runs on.
+  defp kind_attrs(%{kind: "route", route: %{"verb" => verb, "path" => path}}),
     do: ~s( data-kind="route" title="#{escape(verb)} #{escape(path)}")
 
-  defp route_attrs(_range), do: ""
+  defp kind_attrs(%{kind: "enqueue", job: %{"worker" => worker, "queue" => queue}}),
+    do: ~s( data-kind="enqueue" title="Oban job · #{escape(worker)} · #{escape(queue)}")
+
+  defp kind_attrs(_range), do: ""
 
   defp edge_attrs(open, target) do
     case Map.fetch(open, target) do

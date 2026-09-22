@@ -449,7 +449,8 @@ body.grasp-dragging .flow__title {
 .connectors .arrow {
   fill: var(--edge-color, var(--border));
 }
-.connectors .edge[data-kind=route] {
+.connectors .edge[data-kind=route],
+.connectors .edge[data-kind=enqueue] {
   stroke-dasharray: 6 4;
 }
 .frames {
@@ -801,7 +802,8 @@ body.grasp-dragging .flow__title {
   border-bottom-color: var(--fg-muted);
   opacity: 0.8;
 }
-.call[data-kind=route] {
+.call[data-kind=route],
+.call[data-kind=enqueue] {
   border-bottom-style: dotted;
 }
 .call[data-highlight=true] {

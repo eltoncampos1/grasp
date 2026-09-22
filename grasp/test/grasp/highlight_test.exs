@@ -372,6 +372,57 @@ defmodule Grasp.HighlightTest do
     end
   end
 
+  test "an enqueue call carries its kind and reads its worker and queue on hover" do
+    record = %{
+      "id" => "SampleAppWeb.GreetController.mail/2",
+      "span" => %{"start_line" => 1, "end_line" => 5},
+      "source" => """
+      def mail(conn, _params) do
+        SampleApp.Text.normalize(conn)
+        SampleApp.Workers.Mailer.new(%{})
+        redirect(conn, to: ~p"/greet/bob")
+      end\
+      """,
+      "calls" => [
+        %{
+          "target" => "SampleApp.Text.normalize/1",
+          "kind" => "remote",
+          "range" => %{"start" => [2, 3], "end" => [2, 27]}
+        },
+        %{
+          "target" => "SampleApp.Workers.Mailer.perform/1",
+          "kind" => "enqueue",
+          "range" => %{"start" => [3, 3], "end" => [3, 31]},
+          "job" => %{"worker" => "SampleApp.Workers.Mailer", "queue" => "mail"}
+        },
+        %{
+          "target" => "SampleAppWeb.GreetController.show/2",
+          "kind" => "route",
+          "range" => %{"start" => [4, 22], "end" => [4, 36]},
+          "route" => %{"verb" => "GET", "path" => "/greet/:name"}
+        }
+      ]
+    }
+
+    doc = render(record, [])
+
+    enqueue = LazyHTML.query(doc, ~s(span.line[data-line="3"] span.call[data-kind="enqueue"]))
+
+    assert LazyHTML.attribute(enqueue, "data-target") == ["SampleApp.Workers.Mailer.perform/1"]
+    assert LazyHTML.attribute(enqueue, "title") == ["Oban job · SampleApp.Workers.Mailer · mail"]
+    assert LazyHTML.text(enqueue) == "SampleApp.Workers.Mailer.new"
+
+    route = LazyHTML.query(doc, ~s(span.line[data-line="4"] span.call[data-kind="route"]))
+
+    assert LazyHTML.attribute(route, "data-target") == ["SampleAppWeb.GreetController.show/2"]
+    assert LazyHTML.attribute(route, "title") == ["GET /greet/:name"]
+
+    plain = LazyHTML.query(doc, ~s(span.call[data-target="SampleApp.Text.normalize/1"]))
+
+    assert LazyHTML.attribute(plain, "data-kind") == []
+    assert LazyHTML.attribute(plain, "title") == []
+  end
+
   describe "diff_lines/2" do
     test "a deleted line is an old-side entry addressing its base line" do
       {:ok, index} = Grasp.Index.load(@fixture)

@@ -98,7 +98,7 @@
   var keys_default = Keys;
 
   // js/hooks/canvas.js
-  var MIN_SCALE = 0.25;
+  var MIN_SCALE = 0.05;
   var MAX_SCALE = 2.5;
   var DRAG_THRESHOLD = 4;
   var MARGIN = 24;

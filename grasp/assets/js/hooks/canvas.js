@@ -42,7 +42,7 @@
 // and Shift+click picks cards out into the selection ⌘G frames: the two halves of grouping by
 // hand.
 
-const MIN_SCALE = 0.25
+const MIN_SCALE = 0.05
 const MAX_SCALE = 2.5
 const DRAG_THRESHOLD = 4
 const MARGIN = 24
