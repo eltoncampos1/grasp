@@ -1101,6 +1101,53 @@ body.grasp-signatures #stage .badge {
 .palette__item .badge--change {
   margin-inline-end: auto;
 }
+.help {
+  width: min(36rem, 90vw);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-size: 13px;
+}
+.help::backdrop {
+  background: var(--backdrop);
+}
+.help__body {
+  padding: var(--space-m);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.help h2 {
+  margin: 0 0 var(--space-m);
+  font-size: 1rem;
+}
+.help h3 {
+  margin: var(--space-m) 0 var(--space-s);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+.help dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-xs) var(--space-m);
+  margin: 0;
+}
+.help dt {
+  white-space: nowrap;
+}
+.help dd {
+  margin: 0;
+  color: var(--fg-muted);
+}
+.help__footer {
+  margin: var(--space-m) 0 0;
+  color: var(--fg-subtle);
+  font-size: 12px;
+}
 .chat {
   position: absolute;
   inset-block-end: calc(var(--space-m) + 3rem);

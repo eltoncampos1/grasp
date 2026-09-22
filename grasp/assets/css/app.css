@@ -342,6 +342,20 @@ body.grasp-signatures #stage .badge { padding: 0 calc(var(--space-s) / var(--zoo
    meta is what the free space is pushed against. */
 .palette__item .badge--change { margin-inline-end: auto; }
 
+/* The keys-and-gestures list. Unlike the palette this is a modal dialog, so the dim behind it
+   is the element's own ::backdrop rather than a rendered sibling; the surface is the palette's. */
+.help { width: min(36rem, 90vw); padding: 0; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); background: var(--bg-raised); color: var(--fg); font-size: 13px; }
+.help::backdrop { background: var(--backdrop); }
+.help__body { padding: var(--space-m); max-height: 80vh; overflow-y: auto; }
+.help h2 { margin: 0 0 var(--space-m); font-size: 1rem; }
+.help h3 { margin: var(--space-m) 0 var(--space-s); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-muted); }
+/* The key column is as wide as its widest chord and no wider, so the meanings all start
+   against the same edge. */
+.help dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-xs) var(--space-m); margin: 0; }
+.help dt { white-space: nowrap; }
+.help dd { margin: 0; color: var(--fg-muted); }
+.help__footer { margin: var(--space-m) 0 0; color: var(--fg-subtle); font-size: 12px; }
+
 /* The canvas suppresses selection and offers the pan cursor; inside the panel the pointer
    is for reading and typing, so both are handed back. */
 .chat { position: absolute; inset-block-end: calc(var(--space-m) + 3rem); inset-inline-end: var(--space-m); z-index: 4; width: 28rem; max-height: 60vh; display: flex; flex-direction: column; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); font-size: 13px; user-select: text; cursor: auto; }

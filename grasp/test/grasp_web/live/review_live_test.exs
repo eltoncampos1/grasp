@@ -661,7 +661,7 @@ defmodule GraspWeb.ReviewLiveTest do
 
   test "every toolbar control names itself, and its shortcut where it has one", %{view: view} do
     for id <- ~w(toggle-sidebar zoom-out zoom-level zoom-in zoom-fit
-                 toggle-signatures reset-layout toggle-chat) do
+                 toggle-signatures reset-layout toggle-chat help-toggle) do
       assert has_element?(view, "#canvas .toolbar ##{id}[data-tip]"),
              "the toolbar's ##{id} has no data-tip"
     end
@@ -679,6 +679,11 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(
              view,
              "#canvas .toolbar #toggle-chat[data-tip='Ask the agent'][data-key=\"\u2318I\"]"
+           )
+
+    assert has_element?(
+             view,
+             "#canvas .toolbar #help-toggle[data-tip='Keys and gestures'][data-key='?']"
            )
 
     assert has_element?(view, "#canvas .toolbar #reset-layout[data-tip='Reset layout']")
@@ -700,11 +705,34 @@ defmodule GraspWeb.ReviewLiveTest do
 
     ids = ~w(
       toggle-sidebar zoom-out zoom-level zoom-in zoom-fit
-      toggle-signatures reset-layout toggle-chat
+      toggle-signatures reset-layout toggle-chat help-toggle
     )
 
     positions = Enum.map(ids, at)
     assert positions == Enum.sort(positions)
+  end
+
+  test "the help dialog lists the gestures and keys the toolbar does not show", %{view: view} do
+    # Client-only: which keys exist is not session state, so the server renders the list once
+    # and the hook alone opens and closes it.
+    assert has_element?(
+             view,
+             "dialog#help[phx-hook='Help'][phx-update='ignore'][aria-labelledby='help-title']"
+           )
+
+    assert has_element?(view, "#help h2#help-title", "Keys and gestures")
+    refute has_element?(view, "#help[open]")
+
+    assert has_element?(view, "#help dt kbd", "Alt+drag")
+    assert has_element?(view, "#help dd", "Move every card connected to it.")
+    assert render(view) =~ "<kbd>?</kbd>"
+
+    # ~H does not process escapes, so a backslash key is written as one and must stay one.
+    assert render(view) =~ "<kbd>⌘\\</kbd>"
+
+    for heading <- ["Mouse", "Keys", "Chat"] do
+      assert has_element?(view, "#help h3", heading)
+    end
   end
 
   test "the sidebar can be hidden and shown", %{view: view} do

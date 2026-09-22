@@ -51,6 +51,7 @@
     mounted() {
       this.onKeydown = (e) => {
         if (document.getElementById("palette")?.dataset.open === "true") return;
+        if (document.getElementById("help")?.open) return;
         const chatToggle = (e.metaKey || e.ctrlKey) && e.key === "i";
         if (["INPUT", "TEXTAREA"].includes(e.target.tagName) && !chatToggle) return;
         if (e.metaKey || e.ctrlKey) {
@@ -1429,12 +1430,48 @@
   };
   var gutter_default = Gutter;
 
+  // js/hooks/help.js
+  var Help = {
+    mounted() {
+      this.onKeydown = (e) => {
+        if (e.key !== "?") return;
+        if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
+        if (document.getElementById("palette")?.dataset.open === "true") return;
+        e.preventDefault();
+        this.toggle();
+      };
+      this.onClickDocument = (e) => {
+        const button = e.target.closest?.("#help-toggle");
+        if (!button) return;
+        e.preventDefault();
+        button.blur();
+        this.toggle();
+      };
+      this.onClickDialog = (e) => {
+        if (e.target === this.el) this.el.close();
+      };
+      window.addEventListener("keydown", this.onKeydown);
+      document.addEventListener("click", this.onClickDocument);
+      this.el.addEventListener("click", this.onClickDialog);
+    },
+    destroyed() {
+      window.removeEventListener("keydown", this.onKeydown);
+      document.removeEventListener("click", this.onClickDocument);
+      this.el.removeEventListener("click", this.onClickDialog);
+    },
+    toggle() {
+      if (this.el.open) this.el.close();
+      else this.el.showModal();
+    }
+  };
+  var help_default = Help;
+
   // js/app.js
   var { Socket } = window.Phoenix;
   var { LiveSocket } = window.LiveView;
   var csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
   var socketPath = document.documentElement.getAttribute("phx-socket") || "/live";
-  var liveSocket = new LiveSocket(socketPath, Socket, { params: { _csrf_token: csrfToken }, hooks: { Palette: palette_default, Keys: keys_default, Canvas: canvas_default, Chat: chat_default, Composer: composer_default, Gutter: gutter_default } });
+  var liveSocket = new LiveSocket(socketPath, Socket, { params: { _csrf_token: csrfToken }, hooks: { Palette: palette_default, Keys: keys_default, Canvas: canvas_default, Chat: chat_default, Composer: composer_default, Gutter: gutter_default, Help: help_default } });
   liveSocket.connect();
   window.liveSocket = liveSocket;
 })();

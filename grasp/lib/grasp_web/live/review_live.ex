@@ -27,6 +27,7 @@ defmodule GraspWeb.ReviewLive do
 
   import GraspWeb.CardComponents
   import GraspWeb.ChatPanel
+  import GraspWeb.Help
   import GraspWeb.Palette
   import GraspWeb.Sidebar
 
@@ -1192,6 +1193,11 @@ defmodule GraspWeb.ReviewLive do
           >
             ask
           </button>
+          <%!-- The list it opens is the client's alone, so this button carries no phx-click:
+          the Help hook picks the click up from the document. --%>
+          <button type="button" id="help-toggle" data-tip="Keys and gestures" data-key="?">
+            ?
+          </button>
         </div>
         <p :if={@forest.cards == %{}} class="empty">
           Pick a function from the sidebar or press <kbd>⌘K</kbd>.
@@ -1305,6 +1311,7 @@ defmodule GraspWeb.ReviewLive do
         results={@palette_results}
         selected={@palette_selected}
       />
+      <.help_dialog />
     </main>
     """
   end

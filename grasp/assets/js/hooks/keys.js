@@ -3,7 +3,10 @@ const DIRECTIONS = {ArrowLeft: "parent", ArrowRight: "child", ArrowUp: "prev", A
 const Keys = {
   mounted() {
     this.onKeydown = (e) => {
+      // A dialog over the canvas has the keyboard: neither the palette's search nor the
+      // list of shortcuts is aimed at the cards underneath it.
       if (document.getElementById("palette")?.dataset.open === "true") return
+      if (document.getElementById("help")?.open) return
 
       // The toolbar advertises Cmd+I as a toggle, so it has to reach the prompt it just
       // focused; every other chord stays out of a field the user is typing in.
