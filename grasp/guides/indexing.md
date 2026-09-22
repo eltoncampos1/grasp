@@ -130,7 +130,7 @@ What that path cannot see is what the full build is for:
 - a change to which files are compiled at all;
 - a branch switch, a new `--base`, a dependency;
 - a Grasp upgrade: a document written by an earlier Grasp carries no inputs for the edges a
-  later one derives, so the first build after an upgrade is a full one; a route or a worker
+  later one derives, so the first build after an upgrade has to be a full one; a route or a worker
   added afterwards reaches every record on the next save.
 
 A batch naming more than fifty project files is a rebuild rather than a save: the reindexer

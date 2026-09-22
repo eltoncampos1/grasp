@@ -29,8 +29,6 @@ defmodule Grasp.Index.Routes do
   than against the routes the build that wrote the record found.
   """
 
-  alias Grasp.Index.Join
-
   @route_kinds ["route", "live_route"]
 
   @doc """
@@ -40,7 +38,7 @@ defmodule Grasp.Index.Routes do
   `Grasp.Index.Builder.entry_point_json/1` writes them. Records keep their `:route_sites`:
   the document carries them so an update can resolve them again.
   """
-  @spec resolve([Join.function_record()], [map()]) :: [map()]
+  @spec resolve([map()], [map()]) :: [map()]
   def resolve(records, entries) do
     routes = entries |> Enum.filter(&(&1["kind"] in @route_kinds)) |> Enum.flat_map(&route/1)
 

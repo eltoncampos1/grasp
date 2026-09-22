@@ -258,7 +258,7 @@ route a template links to, a job a function queues — are edges beside them:
   router's declaration order. A resolved site is a call `%{target, kind: :route, range,
   route: %{verb, path}}` whose `path` is the route's own pattern; an unresolved one is
   dropped. The same pass runs in the incremental update, over every record the document
-  holds, against the entry points that update finds.
+  carries the inputs for, against the entry points that update finds.
 - **Jobs are edges.** Putting an Oban job on a queue is a hop as well: a call to `new/1` or
   `new/2` on a module whose `perform/1` is an `oban_worker` entry point is a call of kind
   `enqueue` on that `perform/1`, so the enqueueing function is a caller of the worker and
@@ -316,7 +316,7 @@ touched is unchanged.
       //   "via": { "target": "MyApp.Workers.Forex.new/1", "kind": "remote" } }
       "hidden_calls": [ { "target": "MyAppWeb.CoreComponents.button/1", "kind": "remote", "line": 50 } ],
       // every record carries the route sites the route pass reads; a null path segment is
-      // one the template computes
+      // one the source computes
       "route_sites": [ { "verb": "GET", "path": ["users", null],
                          "range": { "start": [3, 9], "end": [3, 21] } } ],
       "change": "modified", "base_source": "...", "removed": false

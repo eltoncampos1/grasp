@@ -19,8 +19,6 @@ defmodule Grasp.Index.Jobs do
   call site and is not followed.
   """
 
-  alias Grasp.Index.Join
-
   @doc """
   Redirects every enqueueing call on `records` to the worker's `perform/1`.
 
@@ -31,7 +29,7 @@ defmodule Grasp.Index.Jobs do
   call the edge stands for is kept under `:via`, so the edge can be undone and drawn again
   against another set of workers.
   """
-  @spec resolve([Join.function_record()], [map()]) :: [Join.function_record()]
+  @spec resolve([map()], [map()]) :: [map()]
   def resolve(records, entries) do
     workers =
       entries

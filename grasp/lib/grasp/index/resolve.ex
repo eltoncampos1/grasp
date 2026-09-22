@@ -15,8 +15,8 @@ defmodule Grasp.Index.Resolve do
   an update detect the entry points afresh and resolve every record against them: a route
   or a worker that appears or goes reaches a record whose file nothing recompiled.
 
-  A record with no `"route_sites"` key comes from a document written without the inputs,
-  and `refresh/2` returns it as it is: its route sites are not in the document to be read,
+  A record with no `"route_sites"` key, or no `"calls"`, comes from a document written
+  without the inputs, and `refresh/2` returns it as it is: its route sites are not in the document to be read,
   so re-resolving it would drop the route calls it has and put nothing back. A full build
   is what gives such a document its inputs.
   """
@@ -69,7 +69,7 @@ defmodule Grasp.Index.Resolve do
   A call of kind `:route` carries the route it reaches, so a reader is told which one of a
   controller's actions the link goes to without opening the router. A call of kind
   `:enqueue` carries the worker and the queue the job runs on, and under `"via"` the call
-  it was derived from.
+  it stands for.
   """
   @spec call_json(Join.call()) :: map()
   def call_json(call) do
