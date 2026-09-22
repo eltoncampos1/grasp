@@ -38,6 +38,12 @@
 //
 // A frame's title is a handle too: Ctrl+drag on it moves every card of that group at once.
 //
+// Inside a frame the cards of one module are framed together again, with the module's name
+// over them. A cluster is derived from the cards on the canvas and stored nowhere: the same
+// module open in two flows is two clusters, one per flow. Its label is the handle the cluster
+// is dragged by, and a drop is still decided by the flow frames alone, so a module frame
+// changes no membership. The `modules` toggle and the `m` key turn the clusters off.
+//
 // A card is dragged by its header, or from anywhere on it with Ctrl held; holding Space turns
 // the whole canvas, cards included, into a pan surface. A card dropped anywhere inside another
 // group's frame joins that group — the drop is decided against the rectangles the hook drew —
@@ -62,6 +68,11 @@ const CTRL_MENU_GRACE = 300
 // layout put it.
 const FRAME_PAD = 28
 const FRAME_TITLE_GAP = 8
+// The same two lengths for a module frame, which sits inside a flow's: less padding, so a
+// cluster reads as a division of the frame round it rather than as a frame of its own, and a
+// tighter gap under a label that is smaller than a flow's title.
+const MODULE_PAD = 12
+const MODULE_TITLE_GAP = 4
 // The gaps a placement pass leaves: GAP_X between a card and the one it was opened from,
 // GAP_Y between a card and whatever it would otherwise have landed on.
 const GAP_X = 48
@@ -92,6 +103,10 @@ const Canvas = {
     this.zoomLevel = this.el.querySelector("#zoom-level")
     this.view = {x: MARGIN, y: MARGIN, scale: 1}
     this.signatures = false
+    // Clusters are drawn until the reader turns them off, which is what the toolbar button
+    // renders pressed.
+    this.modules = true
+    document.body.classList.toggle("grasp-modules", this.modules)
     this.frames = []
     this.lastReveal = null
     this.extent = {width: 0, height: 0}
@@ -107,6 +122,9 @@ const Canvas = {
     // and the draw that ends mount covers the first frame; seeding the scale keeps that first
     // frame from being drawn twice.
     this.drawnScale = this.view.scale
+    // The height of a module's label, in stage units, and the scale it was read at.
+    this.labelHeight = 0
+    this.labelScale = null
     // The scale the rule on #stage carries, and whether the heights about to be reported are
     // the same cards measured again rather than cards that grew.
     this.styledScale = this.view.scale
@@ -131,6 +149,7 @@ const Canvas = {
     this.onKeyUp = (e) => this.spaceUp(e)
     this.onZoomReset = () => this.resetZoom()
     this.onToggleSignatures = () => this.toggleSignatures()
+    this.onToggleModules = () => this.toggleModules()
     this.onZoomFit = () => this.fit()
     this.onSpaceRelease = () => this.releaseSpace()
     this.el.addEventListener("wheel", this.onWheel, {passive: false})
@@ -145,6 +164,7 @@ const Canvas = {
     window.addEventListener("keyup", this.onKeyUp)
     window.addEventListener("grasp:zoom-reset", this.onZoomReset)
     window.addEventListener("grasp:toggle-signatures", this.onToggleSignatures)
+    window.addEventListener("grasp:toggle-modules", this.onToggleModules)
     window.addEventListener("grasp:zoom-fit", this.onZoomFit)
     // A hold that ends while the page is in the background never delivers its keyup, which
     // would leave the canvas panning on the next press.
@@ -223,12 +243,14 @@ const Canvas = {
     window.removeEventListener("keyup", this.onKeyUp)
     window.removeEventListener("grasp:zoom-reset", this.onZoomReset)
     window.removeEventListener("grasp:toggle-signatures", this.onToggleSignatures)
+    window.removeEventListener("grasp:toggle-modules", this.onToggleModules)
     window.removeEventListener("grasp:zoom-fit", this.onZoomFit)
     window.removeEventListener("blur", this.onSpaceRelease)
     document.removeEventListener("visibilitychange", this.onSpaceRelease)
     document.body.classList.remove("grasp-space")
     document.body.classList.remove("grasp-dragging")
     document.body.classList.remove("grasp-signatures")
+    document.body.classList.remove("grasp-modules")
     this.resizeObserver.disconnect()
     this.cardObserver.disconnect()
     if (this.remeasureFrame !== null) cancelAnimationFrame(this.remeasureFrame)
@@ -342,7 +364,7 @@ const Canvas = {
       return
     }
     const control = e.target.closest(
-      "#zoom-in, #zoom-out, #zoom-fit, #zoom-level, #toggle-signatures",
+      "#zoom-in, #zoom-out, #zoom-fit, #zoom-level, #toggle-signatures, #toggle-modules",
     )
     if (!control) return
     // The zoom buttons and the signature toggle are the hook's alone, so nothing should reach
@@ -355,6 +377,7 @@ const Canvas = {
     else if (control.id === "zoom-out") this.zoomBy(1 / 1.2)
     else if (control.id === "zoom-level") this.resetZoom()
     else if (control.id === "toggle-signatures") this.toggleSignatures()
+    else if (control.id === "toggle-modules") this.toggleModules()
     else this.fit()
   },
 
@@ -370,6 +393,19 @@ const Canvas = {
     document.body.classList.toggle("grasp-signatures", this.signatures)
     const button = document.getElementById("toggle-signatures")
     if (button) button.setAttribute("aria-pressed", String(this.signatures))
+    this.draw()
+  },
+
+  // The module clusters. The class lives on <body> and the button carries phx-update="ignore"
+  // for the reasons signature mode does. A card's header shows its module only while the
+  // clusters do not, so every card takes a new width with the mode and the heights reported
+  // through the frame are the same cards measured again rather than cards that grew.
+  toggleModules() {
+    this.modules = !this.modules
+    this.markRemeasure()
+    document.body.classList.toggle("grasp-modules", this.modules)
+    const button = document.getElementById("toggle-modules")
+    if (button) button.setAttribute("aria-pressed", String(this.modules))
     this.draw()
   },
 
@@ -569,6 +605,11 @@ const Canvas = {
     // browser, whose Alt+click downloads it.
     const altCard = e.altKey && e.target.closest(".card")
     if (altCard && !e.target.closest("a")) return this.beginGraphDrag(e, altCard)
+    // A module's label is the handle for the cards of that cluster, the way a frame's header
+    // is for a group's. It carries no controls to press, and a press that never moves does
+    // nothing: the label names the cluster and there is nothing else to open from it.
+    const label = e.target.closest(".module__title")
+    if (label) return this.beginModuleDrag(e, label)
     // A frame's header is the handle the whole group is dragged by, with or without Ctrl, the
     // way a card's header is the card's: a press that moves drags every card in the group, and
     // one that does not move is the click that renames the title. The header's own controls
@@ -650,6 +691,34 @@ const Canvas = {
   // rather than a section's own subtree, which holds the header and nothing else.
   nodesOfGroup(group) {
     return [...this.el.querySelectorAll(".node")].filter((node) => node.dataset.group === group)
+  },
+
+  // Every card of one cluster travels by the same displacement, the way a group's do. A press
+  // that gathers nothing begins no drag: the label is drawn from the cards, so a cluster with
+  // none is a label nothing is left under.
+  beginModuleDrag(e, label) {
+    const nodes = this.nodesOfModule(label.dataset.group, label.dataset.module)
+    if (!nodes.length) return
+    e.preventDefault()
+    document.body.classList.add("grasp-dragging")
+    this.drag = {
+      kind: "module",
+      ctrl: false,
+      pointerId: e.pointerId,
+      nodes,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+    }
+  },
+
+  // The cards of one cluster: a module is clustered per flow, so both the group and the module
+  // have to match. A card still waiting for a position has none for a displacement to be added
+  // to, and the frame is not drawn round it either.
+  nodesOfModule(group, module) {
+    return [...this.el.querySelectorAll(".node:not([data-unplaced])")].filter(
+      (node) => node.dataset.group === group && node.dataset.module === module,
+    )
   },
 
   // Every card connected to the pressed one travels by the same displacement, so a flow keeps
@@ -741,12 +810,12 @@ const Canvas = {
   },
 
   // The nodes a drag carries: a card drag its one node, a group drag every node of the group, a
-  // graph drag every node connected to the pressed one, and a pan none. The translate a drag
-  // writes is the displacement alone — a node's position is already its left and top — so
-  // every node of a gesture carries the same one.
+  // graph drag every node connected to the pressed one, a module drag every card of the cluster,
+  // and a pan none. The translate a drag writes is the displacement alone — a node's position is
+  // already its left and top — so every node of a gesture carries the same one.
   dragNodes(drag) {
     if (drag.kind === "card") return [drag.node]
-    if (drag.kind === "group" || drag.kind === "graph") return drag.nodes
+    if (drag.kind === "group" || drag.kind === "graph" || drag.kind === "module") return drag.nodes
     return []
   },
 
@@ -837,14 +906,15 @@ const Canvas = {
         node.style.translate = `${dx}px ${dy}px`
       }
       this.pushEvent("move_group", {group: drag.group, dx, dy})
-    } else if (drag.kind === "graph") {
+    } else if (drag.kind === "graph" || drag.kind === "module") {
       const {scale} = this.view
       const dx = Math.round((e.clientX - drag.startX) / scale)
       const dy = Math.round((e.clientY - drag.startY) / scale)
       // Each node is left on the whole-pixel displacement the server is about to render as a
       // position, so a flow put back where it already sat produces no diff to clear the drag's
-      // fractional translate and needs none. A graph drag decides no membership: the cards
-      // travel together and each stays in the group it is a member of.
+      // fractional translate and needs none. Neither gesture decides membership: the cards
+      // travel together, each stays in the group it is a member of, and a card cannot leave
+      // the module its function belongs to.
       for (const node of drag.nodes) {
         node.style.translate = `${dx}px ${dy}px`
       }
@@ -918,8 +988,10 @@ const Canvas = {
   },
 
   // One rectangle per grouped section, round the cards wherever they have been dragged to,
-  // with the section's header moved to sit above its top-left corner. The rectangles are kept
-  // in this.frames, which is what a drop is tested against. Answers whether it drew.
+  // with the section's header moved to sit above its top-left corner, and inside it one
+  // rectangle per module, round the cards of that module with the module's name over them.
+  // The rectangles kept in this.frames are the sections' alone, which is what a drop is tested
+  // against: a module frame changes no membership. Answers whether it drew.
   drawFrames() {
     // The layer lives in a phx-update="ignore" subtree and so normally outlives every patch;
     // were one ever to replace it, a cached node would go on collecting frames nothing renders.
@@ -933,16 +1005,23 @@ const Canvas = {
     // A group's cards are anywhere on the stage — a section's own subtree holds its header and
     // nothing else — so the extent of each one is gathered from the nodes that name it. A card
     // with no position yet is rendered at the origin and would drag the frame there.
-    const extents = new Map()
+    //
+    // The cards are gathered per cluster — the module a card names inside the group it names,
+    // which is what a module frame is drawn round — and a section's extent is the union of its
+    // clusters. Until the clusters are drawn that union is the union of the cards themselves.
+    const clusters = new Map()
     for (const node of this.el.querySelectorAll(".node:not([data-unplaced])")) {
-      const group = node.dataset.group
-      if (!group) continue
       const card = node.querySelector(".card")
       // A card the browser gives no box — inside a subtree that is not displayed — says
       // nothing about where the frame round it goes.
       const b = card && card.getBoundingClientRect()
       if (!b || (!b.width && !b.height)) continue
-      const e = extents.get(group) || {
+      const group = node.dataset.group || ""
+      const module = node.dataset.module || ""
+      const key = `${group}|${module}`
+      const e = clusters.get(key) || {
+        group,
+        module,
         left: Infinity,
         top: Infinity,
         right: -Infinity,
@@ -952,7 +1031,31 @@ const Canvas = {
       e.top = Math.min(e.top, (b.top - s.top) / scale)
       e.right = Math.max(e.right, (b.right - s.left) / scale)
       e.bottom = Math.max(e.bottom, (b.bottom - s.top) / scale)
-      extents.set(group, e)
+      clusters.set(key, e)
+    }
+    // Every label is one line of one counter-scaled rule, so one height answers for the lot.
+    const labelHeight = this.modules ? this.moduleLabelHeight(scale) : null
+    const moduleGap = MODULE_TITLE_GAP / scale
+    const extents = new Map()
+    const moduleFrames = []
+    for (const cluster of clusters.values()) {
+      // A card whose id names no module clusters with nothing and closes its section's frame
+      // the way any card does.
+      const framed = this.modules && cluster.module !== ""
+      const box = framed ? frameAround(cluster, labelHeight, moduleGap, MODULE_PAD) : cluster
+      if (framed) moduleFrames.push({...box, group: cluster.group, module: cluster.module})
+      if (!cluster.group) continue
+      const e = extents.get(cluster.group) || {
+        left: Infinity,
+        top: Infinity,
+        right: -Infinity,
+        bottom: -Infinity,
+      }
+      e.left = Math.min(e.left, box.left)
+      e.top = Math.min(e.top, box.top)
+      e.right = Math.max(e.right, box.right)
+      e.bottom = Math.max(e.bottom, box.bottom)
+      extents.set(cluster.group, e)
     }
     // Every box is read before the first header is moved. Writing `translate` invalidates the
     // layout, so a loop that measured one section and then moved its header would force a
@@ -997,7 +1100,7 @@ const Canvas = {
       }
       const frame = {
         group,
-        ...frameAround({left, top, right, bottom}, headerHeight, titleGap),
+        ...frameAround({left, top, right, bottom}, headerHeight, titleGap, FRAME_PAD),
       }
       this.frames.push(frame)
       divs.push(
@@ -1005,8 +1108,47 @@ const Canvas = {
           `width:${frame.right - frame.left}px;height:${frame.bottom - frame.top}px"></div>`,
       )
     }
+    // The module frames come after the sections' in the layer, so a cluster is drawn over the
+    // ground of the frame it stands in rather than under it. Its label sits at the frame's
+    // top-left inside the padding, which is where the head the frame leaves above the cards
+    // begins, and carries the cluster it names so that a drag on it finds the cards.
+    for (const frame of moduleFrames) {
+      const cluster = `${frame.group}|${frame.module}`
+      divs.push(
+        `<div class="frame frame--module" data-cluster="${attr(cluster)}" style="left:${frame.left}px;` +
+          `top:${frame.top}px;width:${frame.right - frame.left}px;height:${frame.bottom - frame.top}px"></div>`,
+        `<div class="module__title" data-group="${attr(frame.group)}" data-module="${attr(frame.module)}" ` +
+          `style="left:${frame.left + MODULE_PAD}px;top:${frame.top + MODULE_PAD}px">${attr(frame.module)}</div>`,
+      )
+    }
     this.frameLayer.innerHTML = divs.join("")
     return true
+  },
+
+  // The height of a module's label in stage units at `scale`. The label is counter-scaled, so
+  // it measures one size on screen at every zoom and a different number of stage units at each,
+  // and the answer is kept against the scale it was read at. A draw that finds no label — the
+  // first one, or the first after the clusters were turned back on — measures a hidden one, the
+  // labels the draw is about to write not being in the document yet.
+  moduleLabelHeight(scale) {
+    if (this.labelScale === scale) return this.labelHeight
+    let label = this.frameLayer.querySelector(".module__title")
+    let probe = null
+    if (!label) {
+      probe = document.createElement("div")
+      probe.className = "module__title"
+      probe.style.visibility = "hidden"
+      probe.textContent = "M"
+      label = this.frameLayer.appendChild(probe)
+    }
+    const height = label.getBoundingClientRect().height / scale
+    if (probe) probe.remove()
+    // A layer the browser gives no box has nothing to say about a label's height, and a zero
+    // is not an answer to keep.
+    if (!height) return this.labelHeight
+    this.labelScale = scale
+    this.labelHeight = height
+    return height
   },
 
   // The height of a group's header, or null for a group whose section carries none — the two
@@ -1258,7 +1400,7 @@ const Canvas = {
       return [...extents].map(([group, e]) => ({
         group,
         frame: true,
-        ...frameAround(e, headerHeightFor(group), FRAME_TITLE_GAP),
+        ...frameAround(e, headerHeightFor(group), FRAME_TITLE_GAP, FRAME_PAD),
       }))
     }
     let frameBoxes = framesOf(occupied)
@@ -1296,7 +1438,7 @@ const Canvas = {
       // The room the card's own frame takes above it, which every drop past another section's
       // frame carries with it and which the first card of a section starts under. A card in no
       // group carries no frame and so no allowance.
-      const head = group ? frameHead(headerHeightFor(group), FRAME_TITLE_GAP) : 0
+      const head = group ? frameHead(headerHeightFor(group), FRAME_TITLE_GAP, FRAME_PAD) : 0
       // The frames a card of this section is placed clear of. Its own is not among them: a card
       // belongs inside the frame that grows round its section.
       const foreign = frameBoxes.filter((f) => f.group !== group)
@@ -1693,27 +1835,27 @@ const Canvas = {
   },
 }
 
-// The room a frame leaves above the cards it holds: FRAME_PAD alone for a group whose section
+// The room a frame leaves above the cards it holds: the padding alone for a group whose section
 // carries no header, and otherwise the header, the gap under it and the padding. The lengths
 // are the caller's own units, the header and the gap included.
-function frameHead(headerHeight, titleGap) {
-  return headerHeight === null ? FRAME_PAD : headerHeight + titleGap + FRAME_PAD
+function frameHead(headerHeight, titleGap, pad) {
+  return headerHeight === null ? pad : headerHeight + titleGap + pad
 }
 
-// The rectangle round a group's cards: FRAME_PAD on three sides and, above, room for the header
-// the group carries. `extent` is the union of the group's boxes.
+// The rectangle round a set of cards: `pad` on three sides and, above, room for the header they
+// are named by — a section's title, or a cluster's module. `extent` is the union of the boxes.
 //
 // Drawing a frame and deciding a placement share the formula and part over the units they feed
 // it. A frame is drawn in stage units at the scale it is drawn at, where the counter-scaled
 // header and gap grow as the reader zooms out; a placement works in screen pixels, which is the
 // frame at 100%. So the two tops agree at 100%, and further out the drawn head is the larger of
 // the two.
-function frameAround(extent, headerHeight, titleGap) {
+function frameAround(extent, headerHeight, titleGap, pad) {
   return {
-    left: extent.left - FRAME_PAD,
-    top: extent.top - frameHead(headerHeight, titleGap),
-    right: extent.right + FRAME_PAD,
-    bottom: extent.bottom + FRAME_PAD,
+    left: extent.left - pad,
+    top: extent.top - frameHead(headerHeight, titleGap, pad),
+    right: extent.right + pad,
+    bottom: extent.bottom + pad,
   }
 }
 

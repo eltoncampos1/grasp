@@ -29,6 +29,8 @@ defmodule GraspWeb.Help do
           <dd>Move every card connected to it.</dd>
           <dt><kbd>Drag a frame's title</kbd></dt>
           <dd>Move the whole group. Click the title to rename it.</dd>
+          <dt><kbd>Drag a module's label</kbd></dt>
+          <dd>Move every card of that module in the flow.</dd>
           <dt><kbd>Drop a card in another frame</kbd></dt>
           <dd>Move it to that group.</dd>
           <dt><kbd>Shift+click a card</kbd></dt>
@@ -61,6 +63,8 @@ defmodule GraspWeb.Help do
           <dd>Fold the unchanged lines.</dd>
           <dt><kbd>s</kbd></dt>
           <dd>Signatures instead of code.</dd>
+          <dt><kbd>m</kbd></dt>
+          <dd>Module frames round the cards.</dd>
           <dt><kbd>f</kbd></dt>
           <dd>Fit every card on screen.</dd>
           <dt><kbd>⌘0</kbd></dt>

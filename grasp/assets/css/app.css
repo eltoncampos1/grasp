@@ -43,6 +43,9 @@
   --far-size: 10px;
   /* A frame's name, held at this size on screen however far out the canvas is zoomed. */
   --frame-title-size: 18px;
+  /* A module's name over its cluster, held the same way and smaller than a frame's: the frame
+     it sits inside is the larger division of the two. */
+  --module-title-size: 11px;
   --code-leading: 1.45;
   --mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
   --sans: system-ui, sans-serif;
@@ -130,7 +133,7 @@ kbd { font-family: var(--mono); background: var(--bg-sunken); border: 1px solid 
 body.grasp-space .canvas, body.grasp-space .card { cursor: grab; }
 /* A gesture in progress. The hook sets this class because it calls preventDefault() on the
    pointerdown that starts the drag, which stops :active from ever matching. */
-body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, body.grasp-dragging .flow__title { cursor: grabbing; }
+body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, body.grasp-dragging .flow__title, body.grasp-dragging .module__title { cursor: grabbing; }
 .stage { position: absolute; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; }
 /* The connector layer covers the stage over the cards, so an edge crossing a card is never
    hidden behind it, and under the frame headers, so a group's title stays readable. */
@@ -149,6 +152,14 @@ body.grasp-dragging, body.grasp-dragging .canvas, body.grasp-dragging .card, bod
    units. The border is divided by the zoom so it stays a hairline however far out you are. */
 .frames { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .frame { position: absolute; border: calc(1px / var(--zoom, 1)) solid var(--border); border-radius: var(--radius); background: color-mix(in srgb, var(--bg-raised) 60%, transparent); }
+/* A module's cards framed together inside their flow's frame: a lighter border and no ground
+   of its own, so the cluster reads as a division of the frame it stands in rather than as
+   another frame laid over it. The label names the cluster and is the handle every card of it
+   is dragged by, so it takes the pointer back from the layer, which lets every other one
+   through; it is counter-scaled by --zoom like a flow's title, and stays on one line, the
+   layer it sits in having no width of its own to wrap a module name against. */
+.frame--module { border-color: color-mix(in srgb, var(--border) 50%, transparent); background: none; }
+.module__title { position: absolute; pointer-events: auto; cursor: grab; font-family: var(--sans); font-size: calc(var(--module-title-size) / var(--zoom, 1)); line-height: 1.2; color: var(--fg-muted); white-space: nowrap; }
 /* A section is its group's header and nothing else: the cards are on the stage at positions
    of their own, and the canvas hook puts each header over the frame drawn round its group.
    The layer holding the headers covers the stage and lets every pointer through, so a header
@@ -332,6 +343,12 @@ body.grasp-signatures #stage .card__title, body.grasp-signatures #stage .card__k
 body.grasp-signatures #stage .card__kind { margin-inline-start: calc(var(--space-s) / var(--zoom, 1)); }
 body.grasp-signatures #stage .card__tools { gap: calc(var(--space-s) / var(--zoom, 1)); }
 body.grasp-signatures #stage .badge { padding: 0 calc(var(--space-s) / var(--zoom, 1)); }
+
+/* Module clusters. The toolbar's `modules` button and the `m` key put `grasp-modules` on
+   <body>, and while the frames carry the module name the header drops it: the card is as wide
+   as the function alone asks for, and the name is read once over the cluster instead of once
+   per card. */
+body.grasp-modules #stage .card__module { display: none; }
 
 .palette-backdrop { position: fixed; inset: 0; background: var(--backdrop); z-index: 9; }
 .palette { position: fixed; inset-block-start: 12vh; inset-inline: 0; margin-inline: auto; z-index: 10; width: min(48rem, 90vw); padding: 0; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); background: var(--bg-raised); color: var(--fg); }

@@ -657,11 +657,21 @@ defmodule GraspWeb.ReviewLiveTest do
            )
 
     refute has_element?(view, "#canvas .toolbar #toggle-signatures[phx-click]")
+
+    # Module clusters are the hook's in the same way, and they are on until the reader turns
+    # them off, so the button starts pressed.
+    assert has_element?(
+             view,
+             "#canvas .toolbar #toggle-modules[aria-pressed='true'][phx-update='ignore']",
+             "modules"
+           )
+
+    refute has_element?(view, "#canvas .toolbar #toggle-modules[phx-click]")
   end
 
   test "every toolbar control names itself, and its shortcut where it has one", %{view: view} do
     for id <- ~w(toggle-sidebar zoom-out zoom-level zoom-in zoom-fit
-                 toggle-signatures reset-layout toggle-chat help-toggle) do
+                 toggle-signatures toggle-modules reset-layout toggle-chat help-toggle) do
       assert has_element?(view, "#canvas .toolbar ##{id}[data-tip]"),
              "the toolbar's ##{id} has no data-tip"
     end
@@ -674,6 +684,11 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(
              view,
              "#canvas .toolbar #toggle-signatures[data-tip='Signatures instead of code'][data-key='S']"
+           )
+
+    assert has_element?(
+             view,
+             "#canvas .toolbar #toggle-modules[data-tip='Module frames'][data-key='M']"
            )
 
     assert has_element?(
@@ -705,7 +720,7 @@ defmodule GraspWeb.ReviewLiveTest do
 
     ids = ~w(
       toggle-sidebar zoom-out zoom-level zoom-in zoom-fit
-      toggle-signatures reset-layout toggle-chat help-toggle
+      toggle-signatures toggle-modules reset-layout toggle-chat help-toggle
     )
 
     positions = Enum.map(ids, at)

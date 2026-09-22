@@ -1176,6 +1176,18 @@ defmodule GraspWeb.ReviewLive do
           >
             signatures
           </button>
+          <%!-- Module clusters are the hook's too, and are drawn until the reader turns them
+          off, so the button is rendered pressed and kept out of every patch. --%>
+          <button
+            type="button"
+            id="toggle-modules"
+            phx-update="ignore"
+            aria-pressed="true"
+            data-tip="Module frames"
+            data-key="M"
+          >
+            modules
+          </button>
           <button
             type="button"
             id="reset-layout"

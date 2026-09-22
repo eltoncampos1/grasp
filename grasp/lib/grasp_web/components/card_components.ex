@@ -489,11 +489,18 @@ defmodule GraspWeb.CardComponents do
   defp badge_label(%{"kind" => kind}), do: Map.get(@badge_labels, kind, kind)
 
   defp stub_card(assigns) do
+    # The title is split the way a full card's is, so that both narrow by their module name
+    # when the module frames carry it. An id with no module part has no part to drop.
+    module = module_of(assigns.card.function_id)
+    name = if module, do: String.replace_prefix(assigns.card.function_id, module <> ".", "")
+
     assigns =
       assign(assigns,
         focused?: assigns.forest.focus == assigns.card.id,
         docs: hexdocs_url(assigns.card.function_id),
-        stale?: indexed_module?(assigns.index, assigns.card.function_id)
+        stale?: indexed_module?(assigns.index, assigns.card.function_id),
+        module: module,
+        name: name || assigns.card.function_id
       )
 
     ~H"""
@@ -505,7 +512,9 @@ defmodule GraspWeb.CardComponents do
       data-selected={to_string(@selected)}
     >
       <header class="card__header" phx-click="focus_card" phx-value-card={@card.id}>
-        <h2 class="card__title">{@card.function_id}</h2>
+        <h2 class="card__title">
+          <span :if={@module} class="card__module">{@module}.</span><span class="card__fn">{@name}</span>
+        </h2>
         <div class="card__tools">
           <button class="card__close" phx-click="close_card" phx-value-card={@card.id}>×</button>
         </div>

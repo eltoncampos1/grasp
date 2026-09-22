@@ -39,6 +39,7 @@
   --code-size: 13px;
   --far-size: 10px;
   --frame-title-size: 18px;
+  --module-title-size: 11px;
   --code-leading: 1.45;
   --mono:
     ui-monospace,
@@ -423,7 +424,8 @@ body.grasp-space .card {
 body.grasp-dragging,
 body.grasp-dragging .canvas,
 body.grasp-dragging .card,
-body.grasp-dragging .flow__title {
+body.grasp-dragging .flow__title,
+body.grasp-dragging .module__title {
   cursor: grabbing;
 }
 .stage {
@@ -466,6 +468,20 @@ body.grasp-dragging .flow__title {
   border: calc(1px / var(--zoom, 1)) solid var(--border);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-raised) 60%, transparent);
+}
+.frame--module {
+  border-color: color-mix(in srgb, var(--border) 50%, transparent);
+  background: none;
+}
+.module__title {
+  position: absolute;
+  pointer-events: auto;
+  cursor: grab;
+  font-family: var(--sans);
+  font-size: calc(var(--module-title-size) / var(--zoom, 1));
+  line-height: 1.2;
+  color: var(--fg-muted);
+  white-space: nowrap;
 }
 .flows {
   position: absolute;
@@ -1040,6 +1056,9 @@ body.grasp-signatures #stage .card__tools {
 }
 body.grasp-signatures #stage .badge {
   padding: 0 calc(var(--space-s) / var(--zoom, 1));
+}
+body.grasp-modules #stage .card__module {
+  display: none;
 }
 .palette-backdrop {
   position: fixed;
