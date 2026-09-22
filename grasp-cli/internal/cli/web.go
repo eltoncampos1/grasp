@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -22,6 +23,7 @@ var (
 	webNoOpen  bool
 	webNoIndex bool
 	webReindex bool
+	webWatch   bool
 )
 
 var webCmd = &cobra.Command{
@@ -80,6 +82,22 @@ a worktree's --close; grasp publish sends them to the pull request.`,
 		}
 		author, _ := gitx.Run(root, "config", "user.name")
 
+		// --watch reindexes whenever HEAD or the working tree changes — a
+		// pull, a push, a commit, an edit — and the canvas live-reloads with
+		// threads re-anchored. It watches the branch, so it stays off while a
+		// PR's index is being served.
+		if webWatch {
+			if webNoIndex {
+				logln("--watch is off: the index on disk is being served as-is")
+			} else {
+				base, err := resolveBase(root, webBase)
+				if err != nil {
+					return err
+				}
+				go watchAndReindex(root, base)
+			}
+		}
+
 		server := &webserver.Server{
 			IndexPath: indexPath,
 			Port:      port,
@@ -108,7 +126,37 @@ func init() {
 	webCmd.Flags().BoolVar(&webNoOpen, "no-open", false, "do not open the browser")
 	webCmd.Flags().BoolVar(&webNoIndex, "no-index", false, "serve the index already on disk without reindexing")
 	webCmd.Flags().BoolVar(&webReindex, "reindex", false, "reindex the current branch even over a PR's index")
+	webCmd.Flags().BoolVar(&webWatch, "watch", false, "reindex whenever HEAD or the working tree changes")
 	rootCmd.AddCommand(webCmd)
+}
+
+// watchAndReindex polls the repo's state — HEAD plus the porcelain status —
+// every two seconds and rebuilds the index when it changes. The viewer picks
+// the rewrite up over its live-events stream; nothing else to wire.
+func watchAndReindex(root, base string) {
+	state := func() string {
+		head, _ := gitx.Run(root, "rev-parse", "HEAD")
+		dirty, _ := gitx.Run(root, "status", "--porcelain")
+		return head + "\n" + dirty
+	}
+	last := state()
+	for {
+		time.Sleep(2 * time.Second)
+		cur := state()
+		if cur == last {
+			continue
+		}
+		last = cur
+		if _, err := indexer.Build(indexer.Options{
+			Root:    root,
+			BaseRef: base,
+			Log:     func(string) {},
+		}); err != nil {
+			logln("watch: reindex failed: %v", err)
+		} else {
+			logln("watch: the tree changed — reindexed")
+		}
+	}
 }
 
 // prIndexAlive reports whether the index on disk reviews a pull request whose
