@@ -1,4 +1,16 @@
-const DIRECTIONS = {ArrowLeft: "parent", ArrowRight: "child", ArrowUp: "prev", ArrowDown: "next"}
+// The vim walk shares the map with the arrows, so `h` `j` `k` `l` push exactly what
+// ← ↓ ↑ → push. Only the bare lowercase letter is a direction: a Shift-modified letter
+// arrives uppercase and matches nothing here.
+const DIRECTIONS = {
+  ArrowLeft: "parent",
+  ArrowRight: "child",
+  ArrowUp: "prev",
+  ArrowDown: "next",
+  h: "parent",
+  l: "child",
+  k: "prev",
+  j: "next",
+}
 
 const Keys = {
   mounted() {
@@ -49,7 +61,9 @@ const Keys = {
         this.pushEvent("collapse_focused", {})
       } else if (e.key === "d") {
         this.pushEvent("toggle_view_focused", {})
-      } else if (e.key === "h") {
+      } else if (e.key === "z") {
+        // `z` is the fold key in vim, and folding the unchanged lines away is what the
+        // toggle does.
         this.pushEvent("toggle_context_focused", {})
       } else if (e.key.toLowerCase() === "s") {
         // Signature mode is the Canvas hook's, so this is hook to hook through the DOM rather

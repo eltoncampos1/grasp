@@ -65,7 +65,7 @@ Grasp in — so a review outlives the tree it was written against.
 - **`diff` in a modified card's header** swaps its body for the diff against the base, and
   `source` swaps it back. The `d` key does the same to the focused card.
 - **`changes only` folds the unchanged lines away**, with `⋯ n unchanged lines` rows that
-  draw their lines when clicked. The `h` key toggles it.
+  draw their lines when clicked. The `z` key toggles it.
 - **A removed function opens as a card of its own**, tinted and showing the source the base
   had. Its `file:line` is the base commit's, so it is printed rather than linked into your
   editor.

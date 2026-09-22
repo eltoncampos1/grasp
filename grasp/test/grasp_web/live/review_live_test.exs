@@ -733,6 +733,17 @@ defmodule GraspWeb.ReviewLiveTest do
     # ~H does not process escapes, so a backslash key is written as one and must stay one.
     assert render(view) =~ "<kbd>⌘\\</kbd>"
 
+    html = render(view)
+
+    # The vim walk stands beside the arrows, `z` folds and `/` reaches the palette.
+    assert html =~ "<kbd>j</kbd>"
+    assert html =~ "<kbd>z</kbd>"
+    assert html =~ "<kbd>/</kbd>"
+
+    # Folding is `z`'s row; `h` spends itself walking the graph instead.
+    assert html =~ ~r{<kbd>z</kbd></dt>\s*<dd>\s*Fold the unchanged lines\.}
+    refute html =~ ~r{<kbd>h</kbd></dt>}
+
     for heading <- ["Mouse", "Keys", "Chat"] do
       assert has_element?(view, "#help h3", heading)
     end

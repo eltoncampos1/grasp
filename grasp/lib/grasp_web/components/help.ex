@@ -45,7 +45,9 @@ defmodule GraspWeb.Help do
 
         <h3>Keys</h3>
         <dl>
-          <dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt>
+          <dt>
+            <kbd>←</kbd>/<kbd>h</kbd> <kbd>→</kbd>/<kbd>l</kbd> <kbd>↑</kbd>/<kbd>k</kbd> <kbd>↓</kbd>/<kbd>j</kbd>
+          </dt>
           <dd>Move focus to caller, callee, previous, next.</dd>
           <dt><kbd>x</kbd></dt>
           <dd>Close the focused card.</dd>
@@ -55,7 +57,7 @@ defmodule GraspWeb.Help do
           <dd>Collapse the focused card.</dd>
           <dt><kbd>d</kbd></dt>
           <dd>Show source or diff.</dd>
-          <dt><kbd>h</kbd></dt>
+          <dt><kbd>z</kbd></dt>
           <dd>Fold the unchanged lines.</dd>
           <dt><kbd>s</kbd></dt>
           <dd>Signatures instead of code.</dd>
@@ -63,7 +65,7 @@ defmodule GraspWeb.Help do
           <dd>Fit every card on screen.</dd>
           <dt><kbd>⌘0</kbd></dt>
           <dd>Reset the zoom.</dd>
-          <dt><kbd>⌘K</kbd></dt>
+          <dt><kbd>⌘K</kbd> or <kbd>/</kbd></dt>
           <dd>Open the palette.</dd>
           <dt><kbd>⌘G</kbd></dt>
           <dd>Group the selection.</dd>

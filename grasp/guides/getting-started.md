@@ -134,9 +134,9 @@ an edge arriving from each of them.
 
 ## The palette
 
-⌘K opens the function palette. Type any part of a name: an exact `Module.fun/arity` ranks
-first, then ids containing what you typed, then a fuzzy match. Arrow keys move, Enter opens
-the card. In a review against a base ref each result carries its change badge, so a search
+⌘K or `/` opens the function palette. Type any part of a name: an exact `Module.fun/arity`
+ranks first, then ids containing what you typed, then a fuzzy match. Arrow keys move, Enter
+opens the card. In a review against a base ref each result carries its change badge, so a search
 says which hits are part of the branch.
 
 ## The toolbar
@@ -155,10 +155,10 @@ its shortcut when you hover or tab to it.
 - **ask** (⌘I) — open the chat panel. See [The agent](agent.md).
 - **?** (`?`) — the list of every key and gesture the canvas answers.
 
-Keys that act on the focused card: arrow keys walk the graph, `x` closes it, `Shift+x`
-closes it with everything that had no other way to be reached, `c` collapses it, `d` swaps
-source for diff, `h` folds the unchanged lines away. ⌘G frames the selected cards and
-⇧⌘G takes them back out. Escape lets a selection go.
+Keys that act on the focused card: the arrow keys or `h` `j` `k` `l` walk the graph, `x`
+closes it, `Shift+x` closes it with everything that had no other way to be reached, `c`
+collapses it, `d` swaps source for diff, `z` folds the unchanged lines away. ⌘G frames the
+selected cards and ⇧⌘G takes them back out. Escape lets a selection go.
 
 ## Next
 

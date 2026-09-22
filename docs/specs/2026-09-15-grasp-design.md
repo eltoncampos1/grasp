@@ -606,9 +606,9 @@ is `1px / --zoom`, so it stays one screen pixel far out.
 
 A card is as wide as its widest line up to a ceiling (`--card-max-width`, 60rem), rather
 than a fixed width, so a column of one-line helpers does not reserve the width of the
-widest function in the session. Arrow keys move focus to a caller, a callee or the
-neighbour in the same column; `x` closes the focused card, `Shift+x` closes it and
-everything that hung off it alone, `c` collapses it.
+widest function in the session. The arrow keys move focus to a caller, a callee or the
+neighbour in the same column, and `h` `l` `k` `j` push the same four moves; `x` closes the
+focused card, `Shift+x` closes it and everything that hung off it alone, `c` collapses it.
 
 The canvas pans by dragging empty background, by holding Space and dragging from anywhere
 (cards included), or with the wheel; Ctrl or Cmd with the wheel zooms about the cursor. The
@@ -847,14 +847,15 @@ comment thread sits on, and three lines of context on either side of those, and 
 remaining stretch of unchanged lines longer than one into a row — `⋯ n unchanged lines` —
 that expands when clicked (which folds a tab has opened is that tab's own). The card's
 preference is `context` on the card: `:auto` folds a function longer than 100 lines and
-shows a shorter one whole, and the header's `all lines` / `changes only` toggle (or `h`)
+shows a shorter one whole, and the header's `all lines` / `changes only` toggle (or `z`)
 sets it by hand; `set_view` takes it over MCP. The source view ignores it. An edge from a
 call site inside a fold leaves the card at its port, as it does for any call site without
 a box.
 
 ### Command palette
 
-A JS hook opens a `<dialog>` on Cmd+K or Ctrl+K. The input's debounced `phx-change`
+A JS hook opens a `<dialog>` on Cmd+K, Ctrl+K or `/`, the last of which a field the
+reader is typing in keeps. The input's debounced `phx-change`
 drives `Grasp.Index.search/3`; arrow keys move the selection client-side, Enter opens as a
 new root, Shift+Enter as a child of the focused card. Results show id, def/defp, change
 badge and file.
@@ -1588,6 +1589,9 @@ request switches the working tree" is closed.
    - Milestone 7.6: an update resolves every record — the document carries each record's
      route sites and the call an enqueue edge stands for, so a route or a worker that
      appears or goes moves the edges of a function whose file nothing recompiled.
+   - Milestone 7.7: `h` `j` `k` `l` walk the graph beside the arrows, `z` folds and `/`
+     opens the palette; a callee lands in the clear spot nearest its call site; edges are
+     drawn over the cards rather than under them.
 7. In-app Grasp: one dev dependency mounted in the host's endpoint, the tracer riding the
    host's code reloader for incremental indexing, pull requests reviewed from worktrees
    (see [Part 4](#part-4--in-app-grasp)).

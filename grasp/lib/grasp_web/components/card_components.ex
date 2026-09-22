@@ -336,7 +336,7 @@ defmodule GraspWeb.CardComponents do
             class="card__context"
             phx-click="toggle_context"
             phx-value-card={@card.id}
-            title="Show every line or only the changes (h)"
+            title="Show every line or only the changes (z)"
           >
             {if @context == :hunks, do: "all lines", else: "changes only"}
           </button>

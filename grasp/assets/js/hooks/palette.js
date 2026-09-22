@@ -10,6 +10,12 @@ const Palette = {
       if ((e.metaKey || e.ctrlKey) && e.key?.toLowerCase() === "k") {
         e.preventDefault()
         this.pushEvent("palette_show", {})
+      } else if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        // `/` is the search key in vim and a plain character everywhere else, so a field
+        // the reader is typing in — the palette's own input included — keeps it.
+        if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return
+        e.preventDefault()
+        this.pushEvent("palette_show", {})
       }
     }
     window.addEventListener("keydown", this.onKeydownWindow)

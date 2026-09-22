@@ -89,7 +89,7 @@ every call it makes clickable.
   shows a file: the changed lines, three lines of context on either side, every line a
   comment sits on, and one `⋯ n unchanged lines` row per stretch in between, which draws its
   lines when clicked. A function longer than 100 lines arrives folded; a shorter one arrives
-  whole. The `h` key does the same to the focused card.
+  whole. The `z` key does the same to the focused card.
 - **Collapse** (`c`) hides the body and leaves the header. **Close** (`x`) takes the card
   off the canvas; `Shift+x` closes it together with everything that had no other way to be
   reached.

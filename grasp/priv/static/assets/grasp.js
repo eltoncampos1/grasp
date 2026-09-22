@@ -9,6 +9,10 @@
         if ((e.metaKey || e.ctrlKey) && e.key?.toLowerCase() === "k") {
           e.preventDefault();
           this.pushEvent("palette_show", {});
+        } else if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
+          e.preventDefault();
+          this.pushEvent("palette_show", {});
         }
       };
       window.addEventListener("keydown", this.onKeydownWindow);
@@ -47,7 +51,16 @@
   var palette_default = Palette;
 
   // js/hooks/keys.js
-  var DIRECTIONS = { ArrowLeft: "parent", ArrowRight: "child", ArrowUp: "prev", ArrowDown: "next" };
+  var DIRECTIONS = {
+    ArrowLeft: "parent",
+    ArrowRight: "child",
+    ArrowUp: "prev",
+    ArrowDown: "next",
+    h: "parent",
+    l: "child",
+    k: "prev",
+    j: "next"
+  };
   var Keys = {
     mounted() {
       this.onKeydown = (e) => {
@@ -81,7 +94,7 @@
           this.pushEvent("collapse_focused", {});
         } else if (e.key === "d") {
           this.pushEvent("toggle_view_focused", {});
-        } else if (e.key === "h") {
+        } else if (e.key === "z") {
           this.pushEvent("toggle_context_focused", {});
         } else if (e.key.toLowerCase() === "s") {
           window.dispatchEvent(new CustomEvent("grasp:toggle-signatures"));
