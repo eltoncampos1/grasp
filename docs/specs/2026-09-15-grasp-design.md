@@ -181,7 +181,8 @@ mix grasp.index [--base main] [--out .grasp/index.json]
 
 ### Templates
 
-HEEx is code the graph knows, in five parts:
+HEEx is code the graph knows, in five parts, and the hops that are not function calls — a
+route a template links to, a job a function queues — are edges beside them:
 
 - **Component tags are call sites.** The compiler reports `<.badge>` and
   `<MyAppWeb.Components.badge>` as calls to the component function, inside inline `~H` bodies
@@ -255,6 +256,22 @@ HEEx is code the graph knows, in five parts:
   router's declaration order. A resolved site is a call `%{target, kind: :route, range,
   route: %{verb, path}}` whose `path` is the route's own pattern; an unresolved one is
   dropped. The same pass runs in the incremental update against the document's entry points.
+- **Jobs are edges.** Putting an Oban job on a queue is a hop as well: a call to `new/1` or
+  `new/2` on a module whose `perform/1` is an `oban_worker` entry point is a call of kind
+  `enqueue` on that `perform/1`, so the enqueueing function is a caller of the worker and
+  the site is a hop the reader follows to the work it sets in motion.
+  `Grasp.Index.Jobs.resolve/2` makes the rewrite once the entry points are known — after
+  entry-point detection, in the builder and in the incremental update alike — and a resolved
+  call is `%{target, kind: :enqueue, range, job: %{worker, queue}}`: the worker is the
+  module the call named, the queue the one that module's `__opts__/0` declares, `"default"`
+  where it declares none. The entry points rather than the definitions say which modules are
+  workers: a worker that writes a `new/1` of its own — Oban makes both overridable — is
+  redirected all the same, and a `new/1` on any other module is left as it is. The call
+  keeps its range and its place among the record's calls, and where the rewrite leaves a
+  record holding two calls of the same target, kind and range, one is kept. The span renders
+  as `data-kind="enqueue"`, titled `Oban job · Worker · queue`, and its edge to the worker
+  is drawn dashed, as a route's is: neither hop hands control straight from one end to the
+  other.
 
 Against a base ref, a template's `change` compares the whole file with the base commit's
 copy (`git show <base>:<path>`): a template the base does not have is added, one whose text
@@ -286,6 +303,11 @@ touched is unchanged.
       // a route site the router resolved: a call of kind "route" carrying the route it matched
       // { "target": "MyAppWeb.UserController.show/2", "kind": "route",
       //   "range": { "start": [3, 9], "end": [3, 21] }, "route": { "verb": "GET", "path": "/users/:id" } }
+      // an enqueueing call the workers resolved: a call of kind "enqueue" carrying the worker
+      // and the queue it runs on
+      // { "target": "MyApp.Workers.Forex.perform/1", "kind": "enqueue",
+      //   "range": { "start": [50, 5], "end": [50, 30] },
+      //   "job": { "worker": "MyApp.Workers.Forex", "queue": "forex" } }
       "hidden_calls": [ { "target": "MyAppWeb.CoreComponents.button/1", "kind": "remote", "line": 50 } ],
       "change": "modified", "base_source": "...", "removed": false
     }
@@ -456,17 +478,39 @@ drag, a group drag) or a reset. Opening a card therefore never shifts the cards 
 there. A card arrives with no position; the LiveView renders it hidden and the canvas hook,
 which alone knows the rendered sizes, places it on the next patch and pushes `place_cards`
 with the result, which the session stores (`Forest.place/2`, filling only positions still
-empty, so a stale placement never undoes a drag). Placement is beside the opener: a callee
-goes to the right of the placed card whose call site opened it (`GAP_X` 48 px), level with
-that call site; a caller opened to the left goes left of its target, top-aligned; a card
-with no placed neighbour is a root and goes under the lowest placed card of its group, at
-its group's left edge, so groups stack downwards. A candidate that would overlap a placed
-card is nudged down past it (`GAP_Y` 16 px), and cards placed in one pass respect one
-another. The pass orders unplaced cards by their depth in the call graph — the column
-algorithm below survives as that ordering and as the keyboard's notion of neighbours — so an
-agent's `set_cards`, which leaves every position empty, comes out callers-left of callees
-in one pass, and "Reset layout" (`Forest.reset_layout/1`) empties every position to lay the
-whole canvas out again.
+empty, so a stale placement never undoes a drag). Placement is beside the opener, and an
+opener counts only within the card's own group: a callee goes to the right of the placed
+card of its own group whose call site opened it (`GAP_X` 48 px), level with that call site;
+a caller opened to the left goes left of its target, top-aligned; a card reached only from
+another group is a root of its own group instead, since standing it beside that opener would
+put it inside a frame it does not belong to. A root with peers of its section already placed
+opens a row under the lowest of them, at the section's left edge — or, where that row would
+reach into another section's frame, stands beside them, off their right edge and level with
+their top, which is room the section can take without growing down into its neighbour. The
+first card of a section starts below everything on the stage, cards and frames alike, at the
+stage's left edge, so a section is a band of its own rather than a column beside the
+sections already down; the cards in no group are the last section, under every frame.
+
+A card is kept clear of every other section's frame, the header above it included, so frames
+laid out this way stack downwards one gap apart and never overlap. A candidate that would
+overlap a placed card is nudged down past it (`GAP_Y` 16 px), and below whatever that move
+ran it into next; against a foreign frame the clearance is that gap plus the padding the
+card's own frame takes beyond it (`FRAME_PAD` 28 px), and the drop past such a frame carries
+the card's own header allowance, so the frame that grows round the card ends a gap clear of
+the one it dropped past rather than cutting into it. Cards placed in one pass respect one
+another, and each placement is made against the frames as they stand rather than as the pass
+found them. A card in no group grows no frame, and so takes neither allowance nor padding
+with it. The allowance is measured at 100%, so a position the pass pushes never depends on
+how far out the reader was standing when the card arrived; the drawn header is
+counter-scaled, so far out it stands taller than the allowance the placement left. A section
+hemmed in on both sides — the row below it and the room beside it both taken — grows round
+its neighbour when a card of it lands past that neighbour.
+
+The pass orders unplaced cards by their section and, inside one, by their depth in the call
+graph — the column algorithm below survives as that ordering and as the keyboard's notion of
+neighbours — so an agent's `set_cards`, which leaves every position empty, comes out
+callers-left of callees in one pass, and "Reset layout" (`Forest.reset_layout/1`) empties
+every position to lay the whole canvas out again.
 
 The depth ordering is columns: `Forest.layout/1` computes it. A card nothing
 on screen calls is a source and sits in column 0; every other card sits one column right of
@@ -557,15 +601,23 @@ neighbour in the same column; `x` closes the focused card, `Shift+x` closes it a
 everything that hung off it alone, `c` collapses it.
 
 The canvas pans by dragging empty background, by holding Space and dragging from anywhere
-(cards included), or with the wheel; Ctrl or Cmd with the wheel zooms about the cursor. A
-toolbar floats at the bottom centre of the canvas, the way drawing tools place theirs, and
-carries the sidebar toggle, zoom out, a zoom readout that resets to 100% when clicked, zoom
-in, fit, the signature-mode toggle (below), "reset layout" and the chat toggle; the chat
-panel docks above it. The view — `{x, y, scale}` — lives only in the
-canvas hook and is written to a stylesheet rule for the stage rather than to an inline
-style, so a LiveView patch cannot wipe it mid-gesture. A wheel over something that can
-scroll itself — a code body scrolled sideways, an open callers menu — is left to that
-element.
+(cards included), or with the wheel; Ctrl or Cmd with the wheel zooms about the cursor. The
+scale runs from 5% to 250%: far enough out that a canvas of a hundred cards is read as a
+shape, and no further in than a card is worth reading at. A toolbar floats at the bottom
+centre of the canvas, the way drawing tools place theirs, and carries the sidebar toggle,
+zoom out, a zoom readout that resets to 100% when clicked, zoom in, fit, the signature-mode
+toggle (below), "reset layout", the chat toggle and a help button (`?`); the chat panel
+docks above it. That button and the `?` key open the keys-and-gestures list
+(`GraspWeb.Help`), a modal `<dialog>` of every gesture and chord the toolbar has no room to
+show. Nothing in it is session state, so it is rendered once, marked `phx-update="ignore"`,
+and opened, closed and toggled by the `Help` hook alone: `showModal()` brings Escape, the
+focus trap and the backdrop from the platform, and no patch can close it behind the reader's
+back. `?` is a character, so a reader typing in a field keeps it, a chord carrying it
+belongs to whoever claims the chord, and the key is left alone while the palette is open.
+The view — `{x, y, scale}` — lives only in the canvas hook and is written to a stylesheet
+rule for the stage rather than to an inline style, so a LiveView patch cannot wipe it
+mid-gesture. A wheel over something that can scroll itself — a code body scrolled sideways,
+an open callers menu — is left to that element.
 
 Signature mode is the reader's choice, not the zoom's: the toolbar's `signatures` toggle (or
 `s`) puts `grasp-signatures` on `<body>`, and while it is on every card drops its body, its
@@ -605,12 +657,23 @@ A card is moved by dragging its header or by Ctrl-dragging anywhere on it. The d
 inline translate at once and pushes `move_card` with the card's new absolute position on
 release; the position is stored on the card (`Forest.move/3`) and re-rendered as `--x`/`--y`
 on the node. A drag moves that one card: with a card reachable from several callers there is
-no subtree to carry along. "Reset layout" (`Forest.reset_layout/1`) empties every position,
-and the hook lays the canvas out again on the next patch. Dragging a frame's title — with or
-without Ctrl; a press that does not move is the rename click — moves the group as one: the
-hook pushes `move_group` with the deltas, and `Forest.shift_group/3` adds them to every
-placed member's position, so the cards keep their places relative to one another and the
-frame travels unchanged.
+no subtree to carry along. Alt and drag carries a whole flow instead — every card joined to
+the pressed one over the edges the canvas draws, followed in both directions, since a reader
+shifting a flow means the calls into it as much as the calls out of it. The gesture takes
+precedence over Ctrl and over the header rule, both of which carry the one card, and a link
+is left to the browser, whose Alt+click downloads it. The component is read once, at press
+time: a flow does not change while it is being dragged, and rereading it on every move would
+walk every call site on the canvas over a gesture. Every member travels by the same
+displacement, the hook pushes `move_cards` with their ids and the deltas, and
+`Forest.shift_cards/3` adds them to each placed member's position; a card with no position
+yet is not among them, and a press that gathers no card at all begins no drag rather than a
+dead one the release would report. A graph drag decides no membership: the cards travel
+together and each stays in the group it is a member of. "Reset layout"
+(`Forest.reset_layout/1`) empties every position, and the hook lays the canvas out again on
+the next patch. Dragging a frame's title — with or without Ctrl; a press that does not move
+is the rename click — moves the group as one: the hook pushes `move_group` with the deltas,
+and `Forest.shift_group/3` adds them to every placed member's position, so the cards keep
+their places relative to one another and the frame travels unchanged.
 
 Edges are an SVG overlay, not CSS: the hook walks the open call sites, measures each one
 and the callee's card, and draws a cubic path between them, so a line follows a card that
@@ -965,6 +1028,23 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
   other expression is a value no parser can know, and guessing it would name a function the
   compiler never defined, so the embed is globbed and named as if the option were not
   there.
+
+### Known gaps (milestone 7.5)
+
+- **Only a worker named at the call site is followed.** An enqueue written through
+  `Oban.Job.new/2` with a `worker:` option, a changeset built elsewhere and handed to
+  `Oban.insert_all/2`, or a worker module held in a variable names no worker where the call
+  is written, so nothing redirects it to a `perform/1` and it stays the call the compiler
+  reported.
+- **An incremental update re-resolves only the records it rebuilds.** A worker added or
+  dropped reaches an untouched record's edges when that record's file is next saved, or when
+  the index is next built in full — the rule routes follow.
+- **Dragged frames overlap.** Placement is what keeps the frames clear of one another; a
+  reader who drags a card or a group across another frame is left with the overlap, and the
+  later section wins a drop inside both. "Reset layout" lays them out apart again.
+- **A graph drag follows the drawn edges only.** Alt and drag carries what the reader can see
+  joined up, so a hidden call joins nothing, a call site whose callee is not open on the
+  canvas reaches no card, and a card nothing joins to travels alone.
 
 ### Known gaps (milestone 7.4)
 
@@ -1488,6 +1568,11 @@ request switches the working tree" is closed.
      token streaming, working state, folded tool rows with labels and durations, a growing
      prompt box with a queue and suggestions, sticky scrolling, inline failures with Retry,
      copy buttons.
+   - Milestone 7.5: jobs are edges — a `Worker.new/1` in front of an `Oban.insert` is a
+     dashed hop to the worker's `perform/1`, carrying the queue it runs on; the canvas lays
+     each section out clear of the other sections' frames, so the frames come out a gap apart
+     instead of interleaving; the zoom reaches 5%; Alt and drag carries a whole flow; `?`
+     opens the keys-and-gestures list.
 7. In-app Grasp: one dev dependency mounted in the host's endpoint, the tracer riding the
    host's code reloader for incremental indexing, pull requests reviewed from worktrees
    (see [Part 4](#part-4--in-app-grasp)).

@@ -153,6 +153,7 @@ its shortcut when you hover or tab to it.
 - **signatures** (`s`) — turn the cards down to their signatures.
 - **reset layout** — lay every card out again.
 - **ask** (⌘I) — open the chat panel. See [The agent](agent.md).
+- **?** (`?`) — the list of every key and gesture the canvas answers.
 
 Keys that act on the focused card: arrow keys walk the graph, `x` closes it, `Shift+x`
 closes it with everything that had no other way to be reached, `c` collapses it, `d` swaps

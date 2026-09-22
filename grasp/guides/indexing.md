@@ -74,6 +74,17 @@ protocol-relative `//host/path` or a bare `#fragment`. Attributes are read on th
 carries them, so an `hx-post` a parent element passes down by htmx inheritance reaches no
 route.
 
+**Jobs are edges.** Queueing an Oban job is a hop of the same sort. `Worker.new(args)` is a
+call to a `new/1` no source file defines, so on its own it reaches nothing; the work it sets
+in motion is `Worker.perform/1`. A call to `new/1` or `new/2` on a module whose `perform/1`
+the index lists as an Oban worker is redirected there, carrying the worker and the queue it
+runs on, so the function that queues the job is a caller of the job and the call site is a
+hop to follow. The entry points are what say which modules are workers: a worker that writes
+a `new/1` of its own is followed all the same, and a `new/1` on anything else is left as the
+call it is. A job queued in a way that names no worker where the call is written — an
+`Oban.Job.new/2` with a `worker:` option, a changeset built elsewhere and handed to
+`Oban.insert_all/2`, a worker module held in a variable — is not followed.
+
 `--base REF` classifies every function against the merge base of `REF` and `HEAD` — added,
 modified, unchanged or removed — and carries the base version of each modified function's
 source. That is what turns the canvas into a pull-request review; see

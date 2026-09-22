@@ -12,14 +12,23 @@ first clear space there, and nothing already on the canvas moves to make room fo
 - Drag a card by its header to move it, or hold Ctrl and drag from anywhere on it. Ctrl and
   press over a card is the drag gesture, so the context menu is suppressed there; a plain
   right-click still opens it.
+- Hold Alt and drag a card to carry the whole flow: every card joined to it by an edge,
+  callers and callees alike, travels with it and keeps its shape, so one flow is moved clear
+  of another in a gesture. What travels is what you can see joined up — a card whose callee
+  is closed carries nothing at that end.
 - Drag the background to pan; hold Space to pan from anywhere, cards included.
 - ⌘ or Ctrl with the wheel zooms about the cursor; the wheel alone pans, except over
-  something that can scroll itself.
+  something that can scroll itself. The zoom runs from 5% to 250%.
 - Arrow keys walk the graph from the focused card.
+- `?` opens the list of every key and gesture, the toolbar's `?` button with it. Escape, the
+  backdrop or its close button puts it away.
 
 Placement is a heuristic: it avoids overlap at the moment a card is placed, so a card that
 later grows — a diff opened, a thread written — or a card dragged onto another stays where
-it is. `reset layout` untangles them.
+it is. `reset layout` untangles them. Each group is laid out below the groups already down
+and clear of their frames, so a canvas laid out in one go reads as a stack of frames a gap
+apart; dragging a card or a frame across another is free to overlap them, and `reset layout`
+puts them back in their bands.
 
 ### Groups and frames
 
@@ -100,10 +109,13 @@ An edge runs from a call site to the card it reaches, takes that call site's col
 arrows into the callee. Double-click an arrow to jump to the card at its far end — the
 caller or the callee that is out of sight — which takes focus and pans into view.
 
-A dashed edge is a hop over HTTP rather than a function call: a link, a form action, an
-`hx-*` attribute or a `~p` sigil the router resolved to the action or LiveView it maps that
-path to. Its call site is underlined with dots instead of dashes, and hovering it reads the
-verb and path the router matched.
+A dashed edge is a hop rather than a function call, and its call site is underlined with dots
+instead of dashes. One kind is a hop over HTTP: a link, a form action, an `hx-*` attribute or
+a `~p` sigil the router resolved to the action or LiveView it maps that path to, hovering it
+reading the verb and path the router matched. The other is a job put on a queue: a
+`Worker.new(...)` in front of an `Oban.insert` opens the worker's `perform/1`, so the
+function that queues the work is a caller of the work itself, and hovering the call reads the
+worker and the queue it runs on.
 
 ## Comments
 
