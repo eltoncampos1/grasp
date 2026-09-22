@@ -1,0 +1,249 @@
+package cli
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
+
+	"github.com/eltoncampos1/grasp-cli/internal/agent"
+	"github.com/eltoncampos1/grasp-cli/internal/config"
+	"github.com/eltoncampos1/grasp-cli/internal/ghx"
+	"github.com/eltoncampos1/grasp-cli/internal/gitx"
+)
+
+var (
+	initProfile string
+	initYes     bool
+	initForce   bool
+)
+
+var initCmd = &cobra.Command{
+	Use:   "init",
+	Short: "Set this repo up for grasp reviews",
+	Long: `Detects the repo's languages, remote and base branch, asks which agent
+profile to use, and writes:
+
+  .grasp/config.toml   personal settings (gitignored)
+  .grasp/review.md     the team's review rules (committable)
+
+and the .gitignore entries for everything else under .grasp/.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		root, err := repoRoot()
+		if err != nil {
+			return err
+		}
+
+		cfgPath := config.RepoPath(root)
+		if _, err := os.Stat(cfgPath); err == nil && !initForce {
+			return fmt.Errorf("%s already exists (use --force to rewrite it)", cfgPath)
+		}
+
+		languages := detectLanguages(root)
+		if len(languages) == 0 {
+			logln("warning: no TypeScript/JavaScript files found — the v0 indexer only speaks those")
+		} else {
+			logln("languages: %s", strings.Join(languages, ", "))
+		}
+
+		base := gitx.DefaultBaseBranch(root)
+		if base == "" {
+			base = ghx.DefaultBranch(root)
+		}
+		if base == "" {
+			base = "main"
+		}
+		logln("base branch: %s", base)
+
+		profile, err := chooseProfile()
+		if err != nil {
+			return err
+		}
+		if profile == "" {
+			logln("agent profile: claude default")
+		} else {
+			logln("agent profile: %s", profile)
+		}
+
+		if err := os.MkdirAll(filepath.Join(root, ".grasp"), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(cfgPath, []byte(configTemplate(base, profile, languages)), 0o644); err != nil {
+			return err
+		}
+		logln("wrote %s", rel(root, cfgPath))
+
+		reviewPath := filepath.Join(root, ".grasp", "review.md")
+		if _, err := os.Stat(reviewPath); os.IsNotExist(err) {
+			if err := os.WriteFile(reviewPath, []byte(reviewTemplate), 0o644); err != nil {
+				return err
+			}
+			logln("wrote %s (committable — the team's review rules)", rel(root, reviewPath))
+		}
+
+		if added, err := ensureGitignore(root); err != nil {
+			return err
+		} else if added {
+			logln("added .grasp/ to .gitignore (review.md stays tracked)")
+		}
+
+		logln("\nready. next:")
+		logln("  grasp pr          review an open pull request")
+		logln("  grasp web         review the current branch against %s", base)
+		logln("  grasp doctor      check the whole setup")
+		return nil
+	},
+}
+
+func init() {
+	initCmd.Flags().StringVar(&initProfile, "profile", "", "agent profile dir (CLAUDE_CONFIG_DIR); \"default\" for the CLI's own")
+	initCmd.Flags().BoolVarP(&initYes, "yes", "y", false, "accept defaults, ask nothing")
+	initCmd.Flags().BoolVar(&initForce, "force", false, "rewrite an existing .grasp/config.toml")
+	rootCmd.AddCommand(initCmd)
+}
+
+func detectLanguages(root string) []string {
+	paths, err := gitx.ListFiles(root)
+	if err != nil {
+		return nil
+	}
+	counts := map[string]int{}
+	for _, p := range paths {
+		if strings.Contains(p, "node_modules/") {
+			continue
+		}
+		switch strings.ToLower(filepath.Ext(p)) {
+		case ".ts", ".tsx", ".mts", ".cts":
+			counts["typescript"]++
+		case ".js", ".jsx", ".mjs", ".cjs":
+			counts["javascript"]++
+		}
+	}
+	var langs []string
+	for _, l := range []string{"typescript", "javascript"} {
+		if counts[l] > 0 {
+			langs = append(langs, l)
+		}
+	}
+	return langs
+}
+
+// chooseProfile picks the CLAUDE_CONFIG_DIR for this repo: the --profile flag,
+// or an interactive pick over the ~/.claude* directories found. Empty string
+// means the CLI's own default profile.
+func chooseProfile() (string, error) {
+	if initProfile == "default" {
+		return "", nil
+	}
+	if initProfile != "" {
+		p := agent.ExpandPath(initProfile)
+		if info, err := os.Stat(p); err != nil || !info.IsDir() {
+			return "", fmt.Errorf("--profile %s is not a directory", initProfile)
+		}
+		return initProfile, nil
+	}
+
+	profiles := agent.Profiles()
+	if len(profiles) <= 1 || initYes || !term.IsTerminal(int(os.Stdin.Fd())) {
+		return "", nil
+	}
+
+	options := append([]string{"claude default (no CLAUDE_CONFIG_DIR)"}, profiles...)
+	i, err := fuzzyfinder.Find(options, func(i int) string { return options[i] },
+		fuzzyfinder.WithHeader("Which Claude profile should reviews in this repo use?"))
+	if err != nil {
+		if err == fuzzyfinder.ErrAbort {
+			return "", nil
+		}
+		return "", err
+	}
+	if i == 0 {
+		return "", nil
+	}
+	// Store ~-relative so the config survives a home move.
+	if home, herr := os.UserHomeDir(); herr == nil {
+		if strings.HasPrefix(options[i], home+"/") {
+			return "~/" + strings.TrimPrefix(options[i], home+"/"), nil
+		}
+	}
+	return options[i], nil
+}
+
+func configTemplate(base, profile string, languages []string) string {
+	langs := make([]string, len(languages))
+	for i, l := range languages {
+		langs[i] = fmt.Sprintf("%q", l)
+	}
+	profileLine := "# config_dir = \"~/.claude\"     # pin a CLAUDE_CONFIG_DIR profile"
+	if profile != "" {
+		profileLine = fmt.Sprintf("config_dir = %q", profile)
+	}
+	return fmt.Sprintf(`# grasp — personal, per-repo settings (gitignored).
+# Team review rules live in .grasp/review.md instead.
+
+[agent]
+backend = "claude-code"
+command = "claude"
+%s
+# model = "opus"
+
+[review]
+base = %q
+auto = true            # v2: run a review when the canvas opens (--no-review skips)
+
+[index]
+languages = [%s]
+
+[web]
+port = 4040
+open = true
+# editor = "vscode"    # vscode | cursor | zed | idea — file:line deep links
+
+[viewer]
+# v0 borrows the upstream Elixir viewer until grasp-cli embeds its own:
+# grasp_checkout = "~/dev/grasp/grasp"   # a checkout of gfrancischelli/grasp
+`, profileLine, base, strings.Join(langs, ", "))
+}
+
+const reviewTemplate = `# Review rules for this repo
+
+These rules feed the automatic review grasp runs when a canvas opens (v2).
+This file is committable on purpose: the team's standards travel with the
+repo, while .grasp/config.toml stays personal and gitignored.
+
+- Point out correctness bugs, not style — the linter owns style.
+- Flag missing error handling on paths that can actually fail.
+- Question new dependencies and copies of existing helpers.
+`
+
+func ensureGitignore(root string) (bool, error) {
+	path := filepath.Join(root, ".gitignore")
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	if strings.Contains(string(data), ".grasp/") {
+		return false, nil
+	}
+	entry := "\n# grasp\n.grasp/*\n!.grasp/review.md\n"
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	if _, err := f.WriteString(entry); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func rel(root, path string) string {
+	if r, err := filepath.Rel(root, path); err == nil {
+		return r
+	}
+	return path
+}
