@@ -1452,27 +1452,35 @@ const Canvas = {
       // The room the card leaves an obstacle: the placement gap against another card, and
       // against a frame that gap plus what the card's own frames reach beyond it on that side,
       // so the frames the card grows end GAP_Y clear of their neighbour rather than cutting into
-      // it. Past another section's frame both of the card's own frames count, its cluster's
-      // inside its section's; past another cluster's only the cluster's, since the two stand
-      // inside one section frame that neither has to clear. A card in no group grows no section
-      // frame, and a card that joins no cluster grows no module frame, so each takes nothing
-      // where it has nothing.
+      // it. Which of the card's frames count depends on where the obstacle stands. Past another
+      // section's frame both do, the card's cluster's inside its section's. Past a cluster of
+      // the card's own section only the cluster's, because the two stand inside one section
+      // frame that neither has to clear. Past a cluster of another section the card's section
+      // frame has to clear it too, so its padding counts as well — a groupless cluster has no
+      // frame of its own standing between the two. A card in no group grows no section frame,
+      // and a card that joins no cluster grows no module frame, so each takes nothing where it
+      // has nothing. Every module obstacle names its section as the empty string where it has
+      // none, which is what a groupless card's own group reads as.
       const pad = group ? FRAME_PAD : 0
       const ownPad = cluster === null ? 0 : MODULE_PAD
       const ownHead = cluster === null ? 0 : moduleHead
+      const sameSection = (other) => other.group === (group || "")
       const clearance = (other) => {
         if (!other.frame) return GAP_Y
-        return other.kind === "module" ? MODULE_PAD + GAP_Y : pad + ownPad + GAP_Y
+        return other.kind === "module"
+          ? MODULE_PAD + (sameSection(other) ? 0 : pad) + GAP_Y
+          : pad + ownPad + GAP_Y
       }
       // The allowance a drop past a frame carries: the head the card's own frames leave above
-      // it on that side, since those are the frames that have to clear the one the card dropped
-      // past. It is at least the padding the same sides carry — `head >= pad` and
-      // `ownHead >= ownPad`, each by a title and its gap — so a drop always lands at or beyond
-      // the clearance it is tested against, which is what keeps a sweep moving in one
-      // direction and so ending.
+      // it on that side, the same frames `clearance` counts the padding of. It is at least that
+      // padding — `head >= pad` and `ownHead >= ownPad`, each by a title and its gap — so a drop
+      // always lands at or beyond the clearance it is tested against, which is what keeps a
+      // sweep moving in one direction and so ending.
       const headPast = (other) => {
         if (!other.frame) return 0
-        return other.kind === "module" ? moduleHead : head + ownHead
+        return other.kind === "module"
+          ? moduleHead + (sameSection(other) ? 0 : head)
+          : head + ownHead
       }
       let x, y
       if (opener) {

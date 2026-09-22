@@ -1160,13 +1160,14 @@
         const pad = group ? FRAME_PAD : 0;
         const ownPad = cluster === null ? 0 : MODULE_PAD;
         const ownHead = cluster === null ? 0 : moduleHead;
+        const sameSection = (other) => other.group === (group || "");
         const clearance = (other) => {
           if (!other.frame) return GAP_Y;
-          return other.kind === "module" ? MODULE_PAD + GAP_Y : pad + ownPad + GAP_Y;
+          return other.kind === "module" ? MODULE_PAD + (sameSection(other) ? 0 : pad) + GAP_Y : pad + ownPad + GAP_Y;
         };
         const headPast = (other) => {
           if (!other.frame) return 0;
-          return other.kind === "module" ? moduleHead : head + ownHead;
+          return other.kind === "module" ? moduleHead + (sameSection(other) ? 0 : head) : head + ownHead;
         };
         let x, y;
         if (opener) {
