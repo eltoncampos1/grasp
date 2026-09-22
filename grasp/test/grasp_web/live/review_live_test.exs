@@ -19,6 +19,7 @@ defmodule GraspWeb.ReviewLiveTest do
   @badge "SampleAppWeb.GreetHTML.badge/1"
   @show_template "SampleAppWeb.GreetHTML.show/1"
   @again "SampleAppWeb.GreetController.again/2"
+  @split_binary ":erlang.split_binary/2"
 
   setup %{conn: conn} do
     name = "t-#{System.unique_integer([:positive])}"
@@ -470,6 +471,7 @@ defmodule GraspWeb.ReviewLiveTest do
     # card show `fun/arity` alone.
     assert has_element?(view, "#card-2.stub .card__module", "Enum.")
     assert has_element?(view, "#card-2.stub .card__fn", "map/2")
+    assert has_element?(view, "#node-2[data-module='Enum'] #card-2.stub")
     assert has_element?(view, "#card-2.stub a[href='https://hexdocs.pm/elixir/Enum.html#map/2']")
   end
 
@@ -1100,6 +1102,14 @@ defmodule GraspWeb.ReviewLiveTest do
     Session.open_root(name, @greet)
 
     assert has_element?(view, "#node-1[data-module='SampleApp.Greeter'] #card-1")
+  end
+
+  test "a function of an Erlang module clusters under that module", %{view: view, name: name} do
+    Session.open_root(name, @split_binary)
+
+    assert has_element?(view, "#node-1[data-module=':erlang'] #card-1.stub")
+    assert has_element?(view, "#card-1.stub .card__module", ":erlang.")
+    assert has_element?(view, "#card-1.stub .card__fn", "split_binary/2")
   end
 
   test "a caller opened from a framed card is drawn inside that frame", %{

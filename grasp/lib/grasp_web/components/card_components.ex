@@ -29,6 +29,7 @@ defmodule GraspWeb.CardComponents do
     "genserver" => "GenServer"
   }
   @function_id ~r/^([A-Z][\w.]*)\.([^.\/]+)\/(\d+)$/
+  @erlang_function_id ~r/\A(:[a-z]\w*)\.[^.\/]+\/\d+\z/
 
   attr :forest, Forest, required: true
   attr :index, Index, required: true
@@ -52,7 +53,7 @@ defmodule GraspWeb.CardComponents do
     {x, y} = card.position || {0, 0}
 
     # A function id with no module part stands for its own module, clustering alone.
-    module = module_of(card.function_id) || card.function_id
+    module = cluster_module_of(card.function_id) || card.function_id
 
     assigns = assign(assigns, card: card, x: x, y: y, module: module)
 
@@ -489,9 +490,10 @@ defmodule GraspWeb.CardComponents do
   defp badge_label(%{"kind" => kind}), do: Map.get(@badge_labels, kind, kind)
 
   defp stub_card(assigns) do
-    # The title is split the way a full card's is, so that both narrow by their module name
-    # when the module frames carry it. An id with no module part has no part to drop.
-    module = module_of(assigns.card.function_id)
+    # The title is split the way a full card's is, so that the frame round the cluster can
+    # carry the module name and the header read `fun/arity` alone. An id with no module part
+    # has no part to drop.
+    module = cluster_module_of(assigns.card.function_id)
     name = if module, do: String.replace_prefix(assigns.card.function_id, module <> ".", "")
 
     assigns =
@@ -605,6 +607,18 @@ defmodule GraspWeb.CardComponents do
   end
 
   defp module_of(_function_id), do: nil
+
+  # Clustering reads the module part of every id a card can hold, where `module_of/1` reads
+  # only the Elixir aliases hexdocs and the index are keyed by: `:erlang.split_binary/2`
+  # clusters under `:erlang`, the text before its `name/arity`, like any other card.
+  defp cluster_module_of(function_id) when is_binary(function_id) do
+    case Regex.run(@erlang_function_id, function_id) do
+      [_, module] -> module
+      nil -> module_of(function_id)
+    end
+  end
+
+  defp cluster_module_of(_function_id), do: nil
 
   # Call targets come from the index and from the browser, so concatenating them into a
   # module atom would let anyone grow the atom table one unknown name at a time.

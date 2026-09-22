@@ -759,18 +759,23 @@ frame with it, exactly as a card dragged out of a flow stretches the flow's fram
 frames may come to overlap by dragging, and placement is what keeps them apart. A drop is
 still decided by the flow frames alone: a module frame changes no membership.
 
-While clusters are drawn, a card's header shows only `fun/arity`: the frame carries the module,
-and the card narrows by the width of its module name. The cards in a cluster are the reader's
-to arrange: nothing inside a module frame snaps, sorts or stacks, and a card lands where the
-placement rules below put it and then moves only when the reader or a push moves it.
+While clusters are drawn, a card's header shows only `fun/arity`: the frame carries the
+module. A card is as wide as the wider of its title and its body, over a floor, so dropping
+the module name narrows only a card whose title with that name is its widest line and stands
+above the floor — a stub, or a card with a short body; a card with a wider body keeps the
+width its body asks for. The cards in a cluster are the reader's to arrange: nothing inside a
+module frame snaps, sorts or stacks, and a card lands where the placement rules below put it
+and then moves only when the reader or a push moves it.
 
 Placement reads clusters two ways. A card whose module already has a cluster in its flow
 lands adjacent to that cluster rather than beside the call that opened it: the candidates are
-the four clear spots against the cluster's frame — to its right, below it, above it and to its
-left, each swept clear the way any candidate is — and the one nearest the card's ideal spot
-(beside the call, level with it) wins. A card whose module has no cluster yet in its flow is
-placed by the ordinary rule, nearest the call, and so is a root — a card the pass reaches from
-no call of its own flow — whichever way its module stands.
+the four clear spots against the cluster — to its right and to its left against the frame,
+below it and above it against the cards the frame holds, since there the card is joining that
+frame rather than clearing it and owes those cards one `GAP_Y` and no more — each swept clear
+the way any candidate is, and the one nearest the card's ideal spot (beside the call, level
+with it) wins. A card whose module has no cluster yet in its flow is placed by the ordinary
+rule, nearest the call, and so is a root — a card the pass reaches from no call of its own
+flow — whichever way its module stands.
 
 A card is placed clear of every module frame but its own cluster's, wherever that cluster
 stands, and of the flow frames of the flows that are not its own; its own two frames are no

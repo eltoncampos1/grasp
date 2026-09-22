@@ -84,14 +84,15 @@ else, so there is nothing to create and nothing to name.
   they stand, as a group's frame does.
 - **modules** in the toolbar, or the `m` key, draws the frames or takes them away. While they
   are drawn a card's header reads `fun/arity` alone, since the frame round it carries the
-  module name.
+  module name. Dropping the name narrows a card whose title is its widest line — a stub, or a
+  card with a short body; a card whose code is wider than its title keeps its width.
 - **A card lands beside its module.** Open a call to a module that already has cards in that
   flow and the card is placed against that cluster rather than beside the call, so a module
   stays in one block as the flow grows. The first card of a module lands beside the call that
   opened it, like any other.
-- A cluster belongs to one flow, so a module open in two flows is framed once in each. Which
-  group a card is in is still decided by the group frames alone: dropping a card inside a
-  module frame moves it nowhere.
+- A cluster belongs to one flow, so a module open in two flows is framed once in each. A
+  module frame decides nothing about membership: where a card lands is still read from the
+  group frames alone.
 
 ## Cards
 
