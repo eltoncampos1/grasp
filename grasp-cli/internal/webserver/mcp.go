@@ -193,6 +193,8 @@ func (s *Server) loadIndex() (*indexer.Index, map[string]*indexer.Function, map[
 			}
 		}
 		s.idx.mtime, s.idx.idx, s.idx.byID, s.idx.callers = m, &idx, byID, callers
+		// The code under the threads may have moved: follow the anchors.
+		s.reanchorAll(byID)
 	}
 	return s.idx.idx, s.idx.byID, s.idx.callers, nil
 }
@@ -432,8 +434,9 @@ func (s *Server) callTool(name string, args map[string]any) (any, error) {
 
 	case "add_comment":
 		side := argStr(args, "side")
+		anchor := s.anchorFor(argStr(args, "function"), argInt(args, "line"), side)
 		doc, err := s.Comments.AddThread(argStr(args, "function"), argStr(args, "file"),
-			argInt(args, "line"), argInt(args, "end_line"), side, "agent", argStr(args, "body"))
+			argInt(args, "line"), argInt(args, "end_line"), side, "agent", argStr(args, "body"), anchor)
 		if err != nil {
 			return nil, err
 		}

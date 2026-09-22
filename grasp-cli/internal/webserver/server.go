@@ -162,6 +162,9 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
+	// Parsing (cached by mtime) also re-anchors the comment threads, so the
+	// page always fetches comments that already follow the new code.
+	_, _, _, _ = s.loadIndex()
 	data, err := os.ReadFile(s.IndexPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("no index at %s — run grasp index", s.IndexPath), http.StatusNotFound)
@@ -240,7 +243,8 @@ func (s *Server) comments(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "empty comment", http.StatusBadRequest)
 				return
 			}
-			doc, err = s.Comments.AddThread(req.Function, req.File, req.Line, req.EndLine, req.Side, author, req.Body)
+			anchor := s.anchorFor(req.Function, req.Line, req.Side)
+			doc, err = s.Comments.AddThread(req.Function, req.File, req.Line, req.EndLine, req.Side, author, req.Body, anchor)
 		case "reply":
 			if strings.TrimSpace(req.Body) == "" {
 				http.Error(w, "empty comment", http.StatusBadRequest)

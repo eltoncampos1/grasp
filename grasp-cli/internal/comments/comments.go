@@ -22,12 +22,20 @@ type Comment struct {
 }
 
 type Thread struct {
-	ID           string    `json:"id"`
-	Function     string    `json:"function"` // indexed function id
-	File         string    `json:"file"`
-	Line         int       `json:"line"`               // new side: absolute; base side: line within base_source
-	EndLine      int       `json:"end_line,omitempty"` // >0 makes it a range thread over line..end_line
-	Side         string    `json:"side"`               // "new" | "base"
+	ID       string `json:"id"`
+	Function string `json:"function"` // indexed function id
+	File     string `json:"file"`
+	Line     int    `json:"line"`               // new side: absolute; base side: line within base_source
+	EndLine  int    `json:"end_line,omitempty"` // >0 makes it a range thread over line..end_line
+	Side     string `json:"side"`               // "new" | "base"
+	// Anchor is the trimmed text of the commented line when the thread was
+	// written. When the code moves under the thread — a new push, an agent
+	// edit — re-anchoring finds where this text went and follows it.
+	Anchor string `json:"anchor,omitempty"`
+	// Status is "" while the thread sits on its line, "outdated" when the
+	// line it was written on has been edited away, "orphan" when its function
+	// has left the index.
+	Status       string    `json:"status,omitempty"`
 	Resolved     bool      `json:"resolved"`
 	PublishedURL string    `json:"published_url,omitempty"`
 	Comments     []Comment `json:"comments"`
@@ -104,7 +112,7 @@ func (s *Store) Mutate(fn func(doc *Doc) error) (*Doc, error) {
 	return doc, nil
 }
 
-func (s *Store) AddThread(function, file string, line, endLine int, side, author, body string) (*Doc, error) {
+func (s *Store) AddThread(function, file string, line, endLine int, side, author, body, anchor string) (*Doc, error) {
 	if side != "base" {
 		side = "new"
 	}
@@ -119,6 +127,7 @@ func (s *Store) AddThread(function, file string, line, endLine int, side, author
 			Line:     line,
 			EndLine:  endLine,
 			Side:     side,
+			Anchor:   anchor,
 			Comments: []Comment{newComment(author, body)},
 		})
 		return nil

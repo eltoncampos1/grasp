@@ -123,6 +123,18 @@ func prHeadSha(root string, number int) (string, error) {
 func postThread(root string, number int, headSha string, t *comments.Thread) (string, error) {
 	body := threadBody(t)
 
+	// An outdated or orphaned thread has no line to stand on anymore: it goes
+	// on the file with its last known anchor written at the top.
+	if t.Status != "" {
+		body = fmt.Sprintf("`%s:%d` (%s — the line it was written on has changed):\n\n%s", t.File, t.Line, t.Status, body)
+		return postComment(root, number, map[string]string{
+			"body":         body,
+			"commit_id":    headSha,
+			"path":         t.File,
+			"subject_type": "file",
+		}, nil)
+	}
+
 	if t.Side == "new" {
 		fields := map[string]string{
 			"body":      body,
