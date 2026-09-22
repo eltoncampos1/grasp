@@ -489,7 +489,7 @@ reach into another section's frame, stands beside them, off their right edge and
 their top, which is room the section can take without growing down into its neighbour. The
 first card of a section starts below everything on the stage, cards and frames alike, at the
 stage's left edge, so a section is a band of its own rather than a column beside the
-sections already down; the cards in no group are the last section, under every frame.
+sections already down; the cards in no group are laid out last, after every frame.
 
 A card is kept clear of every other section's frame, the header above it included, so frames
 laid out this way stack downwards one gap apart and never overlap. A candidate that would
@@ -650,7 +650,7 @@ and a third would change nothing a reader could see.
 
 A group's title is read at every zoom: the frame header — title, count and `ungroup` — is
 sized as `--frame-title-size / --zoom` (18px for the title, 13px for the rest) in every mode,
-so it measures the same on screen whether the canvas is at 25% or 250%. The hook redraws the
+so it measures the same on screen whether the canvas is at 5% or 250%. The hook redraws the
 frames whenever the scale changes, since the header's box in stage units changes with it.
 
 A card is moved by dragging its header or by Ctrl-dragging anywhere on it. The drag shows an
@@ -1042,6 +1042,10 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 - **Dragged frames overlap.** Placement is what keeps the frames clear of one another; a
   reader who drags a card or a group across another frame is left with the overlap, and the
   later section wins a drop inside both. "Reset layout" lays them out apart again.
+- **A section hemmed in on both sides grows round its neighbour.** A card that joins a group
+  after another group has been laid out below it takes the room below its group, or else the
+  room beside it; when both are taken it drops past the neighbour and its frame closes over
+  that neighbour's. "Reset layout" lays the sections out apart again.
 - **A graph drag follows the drawn edges only.** Alt and drag carries what the reader can see
   joined up, so a hidden call joins nothing, a call site whose callee is not open on the
   canvas reaches no card, and a card nothing joins to travels alone.
