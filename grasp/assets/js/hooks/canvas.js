@@ -104,6 +104,10 @@ const Canvas = {
     // and the draw that ends mount covers the first frame; seeding the scale keeps that first
     // frame from being drawn twice.
     this.drawnScale = this.view.scale
+    // The scale the rule on #stage carries, and whether the heights about to be reported are
+    // the same cards measured again rather than cards that grew.
+    this.styledScale = this.view.scale
+    this.remeasure = false
     this.style =
       document.getElementById("grasp-canvas-style") ||
       document.head.appendChild(
@@ -246,6 +250,10 @@ const Canvas = {
   writeStyle() {
     const {x, y, scale} = this.view
     const {width, height} = this.extent
+    // A signature card is sized from --zoom, so its stage-unit height is a different number at
+    // every scale; the heights that follow a zoom step are that card measured again.
+    if (this.signatures && this.styledScale !== scale) this.remeasure = true
+    this.styledScale = scale
     this.style.textContent =
       `#stage{transform:translate(${Math.round(x)}px,${Math.round(y)}px) scale(${scale});` +
       `--zoom:${scale};min-width:${width}px;min-height:${height}px}`
@@ -334,6 +342,9 @@ const Canvas = {
   // edge now ends somewhere else, which only a redraw can say.
   toggleSignatures() {
     this.signatures = !this.signatures
+    // Every card takes a new height with the mode, which is the reader changing what a card
+    // shows rather than any card growing.
+    this.remeasure = true
     document.body.classList.toggle("grasp-signatures", this.signatures)
     const button = document.getElementById("toggle-signatures")
     if (button) button.setAttribute("aria-pressed", String(this.signatures))
@@ -1441,11 +1452,15 @@ const Canvas = {
   observeCards() {
     const cards = [...this.el.querySelectorAll(".card")]
     for (const card of cards) this.cardObserver.observe(card)
-    // A card the reader closed takes its height with it: the card that opens in its place is
-    // measured from scratch rather than against the height of the card that stood there.
+    // A card the reader closed takes its height and its pushes with it: the card that opens in
+    // its place is measured from scratch rather than against the height of the card that stood
+    // there, and a push nothing can be moved back by is a push to forget.
     const live = new Set(cards.map((card) => cardId(card)))
     for (const id of this.cardHeights.keys()) {
       if (!live.has(id)) this.cardHeights.delete(id)
+    }
+    for (const id of this.pushes.keys()) {
+      if (!live.has(id)) this.pushes.delete(id)
     }
   },
 
@@ -1453,7 +1468,9 @@ const Canvas = {
   //
   // A card's height is its own layout box, which the stage's transform leaves alone, so a
   // growth is already in stage units and is not divided by the zoom — unlike a box read off
-  // the screen, which is.
+  // the screen, which is. A counter-scaled card is the exception the other way: signature mode
+  // sizes a card from --zoom, so its stage-unit height changes with the zoom and with the mode
+  // itself. Those reports are the same cards measured again, and a re-measure moves nothing.
   //
   // The first report for a card is the height it arrived at, not a growth, so it pushes
   // nothing. Every report is recorded whatever else it leads to, so the next one is measured
@@ -1475,12 +1492,21 @@ const Canvas = {
       if (!node || node.hasAttribute("data-unplaced")) continue
       grown.push({node, dy: height - previous, top: this.positionOf(node).y})
     }
+    // The heights of a re-measure are kept, so the next growth is measured against the card as
+    // the reader sees it, and the re-measure itself pushes nothing.
+    if (this.remeasure) {
+      this.remeasure = false
+      return
+    }
+    // Nothing a reader does grows a signature card: what it shows is its header and the one
+    // line that names it, whatever the card holds.
+    if (this.signatures) return
     // A card that grows mid-drag is measured all the same, but the boxes a push would read are
     // the ones the drag is in the middle of moving.
     if (this.drag) return
     // Topmost first: a card lower down is pushed by the card above it before it pushes on its
-    // own account, so two growths in one report add up instead of the lower card being read
-    // from a box the upper one is about to move.
+    // own account, and a push is read from where its cards stand, displacement and all, so the
+    // two growths add up.
     grown.sort((a, b) => a.top - b.top)
     for (const {node, dy} of grown) this.pushBelow(node, dy)
   },
@@ -1500,8 +1526,9 @@ const Canvas = {
   pushBelow(node, dy) {
     const boxes = this.placedBoxes()
     // The observer runs after the layout that grew the card, so the box read here is the
-    // grown one. A card whose own move the server has yet to answer for carries a translate
-    // and is left out of the boxes, itself included: it pushes once the render has landed.
+    // grown one. A card whose move the server has yet to answer for is read where it stands,
+    // the displacement it carries included, so a card that grows twice inside one round trip
+    // pushes the second time from the place the first push left everything.
     const grown = boxes.find((b) => b.node === node)
     if (!grown) return
     const others = boxes.filter((b) => b !== grown)
@@ -1536,7 +1563,10 @@ const Canvas = {
     const cards = []
     const tops = new Map()
     for (const b of pushed) {
-      b.node.style.translate = `0px ${shift}px`
+      // The displacement already on the node is a move the server has yet to answer for; this
+      // one is added to it, and the session adds the two deltas in the order they were pushed.
+      const carried = this.translateOf(b.node)
+      b.node.style.translate = `${carried.x}px ${carried.y + shift}px`
       cards.push(b.id)
       tops.set(b.id, b.top + shift)
     }
@@ -1553,23 +1583,24 @@ const Canvas = {
   // position the server rendered for left and top, and the measured rectangle for width and
   // height, which is a screen measurement and so divided by the scale.
   //
-  // A node carrying an inline translate is a card whose move the server has not answered for
-  // yet, and its position and its rectangle disagree by that much; it is left out rather than
-  // read at either of the two places it is in.
+  // A card carrying an inline translate is standing at a move the server has yet to answer
+  // for, and is read where it stands: the position plus the displacement, as a drag reads it.
   placedBoxes() {
     const {scale} = this.view
     const boxes = []
     for (const node of this.el.querySelectorAll(".node:not([data-unplaced])")) {
-      if (node.style.translate) continue
       const b = node.getBoundingClientRect()
       const {x, y} = this.positionOf(node)
+      const carried = this.translateOf(node)
+      const left = x + carried.x
+      const top = y + carried.y
       boxes.push({
         id: Number(node.dataset.card),
         node,
-        left: x,
-        top: y,
-        right: x + b.width / scale,
-        bottom: y + b.height / scale,
+        left,
+        top,
+        right: left + b.width / scale,
+        bottom: top + b.height / scale,
       })
     }
     return boxes
@@ -1606,7 +1637,8 @@ function sortGroup(node) {
   return node.dataset.group === "" ? Number.MAX_SAFE_INTEGER : Number(node.dataset.group)
 }
 
-// The card an element belongs to, as the number the server and `data-card` both carry.
+// The card a card element is, as the number its id carries — the same number the node round
+// it carries in `data-card`.
 function cardId(card) {
   return Number(card.id.replace("card-", ""))
 }

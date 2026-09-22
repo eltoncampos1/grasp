@@ -139,6 +139,8 @@
       this.passes = 0;
       this.pendingReveal = null;
       this.drawnScale = this.view.scale;
+      this.styledScale = this.view.scale;
+      this.remeasure = false;
       this.style = document.getElementById("grasp-canvas-style") || document.head.appendChild(
         Object.assign(document.createElement("style"), { id: "grasp-canvas-style" })
       );
@@ -251,6 +253,8 @@
     writeStyle() {
       const { x, y, scale } = this.view;
       const { width, height } = this.extent;
+      if (this.signatures && this.styledScale !== scale) this.remeasure = true;
+      this.styledScale = scale;
       this.style.textContent = `#stage{transform:translate(${Math.round(x)}px,${Math.round(y)}px) scale(${scale});--zoom:${scale};min-width:${width}px;min-height:${height}px}`;
     },
     // Back to 1:1 about the centre of the canvas, so whatever you were looking at stays put.
@@ -320,6 +324,7 @@
     // edge now ends somewhere else, which only a redraw can say.
     toggleSignatures() {
       this.signatures = !this.signatures;
+      this.remeasure = true;
       document.body.classList.toggle("grasp-signatures", this.signatures);
       const button = document.getElementById("toggle-signatures");
       if (button) button.setAttribute("aria-pressed", String(this.signatures));
@@ -1140,12 +1145,17 @@
       for (const id of this.cardHeights.keys()) {
         if (!live.has(id)) this.cardHeights.delete(id);
       }
+      for (const id of this.pushes.keys()) {
+        if (!live.has(id)) this.pushes.delete(id);
+      }
     },
     // The heights the observer reports, and a push for each card that grew.
     //
     // A card's height is its own layout box, which the stage's transform leaves alone, so a
     // growth is already in stage units and is not divided by the zoom — unlike a box read off
-    // the screen, which is.
+    // the screen, which is. A counter-scaled card is the exception the other way: signature mode
+    // sizes a card from --zoom, so its stage-unit height changes with the zoom and with the mode
+    // itself. Those reports are the same cards measured again, and a re-measure moves nothing.
     //
     // The first report for a card is the height it arrived at, not a growth, so it pushes
     // nothing. Every report is recorded whatever else it leads to, so the next one is measured
@@ -1163,6 +1173,11 @@
         if (!node || node.hasAttribute("data-unplaced")) continue;
         grown.push({ node, dy: height - previous, top: this.positionOf(node).y });
       }
+      if (this.remeasure) {
+        this.remeasure = false;
+        return;
+      }
+      if (this.signatures) return;
       if (this.drag) return;
       grown.sort((a, b) => a.top - b.top);
       for (const { node, dy } of grown) this.pushBelow(node, dy);
@@ -1208,7 +1223,8 @@
       const cards = [];
       const tops = /* @__PURE__ */ new Map();
       for (const b of pushed) {
-        b.node.style.translate = `0px ${shift}px`;
+        const carried = this.translateOf(b.node);
+        b.node.style.translate = `${carried.x}px ${carried.y + shift}px`;
         cards.push(b.id);
         tops.set(b.id, b.top + shift);
       }
@@ -1222,23 +1238,24 @@
     // position the server rendered for left and top, and the measured rectangle for width and
     // height, which is a screen measurement and so divided by the scale.
     //
-    // A node carrying an inline translate is a card whose move the server has not answered for
-    // yet, and its position and its rectangle disagree by that much; it is left out rather than
-    // read at either of the two places it is in.
+    // A card carrying an inline translate is standing at a move the server has yet to answer
+    // for, and is read where it stands: the position plus the displacement, as a drag reads it.
     placedBoxes() {
       const { scale } = this.view;
       const boxes = [];
       for (const node of this.el.querySelectorAll(".node:not([data-unplaced])")) {
-        if (node.style.translate) continue;
         const b = node.getBoundingClientRect();
         const { x, y } = this.positionOf(node);
+        const carried = this.translateOf(node);
+        const left = x + carried.x;
+        const top = y + carried.y;
         boxes.push({
           id: Number(node.dataset.card),
           node,
-          left: x,
-          top: y,
-          right: x + b.width / scale,
-          bottom: y + b.height / scale
+          left,
+          top,
+          right: left + b.width / scale,
+          bottom: top + b.height / scale
         });
       }
       return boxes;
