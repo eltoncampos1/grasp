@@ -856,23 +856,18 @@ const Canvas = {
         if (title) title.style.translate = ""
         continue
       }
-      let head = FRAME_PAD
+      const headerHeight = title ? titleBox.height / scale : null
       if (title) {
-        const height = titleBox.height / scale
         // Where the header would sit untranslated: its own box less the offset it is carrying.
         const naturalLeft = (titleBox.left - s.left) / scale - carried.x
         const naturalTop = (titleBox.top - s.top) / scale - carried.y
         const x = left - naturalLeft
-        const y = top - (height + titleGap) - naturalTop
+        const y = top - (headerHeight + titleGap) - naturalTop
         title.style.translate = `${x}px ${y}px`
-        head = height + titleGap + FRAME_PAD
       }
       const frame = {
         group,
-        left: left - FRAME_PAD,
-        top: top - head,
-        right: right + FRAME_PAD,
-        bottom: bottom + FRAME_PAD,
+        ...frameAround({left, top, right, bottom}, headerHeight, titleGap),
       }
       this.frames.push(frame)
       divs.push(
@@ -882,6 +877,16 @@ const Canvas = {
     }
     this.frameLayer.innerHTML = divs.join("")
     return true
+  },
+
+  // The height of a group's header in stage units, or null for a group whose section carries
+  // none — the two cases `frameAround` reads. A card in no group has no section and no header,
+  // and the empty group id names none.
+  headerHeightOf(group) {
+    if (!group) return null
+    const title = this.el.querySelector(`.flow[data-grouped][data-group="${group}"] .flow__title`)
+    if (!title) return null
+    return title.getBoundingClientRect().height / this.view.scale
   },
 
   // The offset the hook last gave an element, in stage units. A property with one value is an
@@ -977,7 +982,8 @@ const Canvas = {
       }
       const color = /^[0-7]$/.test(site.dataset.color || "") ? site.dataset.color : null
       // The call site says what kind of hop it is; the path carries it so the stylesheet can
-      // draw an HTTP request differently from a function call.
+      // draw a hop that is not a plain function call — an HTTP request, a queued job —
+      // differently from one that is.
       const kind = site.dataset.kind
       // The path is drawn in stage units, which the zoom scales; `vector-effect` is what keeps
       // its stroke 2 screen pixels instead of thinning to under half a one at MIN_SCALE.
@@ -1002,10 +1008,11 @@ const Canvas = {
   // render that answers carries the positions and drops `data-unplaced` with them.
   //
   // A card is placed against the boxes of the cards that already have a place, its own
-  // included as soon as it has one, so a pass that lays out a whole canvas — the one after
-  // `reset_layout`, where nothing is placed — reads like the one that places a single new
-  // card: taken section by section in depth order, a caller is down before the callee that
-  // hangs off it.
+  // included as soon as it has one, and against the frames round the other sections, so a pass
+  // that lays out a whole canvas — the one after `reset_layout`, where nothing is placed —
+  // reads like the one that places a single new card: taken section by section in depth order,
+  // a caller is down before the callee that hangs off it, and each section is a band below the
+  // ones already laid out.
   placeCards() {
     this.passes++
     // A card the server has answered about is a card to forget; what stays behind is a card
@@ -1081,6 +1088,43 @@ const Canvas = {
       if (node) sites.push({site, node, to: site.dataset.edgeTo})
     }
 
+    // The frame round a group is an obstacle to every card outside it, so the sections a pass
+    // lays out come out one below another instead of interleaving. The frames are read from the
+    // boxes rather than from the layer the hook draws into, because a card placed earlier in
+    // this pass has grown its group's frame and is not rendered anywhere yet.
+    //
+    // Header heights are measured once: nothing in the pass moves a header, and each read of
+    // one is a layout the browser is asked for.
+    const titleGap = FRAME_TITLE_GAP / scale
+    const heads = new Map()
+    const headerOf = (group) => {
+      if (!heads.has(group)) heads.set(group, this.headerHeightOf(group))
+      return heads.get(group)
+    }
+    const framesOf = (placed) => {
+      const extents = new Map()
+      for (const b of placed) {
+        const group = b.node.dataset.group
+        if (!group) continue
+        const e = extents.get(group) || {
+          left: Infinity,
+          top: Infinity,
+          right: -Infinity,
+          bottom: -Infinity,
+        }
+        e.left = Math.min(e.left, b.left)
+        e.top = Math.min(e.top, b.top)
+        e.right = Math.max(e.right, b.right)
+        e.bottom = Math.max(e.bottom, b.bottom)
+        extents.set(group, e)
+      }
+      return [...extents].map(([group, e]) => ({
+        group,
+        ...frameAround(e, headerOf(group), titleGap),
+      }))
+    }
+    let frameBoxes = framesOf(occupied)
+
     // A depth counts from the root of the card's own section, so it says how far along a flow
     // a card is and nothing about where a card of another section stands. Taking the sections
     // one at a time is what makes the order mean something: inside one, a caller is placed
@@ -1097,12 +1141,20 @@ const Canvas = {
     for (const node of unplaced) {
       const m = measured.get(node)
       const id = node.dataset.card
-      const opener = sites.find((hit) => hit.to === id && boxes.has(hit.node))
+      const group = node.dataset.group
+      // A neighbour to stand beside is one of the card's own section: a call that crosses into
+      // another group would put the card inside that group's frame, where it does not belong,
+      // so a card reached only from outside its group is a root of its own group instead.
+      const opener = sites.find(
+        (hit) => hit.to === id && hit.node.dataset.group === group && boxes.has(hit.node),
+      )
       const calls =
         !opener &&
-        sites.find(
-          (hit) => hit.node === node && boxes.has(document.getElementById(`node-${hit.to}`)),
-        )
+        sites.find((hit) => {
+          if (hit.node !== node) return false
+          const callee = document.getElementById(`node-${hit.to}`)
+          return !!callee && callee.dataset.group === group && boxes.has(callee)
+        })
       let x, y
       if (opener) {
         // The callee stands off the opener's right edge, level with the call that opened it:
@@ -1124,22 +1176,36 @@ const Canvas = {
         x = box.left - m.width - GAP_X
         y = box.top
       } else {
-        // A root belongs to nothing on the canvas, so it starts a column of its own under the
-        // cards of its group; a group with nothing in it starts at the stage's corner, and the
-        // overlap pass below is what stacks one such group under another.
-        const group = node.dataset.group
+        // A root belongs to nothing on the canvas, so it starts a column of its own. With
+        // peers of its section already down it opens a row under the lowest of them, at the
+        // section's left edge.
         const peers = occupied.filter((b) => b.node.dataset.group === group)
-        x = peers.length === 0 ? 0 : Math.min(...peers.map((b) => b.left))
-        y = peers.length === 0 ? 0 : Math.max(...peers.map((b) => b.bottom)) + GAP_Y
+        if (peers.length > 0) {
+          x = Math.min(...peers.map((b) => b.left))
+          y = Math.max(...peers.map((b) => b.bottom)) + GAP_Y
+        } else {
+          // The first card of a section starts below everything on the stage — every card and
+          // every frame — at the stage's left edge, so a section is a band of its own rather
+          // than a column beside the sections already laid out. The header allowance above it
+          // is what leaves the frame's own top clear of the frame above by GAP_Y, and, with
+          // nothing placed at all, what keeps the first title on the stage instead of above
+          // its corner. A card in no group carries no frame and so no allowance.
+          const head = group ? frameHead(headerOf(group), titleGap) : 0
+          const bottoms = occupied.map((b) => b.bottom).concat(frameBoxes.map((f) => f.bottom))
+          x = 0
+          y = (bottoms.length === 0 ? 0 : Math.max(...bottoms) + GAP_Y) + head
+        }
       }
 
-      // Nothing is ever laid on top of anything: a card that would land on an occupied box
-      // drops below it, and below whatever that move ran it into next. Each drop is strictly
-      // downwards, so one sweep per occupied box is enough to run out of them.
+      // Nothing is ever laid on top of anything: a card that would land on an occupied box, or
+      // inside the frame of a section that is not its own, drops below it, and below whatever
+      // that move ran it into next. Each drop is strictly downwards, so one sweep per obstacle
+      // is enough to run out of them.
+      const obstacles = occupied.concat(frameBoxes.filter((f) => f.group !== group))
       let box = {left: x, top: y, right: x + m.width, bottom: y + m.height, node}
-      for (let sweep = 0; sweep <= occupied.length; sweep++) {
+      for (let sweep = 0; sweep <= obstacles.length; sweep++) {
         let moved = false
-        for (const other of occupied) {
+        for (const other of obstacles) {
           if (!overlaps(box, other)) continue
           box.top = other.bottom + GAP_Y
           box.bottom = box.top + m.height
@@ -1155,6 +1221,9 @@ const Canvas = {
       box = {left: px, top: py, right: px + m.width, bottom: py + m.height, node}
       boxes.set(node, box)
       occupied.push(box)
+      // The card has grown its section's frame, and the next card of the pass is placed clear
+      // of the frame as it stands rather than as the pass found it.
+      frameBoxes = framesOf(occupied)
       placements.push({id: Number(id), x: px, y: py})
       // The box outlives the pass: until the answer arrives the card is still `data-unplaced`
       // and drawn at the corner, and this is the only record of where it is going.
@@ -1167,6 +1236,27 @@ const Canvas = {
 
     this.pushEvent("place_cards", {cards: placements})
   },
+}
+
+// The room a frame leaves above the cards it holds: FRAME_PAD alone for a group whose section
+// carries no header, and otherwise the header, the gap under it and the padding. Every length
+// is in stage units, `titleGap` included, so a caller divides FRAME_TITLE_GAP by the scale
+// before passing it.
+function frameHead(headerHeight, titleGap) {
+  return headerHeight === null ? FRAME_PAD : headerHeight + titleGap + FRAME_PAD
+}
+
+// The rectangle drawn round a group's cards: FRAME_PAD on three sides and, above, room for the
+// header the group carries. `extent` is the union of the cards' boxes in stage units. The
+// frames drawn on the canvas and the frames a placement is decided against come from here, so
+// the two cannot disagree about where a group's edges are.
+function frameAround(extent, headerHeight, titleGap) {
+  return {
+    left: extent.left - FRAME_PAD,
+    top: extent.top - frameHead(headerHeight, titleGap),
+    right: extent.right + FRAME_PAD,
+    bottom: extent.bottom + FRAME_PAD,
+  }
 }
 
 // A node's group as a number to sort by, in the order the sections are rendered in: the cards

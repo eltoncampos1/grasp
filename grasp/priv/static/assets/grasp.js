@@ -723,22 +723,17 @@
           if (title) title.style.translate = "";
           continue;
         }
-        let head = FRAME_PAD;
+        const headerHeight = title ? titleBox.height / scale : null;
         if (title) {
-          const height = titleBox.height / scale;
           const naturalLeft = (titleBox.left - s.left) / scale - carried.x;
           const naturalTop = (titleBox.top - s.top) / scale - carried.y;
           const x = left - naturalLeft;
-          const y = top - (height + titleGap) - naturalTop;
+          const y = top - (headerHeight + titleGap) - naturalTop;
           title.style.translate = `${x}px ${y}px`;
-          head = height + titleGap + FRAME_PAD;
         }
         const frame = {
           group,
-          left: left - FRAME_PAD,
-          top: top - head,
-          right: right + FRAME_PAD,
-          bottom: bottom + FRAME_PAD
+          ...frameAround({ left, top, right, bottom }, headerHeight, titleGap)
         };
         this.frames.push(frame);
         divs.push(
@@ -747,6 +742,15 @@
       }
       this.frameLayer.innerHTML = divs.join("");
       return true;
+    },
+    // The height of a group's header in stage units, or null for a group whose section carries
+    // none — the two cases `frameAround` reads. A card in no group has no section and no header,
+    // and the empty group id names none.
+    headerHeightOf(group) {
+      if (!group) return null;
+      const title = this.el.querySelector(`.flow[data-grouped][data-group="${group}"] .flow__title`);
+      if (!title) return null;
+      return title.getBoundingClientRect().height / this.view.scale;
     },
     // The offset the hook last gave an element, in stage units. A property with one value is an
     // x with no y, as the CSS `translate` shorthand defines it, and an empty one is no offset.
@@ -827,10 +831,11 @@
     // render that answers carries the positions and drops `data-unplaced` with them.
     //
     // A card is placed against the boxes of the cards that already have a place, its own
-    // included as soon as it has one, so a pass that lays out a whole canvas — the one after
-    // `reset_layout`, where nothing is placed — reads like the one that places a single new
-    // card: taken section by section in depth order, a caller is down before the callee that
-    // hangs off it.
+    // included as soon as it has one, and against the frames round the other sections, so a pass
+    // that lays out a whole canvas — the one after `reset_layout`, where nothing is placed —
+    // reads like the one that places a single new card: taken section by section in depth order,
+    // a caller is down before the callee that hangs off it, and each section is a band below the
+    // ones already laid out.
     placeCards() {
       this.passes++;
       for (const [id] of this.attempted) {
@@ -883,6 +888,35 @@
         const node = site.closest(".node");
         if (node) sites.push({ site, node, to: site.dataset.edgeTo });
       }
+      const titleGap = FRAME_TITLE_GAP / scale;
+      const heads = /* @__PURE__ */ new Map();
+      const headerOf = (group) => {
+        if (!heads.has(group)) heads.set(group, this.headerHeightOf(group));
+        return heads.get(group);
+      };
+      const framesOf = (placed) => {
+        const extents = /* @__PURE__ */ new Map();
+        for (const b of placed) {
+          const group = b.node.dataset.group;
+          if (!group) continue;
+          const e = extents.get(group) || {
+            left: Infinity,
+            top: Infinity,
+            right: -Infinity,
+            bottom: -Infinity
+          };
+          e.left = Math.min(e.left, b.left);
+          e.top = Math.min(e.top, b.top);
+          e.right = Math.max(e.right, b.right);
+          e.bottom = Math.max(e.bottom, b.bottom);
+          extents.set(group, e);
+        }
+        return [...extents].map(([group, e]) => ({
+          group,
+          ...frameAround(e, headerOf(group), titleGap)
+        }));
+      };
+      let frameBoxes = framesOf(occupied);
       unplaced.sort(
         (a, b) => sortGroup(a) - sortGroup(b) || Number(a.dataset.depth) - Number(b.dataset.depth) || Number(a.dataset.card) - Number(b.dataset.card)
       );
@@ -890,10 +924,15 @@
       for (const node of unplaced) {
         const m = measured.get(node);
         const id = node.dataset.card;
-        const opener = sites.find((hit) => hit.to === id && boxes.has(hit.node));
-        const calls = !opener && sites.find(
-          (hit) => hit.node === node && boxes.has(document.getElementById(`node-${hit.to}`))
+        const group = node.dataset.group;
+        const opener = sites.find(
+          (hit) => hit.to === id && hit.node.dataset.group === group && boxes.has(hit.node)
         );
+        const calls = !opener && sites.find((hit) => {
+          if (hit.node !== node) return false;
+          const callee = document.getElementById(`node-${hit.to}`);
+          return !!callee && callee.dataset.group === group && boxes.has(callee);
+        });
         let x, y;
         if (opener) {
           const box2 = boxes.get(opener.node);
@@ -907,15 +946,22 @@
           x = box2.left - m.width - GAP_X;
           y = box2.top;
         } else {
-          const group = node.dataset.group;
           const peers = occupied.filter((b) => b.node.dataset.group === group);
-          x = peers.length === 0 ? 0 : Math.min(...peers.map((b) => b.left));
-          y = peers.length === 0 ? 0 : Math.max(...peers.map((b) => b.bottom)) + GAP_Y;
+          if (peers.length > 0) {
+            x = Math.min(...peers.map((b) => b.left));
+            y = Math.max(...peers.map((b) => b.bottom)) + GAP_Y;
+          } else {
+            const head = group ? frameHead(headerOf(group), titleGap) : 0;
+            const bottoms = occupied.map((b) => b.bottom).concat(frameBoxes.map((f) => f.bottom));
+            x = 0;
+            y = (bottoms.length === 0 ? 0 : Math.max(...bottoms) + GAP_Y) + head;
+          }
         }
+        const obstacles = occupied.concat(frameBoxes.filter((f) => f.group !== group));
         let box = { left: x, top: y, right: x + m.width, bottom: y + m.height, node };
-        for (let sweep = 0; sweep <= occupied.length; sweep++) {
+        for (let sweep = 0; sweep <= obstacles.length; sweep++) {
           let moved = false;
-          for (const other of occupied) {
+          for (const other of obstacles) {
             if (!overlaps(box, other)) continue;
             box.top = other.bottom + GAP_Y;
             box.bottom = box.top + m.height;
@@ -928,6 +974,7 @@
         box = { left: px, top: py, right: px + m.width, bottom: py + m.height, node };
         boxes.set(node, box);
         occupied.push(box);
+        frameBoxes = framesOf(occupied);
         placements.push({ id: Number(id), x: px, y: py });
         this.attempted.set(id, {
           box: { left: px, top: py, right: box.right, bottom: box.bottom },
@@ -938,6 +985,17 @@
       this.pushEvent("place_cards", { cards: placements });
     }
   };
+  function frameHead(headerHeight, titleGap) {
+    return headerHeight === null ? FRAME_PAD : headerHeight + titleGap + FRAME_PAD;
+  }
+  function frameAround(extent, headerHeight, titleGap) {
+    return {
+      left: extent.left - FRAME_PAD,
+      top: extent.top - frameHead(headerHeight, titleGap),
+      right: extent.right + FRAME_PAD,
+      bottom: extent.bottom + FRAME_PAD
+    };
+  }
   function sortGroup(node) {
     return node.dataset.group === "" ? Number.MAX_SAFE_INTEGER : Number(node.dataset.group);
   }
