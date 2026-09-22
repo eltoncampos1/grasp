@@ -52,11 +52,13 @@ const PORT_Y = 18
 // A Ctrl-drag's release is still a context-menu gesture; long enough to cover the menu the
 // browser opens just after the drag has ended.
 const CTRL_MENU_GRACE = 300
-// The frame's padding round the cards it holds, and the gap between it and the header above
-// them. The header's bottom margin is counter-scaled, so the gap is a screen measurement that
-// is divided by the scale to reach stage units: the two agree at every zoom, and a section
-// nobody has dragged keeps its header exactly where the layout put it.
-const FRAME_PAD = 16
+// The frame's padding round the cards it holds — wide enough that a card reads as standing
+// inside the frame rather than against its border — and the gap between the frame and the
+// header above it. The header's bottom margin is counter-scaled, so the gap is a screen
+// measurement, divided by the scale wherever a frame is worked out in stage units: the two
+// agree at every zoom, and a section nobody has dragged keeps its header exactly where the
+// layout put it.
+const FRAME_PAD = 28
 const FRAME_TITLE_GAP = 8
 // The gaps a placement pass leaves: GAP_X between a card and the one it was opened from,
 // GAP_Y between a card and whatever it would otherwise have landed on.
@@ -879,14 +881,17 @@ const Canvas = {
     return true
   },
 
-  // The height of a group's header in stage units, or null for a group whose section carries
-  // none — the two cases `frameAround` reads. A card in no group has no section and no header,
-  // and the empty group id names none.
-  headerHeightOf(group) {
+  // The height of a group's header, or null for a group whose section carries none — the two
+  // cases `frameAround` reads. A card in no group has no section and no header, and the empty
+  // group id names none. The caller says what scale to read the height at, since the scale a
+  // measurement belongs to is the caller's business: `scale` 1 answers in screen pixels, which
+  // is what the header measures at every zoom because the header is counter-scaled.
+  headerHeightOf(group, scale) {
     if (!group) return null
-    const title = this.el.querySelector(`.flow[data-grouped][data-group="${group}"] .flow__title`)
+    const flow = `.flow[data-grouped][data-group="${CSS.escape(group)}"]`
+    const title = this.el.querySelector(`${flow} .flow__title`)
     if (!title) return null
-    return title.getBoundingClientRect().height / this.view.scale
+    return title.getBoundingClientRect().height / scale
   },
 
   // The offset the hook last gave an element, in stage units. A property with one value is an
@@ -1093,13 +1098,17 @@ const Canvas = {
     // boxes rather than from the layer the hook draws into, because a card placed earlier in
     // this pass has grown its group's frame and is not rendered anywhere yet.
     //
+    // The allowance is measured at scale 1, in screen pixels, and the gap is taken undivided:
+    // a position the pass pushes is stored and read back at every zoom, so it must not depend
+    // on how far out the reader was standing when the card arrived. The header is
+    // counter-scaled, so its screen height is the height the frame will have at 100%.
+    //
     // Header heights are measured once: nothing in the pass moves a header, and each read of
     // one is a layout the browser is asked for.
-    const titleGap = FRAME_TITLE_GAP / scale
-    const heads = new Map()
-    const headerOf = (group) => {
-      if (!heads.has(group)) heads.set(group, this.headerHeightOf(group))
-      return heads.get(group)
+    const headerHeights = new Map()
+    const headerHeightFor = (group) => {
+      if (!headerHeights.has(group)) headerHeights.set(group, this.headerHeightOf(group, 1))
+      return headerHeights.get(group)
     }
     const framesOf = (placed) => {
       const extents = new Map()
@@ -1121,7 +1130,7 @@ const Canvas = {
       return [...extents].map(([group, e]) => ({
         group,
         frame: true,
-        ...frameAround(e, headerOf(group), titleGap),
+        ...frameAround(e, headerHeightFor(group), FRAME_TITLE_GAP),
       }))
     }
     let frameBoxes = framesOf(occupied)
@@ -1159,7 +1168,10 @@ const Canvas = {
       // The room the card's own frame takes above it, which every drop past another section's
       // frame carries with it and which the first card of a section starts under. A card in no
       // group carries no frame and so no allowance.
-      const head = group ? frameHead(headerOf(group), titleGap) : 0
+      const head = group ? frameHead(headerHeightFor(group), FRAME_TITLE_GAP) : 0
+      // The frames a card of this section is placed clear of. Its own is not among them: a card
+      // belongs inside the frame that grows round its section.
+      const foreign = frameBoxes.filter((f) => f.group !== group)
       let x, y
       if (opener) {
         // The callee stands off the opener's right edge, level with the call that opened it:
@@ -1181,13 +1193,32 @@ const Canvas = {
         x = box.left - m.width - GAP_X
         y = box.top
       } else {
-        // A root belongs to nothing on the canvas, so it starts a column of its own. With
-        // peers of its section already down it opens a row under the lowest of them, at the
-        // section's left edge.
+        // A root belongs to nothing on the canvas, so it starts a column of its own. With peers
+        // of its section already down it opens a row under the lowest of them, at the section's
+        // left edge — and where that row would reach into another section's frame it goes
+        // beside the peers instead, off their right edge and level with their top, which is
+        // room the section can take without growing downwards into its neighbour. A section
+        // hemmed in on both sides takes the row and leaves the sweep to drop it.
+        //
+        // Only the frames decide between the two candidates; a card in the way is what the
+        // sweep below handles.
         const peers = occupied.filter((b) => b.node.dataset.group === group)
         if (peers.length > 0) {
-          x = Math.min(...peers.map((b) => b.left))
-          y = Math.max(...peers.map((b) => b.bottom)) + GAP_Y
+          const below = {
+            x: Math.min(...peers.map((b) => b.left)),
+            y: Math.max(...peers.map((b) => b.bottom)) + GAP_Y,
+          }
+          const beside = {
+            x: Math.max(...peers.map((b) => b.right)) + GAP_X,
+            y: Math.min(...peers.map((b) => b.top)),
+          }
+          const clearOfFrames = (at) =>
+            !foreign.some((f) =>
+              overlaps({left: at.x, top: at.y, right: at.x + m.width, bottom: at.y + m.height}, f),
+            )
+          const at = clearOfFrames(below) || !clearOfFrames(beside) ? below : beside
+          x = at.x
+          y = at.y
         } else {
           // The first card of a section starts below everything on the stage — every card and
           // every frame — at the stage's left edge, so a section is a band of its own rather
@@ -1214,7 +1245,12 @@ const Canvas = {
       // them. Downwards is also the only direction a drop needs: the stage is unbounded that
       // way and the sections are stacked that way, so a card that leaves a frame downwards is
       // clear of it for good, where a sideways move would only carry it towards the next one.
-      const obstacles = occupied.concat(frameBoxes.filter((f) => f.group !== group))
+      //
+      // The sweep keeps the card off every frame, not the section's own frame, which is the
+      // union of its cards: a group that has been closed in on both sides — the row below it
+      // and the room beside it both taken — grows round its neighbour when a card of it lands
+      // past that neighbour.
+      const obstacles = occupied.concat(foreign)
       let box = {left: x, top: y, right: x + m.width, bottom: y + m.height, node}
       for (let sweep = 0; sweep <= obstacles.length; sweep++) {
         let moved = false
@@ -1252,17 +1288,19 @@ const Canvas = {
 }
 
 // The room a frame leaves above the cards it holds: FRAME_PAD alone for a group whose section
-// carries no header, and otherwise the header, the gap under it and the padding. Every length
-// is in stage units, `titleGap` included, so a caller divides FRAME_TITLE_GAP by the scale
-// before passing it.
+// carries no header, and otherwise the header, the gap under it and the padding. The lengths
+// are whatever units the caller measured its extent in — the gap is counter-scaled, so a
+// caller working in stage units divides FRAME_TITLE_GAP by the scale and one working in screen
+// pixels passes it as it is.
 function frameHead(headerHeight, titleGap) {
   return headerHeight === null ? FRAME_PAD : headerHeight + titleGap + FRAME_PAD
 }
 
-// The rectangle drawn round a group's cards: FRAME_PAD on three sides and, above, room for the
-// header the group carries. `extent` is the union of the cards' boxes in stage units. The
-// frames drawn on the canvas and the frames a placement is decided against come from here, so
-// the two cannot disagree about where a group's edges are.
+// The rectangle round a group's cards: FRAME_PAD on three sides and, above, room for the
+// header the group carries. `extent` is the union of the group's boxes. The frame drawn on the
+// canvas and the frame a placement is decided against share this formula, and the two land on
+// the same rectangle because the extents they union are the same: a `.node` holds one `.card`
+// and neither carries a margin or a border.
 function frameAround(extent, headerHeight, titleGap) {
   return {
     left: extent.left - FRAME_PAD,

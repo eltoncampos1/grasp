@@ -104,7 +104,7 @@
   var MARGIN = 24;
   var PORT_Y = 18;
   var CTRL_MENU_GRACE = 300;
-  var FRAME_PAD = 16;
+  var FRAME_PAD = 28;
   var FRAME_TITLE_GAP = 8;
   var GAP_X = 48;
   var GAP_Y = 16;
@@ -743,14 +743,17 @@
       this.frameLayer.innerHTML = divs.join("");
       return true;
     },
-    // The height of a group's header in stage units, or null for a group whose section carries
-    // none — the two cases `frameAround` reads. A card in no group has no section and no header,
-    // and the empty group id names none.
-    headerHeightOf(group) {
+    // The height of a group's header, or null for a group whose section carries none — the two
+    // cases `frameAround` reads. A card in no group has no section and no header, and the empty
+    // group id names none. The caller says what scale to read the height at, since the scale a
+    // measurement belongs to is the caller's business: `scale` 1 answers in screen pixels, which
+    // is what the header measures at every zoom because the header is counter-scaled.
+    headerHeightOf(group, scale) {
       if (!group) return null;
-      const title = this.el.querySelector(`.flow[data-grouped][data-group="${group}"] .flow__title`);
+      const flow = `.flow[data-grouped][data-group="${CSS.escape(group)}"]`;
+      const title = this.el.querySelector(`${flow} .flow__title`);
       if (!title) return null;
-      return title.getBoundingClientRect().height / this.view.scale;
+      return title.getBoundingClientRect().height / scale;
     },
     // The offset the hook last gave an element, in stage units. A property with one value is an
     // x with no y, as the CSS `translate` shorthand defines it, and an empty one is no offset.
@@ -888,11 +891,10 @@
         const node = site.closest(".node");
         if (node) sites.push({ site, node, to: site.dataset.edgeTo });
       }
-      const titleGap = FRAME_TITLE_GAP / scale;
-      const heads = /* @__PURE__ */ new Map();
-      const headerOf = (group) => {
-        if (!heads.has(group)) heads.set(group, this.headerHeightOf(group));
-        return heads.get(group);
+      const headerHeights = /* @__PURE__ */ new Map();
+      const headerHeightFor = (group) => {
+        if (!headerHeights.has(group)) headerHeights.set(group, this.headerHeightOf(group, 1));
+        return headerHeights.get(group);
       };
       const framesOf = (placed) => {
         const extents = /* @__PURE__ */ new Map();
@@ -914,7 +916,7 @@
         return [...extents].map(([group, e]) => ({
           group,
           frame: true,
-          ...frameAround(e, headerOf(group), titleGap)
+          ...frameAround(e, headerHeightFor(group), FRAME_TITLE_GAP)
         }));
       };
       let frameBoxes = framesOf(occupied);
@@ -934,7 +936,8 @@
           const callee = document.getElementById(`node-${hit.to}`);
           return !!callee && callee.dataset.group === group && boxes.has(callee);
         });
-        const head = group ? frameHead(headerOf(group), titleGap) : 0;
+        const head = group ? frameHead(headerHeightFor(group), FRAME_TITLE_GAP) : 0;
+        const foreign = frameBoxes.filter((f) => f.group !== group);
         let x, y;
         if (opener) {
           const box2 = boxes.get(opener.node);
@@ -950,15 +953,27 @@
         } else {
           const peers = occupied.filter((b) => b.node.dataset.group === group);
           if (peers.length > 0) {
-            x = Math.min(...peers.map((b) => b.left));
-            y = Math.max(...peers.map((b) => b.bottom)) + GAP_Y;
+            const below = {
+              x: Math.min(...peers.map((b) => b.left)),
+              y: Math.max(...peers.map((b) => b.bottom)) + GAP_Y
+            };
+            const beside = {
+              x: Math.max(...peers.map((b) => b.right)) + GAP_X,
+              y: Math.min(...peers.map((b) => b.top))
+            };
+            const clearOfFrames = (at2) => !foreign.some(
+              (f) => overlaps({ left: at2.x, top: at2.y, right: at2.x + m.width, bottom: at2.y + m.height }, f)
+            );
+            const at = clearOfFrames(below) || !clearOfFrames(beside) ? below : beside;
+            x = at.x;
+            y = at.y;
           } else {
             const bottoms = occupied.map((b) => b.bottom).concat(frameBoxes.map((f) => f.bottom));
             x = 0;
             y = (bottoms.length === 0 ? 0 : Math.max(...bottoms) + GAP_Y) + head;
           }
         }
-        const obstacles = occupied.concat(frameBoxes.filter((f) => f.group !== group));
+        const obstacles = occupied.concat(foreign);
         let box = { left: x, top: y, right: x + m.width, bottom: y + m.height, node };
         for (let sweep = 0; sweep <= obstacles.length; sweep++) {
           let moved = false;
