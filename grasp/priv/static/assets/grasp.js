@@ -146,7 +146,7 @@
       this.passes = 0;
       this.pendingReveal = null;
       this.drawnScale = this.view.scale;
-      this.labelHeights = /* @__PURE__ */ new Map();
+      this.labelPx = 0;
       this.styledScale = this.view.scale;
       this.remeasure = false;
       this.remeasureFrame = null;
@@ -862,7 +862,7 @@
           bottom: (b.bottom - s.top) / scale
         });
       }
-      const labelHeight = this.modules ? this.moduleLabelHeight(scale) : null;
+      const labelHeight = this.modules ? this.moduleLabelPx() / scale : null;
       const { moduleFrames, extents } = clusterFrames(cards, labelHeight, MODULE_TITLE_GAP / scale);
       const sections = [];
       for (const flow of this.el.querySelectorAll(".flow[data-grouped]")) {
@@ -923,15 +923,12 @@
       if (!this.frameLayer?.isConnected) this.frameLayer = this.el.querySelector("#frames");
       return this.frameLayer;
     },
-    // The height of a module's label in stage units at `scale`. The label is counter-scaled, so
-    // it measures one size on screen at every zoom and a different number of stage units at each,
-    // and each answer is kept against the scale it was read at: a draw asks at the scale it draws
-    // at, a placement at 1, where a stage unit is a screen pixel. A read at a scale whose answer
-    // is not kept measures a label, or a hidden one of its own where the layer holds none — the
-    // labels a draw is about to write not being in the document yet.
-    moduleLabelHeight(scale) {
-      const kept = this.labelHeights.get(scale);
-      if (kept !== void 0) return kept;
+    // The height of a module's label in screen pixels. The label is counter-scaled, so it measures
+    // the same on screen at every zoom and one reading answers for all of them; a caller working
+    // in stage units divides by the scale it works at. A read that finds no label measures a
+    // hidden one of its own, the labels a draw is about to write not being in the document yet.
+    moduleLabelPx() {
+      if (this.labelPx) return this.labelPx;
       const layer = this.framesLayer();
       if (!layer) return 0;
       let label = layer.querySelector(".module__title");
@@ -943,10 +940,10 @@
         probe.textContent = "M";
         label = layer.appendChild(probe);
       }
-      const height = label.getBoundingClientRect().height / scale;
+      const height = label.getBoundingClientRect().height;
       if (probe) probe.remove();
       if (!height) return 0;
-      this.labelHeights.set(scale, height);
+      this.labelPx = height;
       return height;
     },
     // The height of a group's header, or null for a group whose section carries none — the two
@@ -1102,7 +1099,7 @@
         if (!headerHeights.has(group)) headerHeights.set(group, this.headerHeightOf(group, 1));
         return headerHeights.get(group);
       };
-      const labelHeight = this.modules ? this.moduleLabelHeight(1) : null;
+      const labelHeight = this.modules ? this.moduleLabelPx() : null;
       const moduleHead = labelHeight === null ? 0 : frameHead(labelHeight, MODULE_TITLE_GAP, MODULE_PAD);
       const framesOf = (placed) => {
         const { moduleFrames, extents } = clusterFrames(
@@ -1158,16 +1155,18 @@
         const cluster = labelHeight !== null && node.dataset.module ? `${group || ""}|${node.dataset.module}` : null;
         const home = cluster === null ? null : frameBoxes.find((f) => f.cluster === cluster);
         const foreign = frameBoxes.filter(
-          (f) => f.kind === "module" ? f.group === (group || "") && f.cluster !== cluster : f.group !== group
+          (f) => f.kind === "module" ? f.cluster !== cluster : f.group !== group
         );
         const pad = group ? FRAME_PAD : 0;
+        const ownPad = cluster === null ? 0 : MODULE_PAD;
+        const ownHead = cluster === null ? 0 : moduleHead;
         const clearance = (other) => {
           if (!other.frame) return GAP_Y;
-          return other.kind === "module" ? MODULE_PAD + GAP_Y : pad + GAP_Y;
+          return other.kind === "module" ? MODULE_PAD + GAP_Y : pad + ownPad + GAP_Y;
         };
         const headPast = (other) => {
           if (!other.frame) return 0;
-          return other.kind === "module" ? moduleHead : head;
+          return other.kind === "module" ? moduleHead : head + ownHead;
         };
         let x, y;
         if (opener) {
@@ -1205,7 +1204,7 @@
           } else {
             const bottoms = occupied.map((b) => b.bottom).concat(frameBoxes.map((f) => f.bottom));
             x = 0;
-            y = (bottoms.length === 0 ? 0 : Math.max(...bottoms) + GAP_Y) + head;
+            y = (bottoms.length === 0 ? 0 : Math.max(...bottoms) + GAP_Y) + head + ownHead;
           }
         }
         const obstacles = occupied.concat(foreign);
@@ -1235,8 +1234,8 @@
           const spots = [];
           for (const at of [
             { x: home.right + GAP_X, y: band },
-            { x: home.left + MODULE_PAD, y: home.bottom + GAP_Y + moduleHead },
-            { x: home.left + MODULE_PAD, y: home.top - GAP_Y - m.height - MODULE_PAD },
+            { x: home.left + MODULE_PAD, y: home.bottom - MODULE_PAD + GAP_Y },
+            { x: home.left + MODULE_PAD, y: home.top + moduleHead - GAP_Y - m.height },
             { x: home.left - GAP_X - m.width, y: band }
           ]) {
             const from = {

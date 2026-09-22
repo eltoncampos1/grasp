@@ -122,9 +122,8 @@ const Canvas = {
     // and the draw that ends mount covers the first frame; seeding the scale keeps that first
     // frame from being drawn twice.
     this.drawnScale = this.view.scale
-    // The height of a module's label in stage units, kept against the scale it was read at:
-    // a draw reads it at the scale it draws at, a placement at 1.
-    this.labelHeights = new Map()
+    // The height of a module's label in screen pixels, one number for every zoom.
+    this.labelPx = 0
     // The scale the rule on #stage carries, and whether the heights about to be reported are
     // the same cards measured again rather than cards that grew.
     this.styledScale = this.view.scale
@@ -1023,7 +1022,7 @@ const Canvas = {
       })
     }
     // Every label is one line of one counter-scaled rule, so one height answers for the lot.
-    const labelHeight = this.modules ? this.moduleLabelHeight(scale) : null
+    const labelHeight = this.modules ? this.moduleLabelPx() / scale : null
     const {moduleFrames, extents} = clusterFrames(cards, labelHeight, MODULE_TITLE_GAP / scale)
     // Every box is read before the first header is moved. Writing `translate` invalidates the
     // layout, so a loop that measured one section and then moved its header would force a
@@ -1100,15 +1099,12 @@ const Canvas = {
     return this.frameLayer
   },
 
-  // The height of a module's label in stage units at `scale`. The label is counter-scaled, so
-  // it measures one size on screen at every zoom and a different number of stage units at each,
-  // and each answer is kept against the scale it was read at: a draw asks at the scale it draws
-  // at, a placement at 1, where a stage unit is a screen pixel. A read at a scale whose answer
-  // is not kept measures a label, or a hidden one of its own where the layer holds none — the
-  // labels a draw is about to write not being in the document yet.
-  moduleLabelHeight(scale) {
-    const kept = this.labelHeights.get(scale)
-    if (kept !== undefined) return kept
+  // The height of a module's label in screen pixels. The label is counter-scaled, so it measures
+  // the same on screen at every zoom and one reading answers for all of them; a caller working
+  // in stage units divides by the scale it works at. A read that finds no label measures a
+  // hidden one of its own, the labels a draw is about to write not being in the document yet.
+  moduleLabelPx() {
+    if (this.labelPx) return this.labelPx
     const layer = this.framesLayer()
     if (!layer) return 0
     let label = layer.querySelector(".module__title")
@@ -1120,12 +1116,12 @@ const Canvas = {
       probe.textContent = "M"
       label = layer.appendChild(probe)
     }
-    const height = label.getBoundingClientRect().height / scale
+    const height = label.getBoundingClientRect().height
     if (probe) probe.remove()
     // A layer the browser gives no box has nothing to say about a label's height, and a zero
     // is not an answer to keep.
     if (!height) return 0
-    this.labelHeights.set(scale, height)
+    this.labelPx = height
     return height
   },
 
@@ -1365,7 +1361,7 @@ const Canvas = {
     // rather than round its cards, so the pass is kept clear of the rectangles the reader sees;
     // with the clusters undrawn there are no module frames and a flow frame closes round the
     // cards themselves.
-    const labelHeight = this.modules ? this.moduleLabelHeight(1) : null
+    const labelHeight = this.modules ? this.moduleLabelPx() : null
     const moduleHead =
       labelHeight === null ? 0 : frameHead(labelHeight, MODULE_TITLE_GAP, MODULE_PAD)
     const framesOf = (placed) => {
@@ -1445,30 +1441,38 @@ const Canvas = {
           ? `${group || ""}|${node.dataset.module}`
           : null
       const home = cluster === null ? null : frameBoxes.find((f) => f.cluster === cluster)
-      // The frames a card of this section is placed clear of: the sections that are not its
-      // own, and inside its own section the clusters that are not its own. Its own section's
-      // frame and its own cluster's are not among them — a card belongs inside both, and each
-      // grows round it where it lands.
+      // The frames a card is placed clear of: the sections that are not its own, and the
+      // clusters that are not its own wherever they stand, since a cluster of the groupless
+      // section has no flow frame round it to stand in for it. Its own section's frame and its
+      // own cluster's are not among them — a card belongs inside both, and each grows round it
+      // where it lands.
       const foreign = frameBoxes.filter((f) =>
-        f.kind === "module"
-          ? f.group === (group || "") && f.cluster !== cluster
-          : f.group !== group,
+        f.kind === "module" ? f.cluster !== cluster : f.group !== group,
       )
       // The room the card leaves an obstacle: the placement gap against another card, and
-      // against a frame that gap plus the padding the card's own frame of that kind takes
-      // beyond it, so the frame the card grows ends GAP_Y clear of its neighbour rather than
-      // touching it. A card in no group grows no section frame and so takes no padding with it;
-      // a module frame takes the same padding on every card, its section included.
+      // against a frame that gap plus what the card's own frames reach beyond it on that side,
+      // so the frames the card grows end GAP_Y clear of their neighbour rather than cutting into
+      // it. Past another section's frame both of the card's own frames count, its cluster's
+      // inside its section's; past another cluster's only the cluster's, since the two stand
+      // inside one section frame that neither has to clear. A card in no group grows no section
+      // frame, and a card that joins no cluster grows no module frame, so each takes nothing
+      // where it has nothing.
       const pad = group ? FRAME_PAD : 0
+      const ownPad = cluster === null ? 0 : MODULE_PAD
+      const ownHead = cluster === null ? 0 : moduleHead
       const clearance = (other) => {
         if (!other.frame) return GAP_Y
-        return other.kind === "module" ? MODULE_PAD + GAP_Y : pad + GAP_Y
+        return other.kind === "module" ? MODULE_PAD + GAP_Y : pad + ownPad + GAP_Y
       }
-      // The allowance a drop past a frame carries: the head of the card's own frame of that
-      // kind, since that is the frame that has to clear the one the card dropped past.
+      // The allowance a drop past a frame carries: the head the card's own frames leave above
+      // it on that side, since those are the frames that have to clear the one the card dropped
+      // past. It is at least the padding the same sides carry — `head >= pad` and
+      // `ownHead >= ownPad`, each by a title and its gap — so a drop always lands at or beyond
+      // the clearance it is tested against, which is what keeps a sweep moving in one
+      // direction and so ending.
       const headPast = (other) => {
         if (!other.frame) return 0
-        return other.kind === "module" ? moduleHead : head
+        return other.kind === "module" ? moduleHead : head + ownHead
       }
       let x, y
       if (opener) {
@@ -1524,34 +1528,36 @@ const Canvas = {
         } else {
           // The first card of a section starts below everything on the stage — every card and
           // every frame — at the stage's left edge, so a section is a band of its own rather
-          // than a column beside the sections already laid out. The header allowance above it
-          // is what leaves the frame's own top clear of the frame above by GAP_Y, and, with
-          // nothing placed at all, what keeps the first title on the stage instead of above
-          // its corner.
+          // than a column beside the sections already laid out. The allowance above it is the
+          // head of every frame that will close over it, its cluster's inside its section's,
+          // which is what leaves the section frame's own top clear of the frame above by GAP_Y,
+          // and, with nothing placed at all, what keeps the first title on the stage instead of
+          // above its corner.
           const bottoms = occupied.map((b) => b.bottom).concat(frameBoxes.map((f) => f.bottom))
           x = 0
-          y = (bottoms.length === 0 ? 0 : Math.max(...bottoms) + GAP_Y) + head
+          y = (bottoms.length === 0 ? 0 : Math.max(...bottoms) + GAP_Y) + head + ownHead
         }
       }
 
       // Nothing is ever laid on top of anything: a card that would land on an occupied box, or
-      // inside the frame of a section that is not its own, moves clear of it, and clear of
-      // whatever that move ran it into next. A move downwards past another section's frame
-      // carries the card's own header allowance, so the frame that grows round the card clears
-      // the one it passed by GAP_Y rather than cutting into it — the allowance is at least the
-      // padding that frame takes, so the move lands the card outside the clearance it is tested
-      // against. Upwards no allowance is needed: the card's own frame extends FRAME_PAD below
-      // it, which is the padding `clearance` already carries for a frame obstacle on top of
-      // GAP_Y, so a bottom set at `other.top - clearance(other)` leaves the two frames GAP_Y
-      // apart. A move past a card is the card's own gap either way. Card and frame agree
-      // where a card of another section is the obstacle, since that card's frame holds it and
-      // is an obstacle as well, and the sweep that follows the move past the card finds the
-      // frame it is still inside.
+      // inside a frame that is not its own, moves clear of it, and clear of whatever that move
+      // ran it into next. A move downwards past a frame carries `headPast`, the head the card's
+      // own frames leave above it on that side, so the frames that grow round the card clear the
+      // one it passed by GAP_Y rather than cutting into it — that head is at least the padding
+      // the same frames take below, which is what `clearance` carries, so the move lands the
+      // card outside the clearance it is tested against. Upwards no allowance is needed: what
+      // the card's own frames extend below it is exactly that padding, so a bottom set at
+      // `other.top - clearance(other)` leaves the frames GAP_Y apart. Sideways the clearance is
+      // the whole of it, and a card that comes to rest against it ends the same GAP_Y clear. A
+      // move past a card is the card's own gap either way, and card and frame agree where the
+      // obstacle is a card of another section, since the frames holding that card are obstacles
+      // as well and the sweep that follows the move past it finds the frame it is still inside.
       //
       // Each move within a sweep is strictly in the sweep's direction — downwards the top only
       // grows, upwards the bottom only shrinks — so a sweep runs out of obstacles within one
       // iteration per obstacle, the bound holding for either direction by the same argument
-      // mirrored.
+      // mirrored. With the clusters undrawn the card's own cluster allowances are zero and
+      // every one of these lengths is the section's alone.
       //
       // A callee is swept four ways from the ideal box beside its opener: down and up in the
       // ideal column, and down and up in the column one card width and GAP_X to the right. The
@@ -1572,8 +1578,10 @@ const Canvas = {
       // of that module belongs in the block rather than beside the call. The ideal spot still
       // decides among the four: it is the only thing that says where the call the card was
       // opened from stands, so of the four ways round the cluster the card takes the one that
-      // leaves it nearest its call. A card whose module has nothing down yet is placed by the
-      // ordinary rule, and so is a root either way.
+      // leaves it nearest its call. Below and above the frame the card owes the cards inside it
+      // one GAP_Y and nothing more, because it is joining that frame rather than clearing it.
+      // A card whose module has nothing down yet is placed by the ordinary rule, and so is a
+      // root either way.
       const obstacles = occupied.concat(foreign)
       const sweep = (start, direction) => {
         const swept = {...start}
@@ -1598,16 +1606,17 @@ const Canvas = {
       let box
       if (home && (opener || calls)) {
         // Beside the cluster the card keeps the line of its call, clamped into the frame's own
-        // band so that it stands against the cluster rather than off one of its corners; below
-        // and above it takes the frame's left edge inside the padding, and carries the head its
-        // own module frame leaves going down and that frame's padding going up, which is what
-        // a sweep past any frame carries in either direction.
+        // band so that it stands against the cluster rather than off one of its corners. Below
+        // and above, the card is joining the frame rather than clearing it, so it owes the
+        // cards inside one gap and no more: it takes the column the leftmost of them starts,
+        // one GAP_Y under the lowest or over the highest, which is what one card of a cluster
+        // owes another.
         const band = Math.max(home.top, Math.min(ideal.top, home.bottom - m.height))
         const spots = []
         for (const at of [
           {x: home.right + GAP_X, y: band},
-          {x: home.left + MODULE_PAD, y: home.bottom + GAP_Y + moduleHead},
-          {x: home.left + MODULE_PAD, y: home.top - GAP_Y - m.height - MODULE_PAD},
+          {x: home.left + MODULE_PAD, y: home.bottom - MODULE_PAD + GAP_Y},
+          {x: home.left + MODULE_PAD, y: home.top + moduleHead - GAP_Y - m.height},
           {x: home.left - GAP_X - m.width, y: band},
         ]) {
           const from = {
