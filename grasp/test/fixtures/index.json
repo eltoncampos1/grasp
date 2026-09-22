@@ -175,11 +175,11 @@
           "range": {
             "end": [
               8,
-              47
+              53
             ],
             "start": [
               8,
-              24
+              30
             ]
           },
           "target": "SampleApp.Greeter.greet/1"
@@ -188,13 +188,13 @@
       "change": "unchanged",
       "file": "lib/sample_app/audited.ex",
       "hidden_calls": [],
-      "id": "SampleApp.Audited.greet/1",
+      "id": "SampleApp.Audited.leave_trail/1",
       "kind": "def",
       "module": "SampleApp.Audited",
-      "name": "greet",
+      "name": "leave_trail",
       "removed": false,
       "route_sites": [],
-      "source": "  @doc \"Greets and leaves a trail.\"\n  @spec greet(String.t()) :: String.t()\n  @decorate :trace\n  def greet(name), do: SampleApp.Greeter.greet(name)",
+      "source": "  @doc \"Leaves a trail behind a greeting.\"\n  @spec leave_trail(String.t()) :: String.t()\n  @decorate :trace\n  def leave_trail(name), do: SampleApp.Greeter.greet(name)",
       "span": {
         "end_line": 8,
         "start_line": 5

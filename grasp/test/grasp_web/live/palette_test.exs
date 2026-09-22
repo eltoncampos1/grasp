@@ -4,7 +4,6 @@ defmodule GraspWeb.PaletteTest do
   alias Grasp.Session
 
   @greet "SampleApp.Greeter.greet/2"
-  @audited "SampleApp.Audited.greet/1"
   @greet_all "SampleApp.Greeter.greet_all/1"
   @wrap "SampleApp.Formatter.wrap/1"
   @shout "SampleApp.Formatter.shout/1"
@@ -69,7 +68,7 @@ defmodule GraspWeb.PaletteTest do
     render_hook(view, "palette_show", %{})
     search(view, "e")
 
-    for _ <- 1..4, do: render_hook(view, "palette_move", %{"delta" => 1})
+    for _ <- 1..3, do: render_hook(view, "palette_move", %{"delta" => 1})
     assert has_element?(view, "#palette-results li[data-id='#{@shout}'][aria-selected='true']")
 
     render_hook(view, "palette_choose", %{"child" => false})
@@ -83,9 +82,9 @@ defmodule GraspWeb.PaletteTest do
     search(view, "greet")
 
     render_hook(view, "palette_move", %{"delta" => -1})
-    assert has_element?(view, "#palette-results li[data-id='#{@audited}'][aria-selected='true']")
+    assert has_element?(view, "#palette-results li[data-id='#{@greet}'][aria-selected='true']")
 
-    for _ <- 1..20, do: render_hook(view, "palette_move", %{"delta" => 1})
+    for _ <- 1..10, do: render_hook(view, "palette_move", %{"delta" => 1})
 
     assert has_element?(
              view,
@@ -99,7 +98,7 @@ defmodule GraspWeb.PaletteTest do
     search(view, "greet")
     render_hook(view, "palette_choose", %{"q" => "greet"})
 
-    assert has_element?(view, "#node-1[data-depth='0'] #card-1[data-function-id='#{@audited}']")
+    assert has_element?(view, "#node-1[data-depth='0'] #card-1[data-function-id='#{@greet}']")
   end
 
   test "clicking a result opens it as a root and closes the palette", %{view: view} do
