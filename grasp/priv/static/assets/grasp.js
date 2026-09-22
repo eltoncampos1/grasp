@@ -146,8 +146,7 @@
       this.passes = 0;
       this.pendingReveal = null;
       this.drawnScale = this.view.scale;
-      this.labelHeight = 0;
-      this.labelScale = null;
+      this.labelHeights = /* @__PURE__ */ new Map();
       this.styledScale = this.view.scale;
       this.remeasure = false;
       this.remeasureFrame = null;
@@ -843,56 +842,28 @@
     // The rectangles kept in this.frames are the sections' alone, which is what a drop is tested
     // against: a module frame changes no membership. Answers whether it drew.
     drawFrames() {
-      if (!this.frameLayer?.isConnected) this.frameLayer = this.el.querySelector("#frames");
-      if (!this.frameLayer) return false;
+      if (!this.framesLayer()) return false;
       const s = this.stage.getBoundingClientRect();
       const { scale } = this.view;
       const titleGap = FRAME_TITLE_GAP / scale;
       this.frames = [];
       const divs = [];
-      const clusters = /* @__PURE__ */ new Map();
+      const cards = [];
       for (const node of this.el.querySelectorAll(".node:not([data-unplaced])")) {
         const card = node.querySelector(".card");
         const b = card && card.getBoundingClientRect();
         if (!b || !b.width && !b.height) continue;
-        const group = node.dataset.group || "";
-        const module = node.dataset.module || "";
-        const key = `${group}|${module}`;
-        const e = clusters.get(key) || {
-          group,
-          module,
-          left: Infinity,
-          top: Infinity,
-          right: -Infinity,
-          bottom: -Infinity
-        };
-        e.left = Math.min(e.left, (b.left - s.left) / scale);
-        e.top = Math.min(e.top, (b.top - s.top) / scale);
-        e.right = Math.max(e.right, (b.right - s.left) / scale);
-        e.bottom = Math.max(e.bottom, (b.bottom - s.top) / scale);
-        clusters.set(key, e);
+        cards.push({
+          group: node.dataset.group || "",
+          module: node.dataset.module || "",
+          left: (b.left - s.left) / scale,
+          top: (b.top - s.top) / scale,
+          right: (b.right - s.left) / scale,
+          bottom: (b.bottom - s.top) / scale
+        });
       }
       const labelHeight = this.modules ? this.moduleLabelHeight(scale) : null;
-      const moduleGap = MODULE_TITLE_GAP / scale;
-      const extents = /* @__PURE__ */ new Map();
-      const moduleFrames = [];
-      for (const cluster of clusters.values()) {
-        const framed = this.modules && cluster.module !== "";
-        const box = framed ? frameAround(cluster, labelHeight, moduleGap, MODULE_PAD) : cluster;
-        if (framed) moduleFrames.push({ ...box, group: cluster.group, module: cluster.module });
-        if (!cluster.group) continue;
-        const e = extents.get(cluster.group) || {
-          left: Infinity,
-          top: Infinity,
-          right: -Infinity,
-          bottom: -Infinity
-        };
-        e.left = Math.min(e.left, box.left);
-        e.top = Math.min(e.top, box.top);
-        e.right = Math.max(e.right, box.right);
-        e.bottom = Math.max(e.bottom, box.bottom);
-        extents.set(cluster.group, e);
-      }
+      const { moduleFrames, extents } = clusterFrames(cards, labelHeight, MODULE_TITLE_GAP / scale);
       const sections = [];
       for (const flow of this.el.querySelectorAll(".flow[data-grouped]")) {
         const title = flow.querySelector(".flow__title");
@@ -937,36 +908,45 @@
         );
       }
       for (const frame of moduleFrames) {
-        const cluster = `${frame.group}|${frame.module}`;
         divs.push(
-          `<div class="frame frame--module" data-cluster="${attr(cluster)}" style="left:${frame.left}px;top:${frame.top}px;width:${frame.right - frame.left}px;height:${frame.bottom - frame.top}px"></div>`,
+          `<div class="frame frame--module" style="left:${frame.left}px;top:${frame.top}px;width:${frame.right - frame.left}px;height:${frame.bottom - frame.top}px"></div>`,
           `<div class="module__title" data-group="${attr(frame.group)}" data-module="${attr(frame.module)}" style="left:${frame.left + MODULE_PAD}px;top:${frame.top + MODULE_PAD}px">${attr(frame.module)}</div>`
         );
       }
       this.frameLayer.innerHTML = divs.join("");
       return true;
     },
+    // The layer the frames and their labels are written into. It lives in a phx-update="ignore"
+    // subtree and so normally outlives every patch; were one ever to replace it, a cached node
+    // would go on collecting frames nothing renders.
+    framesLayer() {
+      if (!this.frameLayer?.isConnected) this.frameLayer = this.el.querySelector("#frames");
+      return this.frameLayer;
+    },
     // The height of a module's label in stage units at `scale`. The label is counter-scaled, so
     // it measures one size on screen at every zoom and a different number of stage units at each,
-    // and the answer is kept against the scale it was read at. A draw that finds no label — the
-    // first one, or the first after the clusters were turned back on — measures a hidden one, the
-    // labels the draw is about to write not being in the document yet.
+    // and each answer is kept against the scale it was read at: a draw asks at the scale it draws
+    // at, a placement at 1, where a stage unit is a screen pixel. A read at a scale whose answer
+    // is not kept measures a label, or a hidden one of its own where the layer holds none — the
+    // labels a draw is about to write not being in the document yet.
     moduleLabelHeight(scale) {
-      if (this.labelScale === scale) return this.labelHeight;
-      let label = this.frameLayer.querySelector(".module__title");
+      const kept = this.labelHeights.get(scale);
+      if (kept !== void 0) return kept;
+      const layer = this.framesLayer();
+      if (!layer) return 0;
+      let label = layer.querySelector(".module__title");
       let probe = null;
       if (!label) {
         probe = document.createElement("div");
         probe.className = "module__title";
         probe.style.visibility = "hidden";
         probe.textContent = "M";
-        label = this.frameLayer.appendChild(probe);
+        label = layer.appendChild(probe);
       }
       const height = label.getBoundingClientRect().height / scale;
       if (probe) probe.remove();
-      if (!height) return this.labelHeight;
-      this.labelScale = scale;
-      this.labelHeight = height;
+      if (!height) return 0;
+      this.labelHeights.set(scale, height);
       return height;
     },
     // The height of a group's header, or null for a group whose section carries none — the two
@@ -1122,28 +1102,40 @@
         if (!headerHeights.has(group)) headerHeights.set(group, this.headerHeightOf(group, 1));
         return headerHeights.get(group);
       };
+      const labelHeight = this.modules ? this.moduleLabelHeight(1) : null;
+      const moduleHead = labelHeight === null ? 0 : frameHead(labelHeight, MODULE_TITLE_GAP, MODULE_PAD);
       const framesOf = (placed) => {
-        const extents = /* @__PURE__ */ new Map();
-        for (const b of placed) {
-          const group = b.node.dataset.group;
-          if (!group) continue;
-          const e = extents.get(group) || {
-            left: Infinity,
-            top: Infinity,
-            right: -Infinity,
-            bottom: -Infinity
-          };
-          e.left = Math.min(e.left, b.left);
-          e.top = Math.min(e.top, b.top);
-          e.right = Math.max(e.right, b.right);
-          e.bottom = Math.max(e.bottom, b.bottom);
-          extents.set(group, e);
-        }
-        return [...extents].map(([group, e]) => ({
+        const { moduleFrames, extents } = clusterFrames(
+          placed.map((b) => ({
+            group: b.node.dataset.group || "",
+            module: b.node.dataset.module || "",
+            left: b.left,
+            top: b.top,
+            right: b.right,
+            bottom: b.bottom
+          })),
+          labelHeight,
+          MODULE_TITLE_GAP
+        );
+        const frames = [...extents].map(([group, e]) => ({
           group,
           frame: true,
+          kind: "flow",
           ...frameAround(e, headerHeightFor(group), FRAME_TITLE_GAP, FRAME_PAD)
         }));
+        for (const f of moduleFrames) {
+          frames.push({
+            group: f.group,
+            cluster: `${f.group}|${f.module}`,
+            frame: true,
+            kind: "module",
+            left: f.left,
+            top: f.top,
+            right: f.right,
+            bottom: f.bottom
+          });
+        }
+        return frames;
       };
       let frameBoxes = framesOf(occupied);
       unplaced.sort(
@@ -1163,9 +1155,20 @@
           return !!callee && callee.dataset.group === group && boxes.has(callee);
         });
         const head = group ? frameHead(headerHeightFor(group), FRAME_TITLE_GAP, FRAME_PAD) : 0;
-        const foreign = frameBoxes.filter((f) => f.group !== group);
+        const cluster = labelHeight !== null && node.dataset.module ? `${group || ""}|${node.dataset.module}` : null;
+        const home = cluster === null ? null : frameBoxes.find((f) => f.cluster === cluster);
+        const foreign = frameBoxes.filter(
+          (f) => f.kind === "module" ? f.group === (group || "") && f.cluster !== cluster : f.group !== group
+        );
         const pad = group ? FRAME_PAD : 0;
-        const clearance = (other) => other.frame ? pad + GAP_Y : GAP_Y;
+        const clearance = (other) => {
+          if (!other.frame) return GAP_Y;
+          return other.kind === "module" ? MODULE_PAD + GAP_Y : pad + GAP_Y;
+        };
+        const headPast = (other) => {
+          if (!other.frame) return 0;
+          return other.kind === "module" ? moduleHead : head;
+        };
         let x, y;
         if (opener) {
           const box2 = boxes.get(opener.node);
@@ -1213,7 +1216,7 @@
             for (const other of obstacles) {
               if (!overlaps(swept, other, clearance(other))) continue;
               if (direction === "down") {
-                swept.top = other.bottom + GAP_Y + (other.frame ? head : 0);
+                swept.top = other.bottom + GAP_Y + headPast(other);
                 swept.bottom = swept.top + m.height;
               } else {
                 swept.bottom = other.top - clearance(other);
@@ -1227,7 +1230,35 @@
         };
         const ideal = { left: x, top: y, right: x + m.width, bottom: y + m.height, node };
         let box;
-        if (opener) {
+        if (home && (opener || calls)) {
+          const band = Math.max(home.top, Math.min(ideal.top, home.bottom - m.height));
+          const spots = [];
+          for (const at of [
+            { x: home.right + GAP_X, y: band },
+            { x: home.left + MODULE_PAD, y: home.bottom + GAP_Y + moduleHead },
+            { x: home.left + MODULE_PAD, y: home.top - GAP_Y - m.height - MODULE_PAD },
+            { x: home.left - GAP_X - m.width, y: band }
+          ]) {
+            const from = {
+              left: at.x,
+              top: at.y,
+              right: at.x + m.width,
+              bottom: at.y + m.height,
+              node
+            };
+            spots.push([from, "down"], [from, "up"]);
+          }
+          let nearest = Infinity;
+          for (const [from, direction] of spots) {
+            const settled = sweep(from, direction);
+            const away = Math.hypot(settled.left - ideal.left, settled.top - ideal.top);
+            if (away < nearest) {
+              nearest = away;
+              box = settled;
+            }
+            if (nearest === 0) break;
+          }
+        } else if (opener) {
           const over = m.width + GAP_X;
           const next = { ...ideal, left: ideal.left + over, right: ideal.right + over };
           let nearest = Infinity;
@@ -1448,6 +1479,45 @@
       right: extent.right + pad,
       bottom: extent.bottom + pad
     };
+  }
+  function clusterFrames(cards, labelHeight, moduleGap) {
+    const clusters = /* @__PURE__ */ new Map();
+    for (const { group, module, left, top, right, bottom } of cards) {
+      const key = `${group}|${module}`;
+      const e = clusters.get(key) || {
+        group,
+        module,
+        left: Infinity,
+        top: Infinity,
+        right: -Infinity,
+        bottom: -Infinity
+      };
+      e.left = Math.min(e.left, left);
+      e.top = Math.min(e.top, top);
+      e.right = Math.max(e.right, right);
+      e.bottom = Math.max(e.bottom, bottom);
+      clusters.set(key, e);
+    }
+    const moduleFrames = [];
+    const extents = /* @__PURE__ */ new Map();
+    for (const cluster of clusters.values()) {
+      const framed = labelHeight !== null && cluster.module !== "";
+      const box = framed ? frameAround(cluster, labelHeight, moduleGap, MODULE_PAD) : cluster;
+      if (framed) moduleFrames.push({ ...box, group: cluster.group, module: cluster.module });
+      if (!cluster.group) continue;
+      const e = extents.get(cluster.group) || {
+        left: Infinity,
+        top: Infinity,
+        right: -Infinity,
+        bottom: -Infinity
+      };
+      e.left = Math.min(e.left, box.left);
+      e.top = Math.min(e.top, box.top);
+      e.right = Math.max(e.right, box.right);
+      e.bottom = Math.max(e.bottom, box.bottom);
+      extents.set(cluster.group, e);
+    }
+    return { moduleFrames, extents };
   }
   function sortGroup(node) {
     return node.dataset.group === "" ? Number.MAX_SAFE_INTEGER : Number(node.dataset.group);

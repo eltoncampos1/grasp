@@ -122,9 +122,9 @@ const Canvas = {
     // and the draw that ends mount covers the first frame; seeding the scale keeps that first
     // frame from being drawn twice.
     this.drawnScale = this.view.scale
-    // The height of a module's label, in stage units, and the scale it was read at.
-    this.labelHeight = 0
-    this.labelScale = null
+    // The height of a module's label in stage units, kept against the scale it was read at:
+    // a draw reads it at the scale it draws at, a placement at 1.
+    this.labelHeights = new Map()
     // The scale the rule on #stage carries, and whether the heights about to be reported are
     // the same cards measured again rather than cards that grew.
     this.styledScale = this.view.scale
@@ -993,10 +993,7 @@ const Canvas = {
   // The rectangles kept in this.frames are the sections' alone, which is what a drop is tested
   // against: a module frame changes no membership. Answers whether it drew.
   drawFrames() {
-    // The layer lives in a phx-update="ignore" subtree and so normally outlives every patch;
-    // were one ever to replace it, a cached node would go on collecting frames nothing renders.
-    if (!this.frameLayer?.isConnected) this.frameLayer = this.el.querySelector("#frames")
-    if (!this.frameLayer) return false
+    if (!this.framesLayer()) return false
     const s = this.stage.getBoundingClientRect()
     const {scale} = this.view
     const titleGap = FRAME_TITLE_GAP / scale
@@ -1009,54 +1006,25 @@ const Canvas = {
     // The cards are gathered per cluster — the module a card names inside the group it names,
     // which is what a module frame is drawn round — and a section's extent is the union of its
     // clusters. Until the clusters are drawn that union is the union of the cards themselves.
-    const clusters = new Map()
+    const cards = []
     for (const node of this.el.querySelectorAll(".node:not([data-unplaced])")) {
       const card = node.querySelector(".card")
       // A card the browser gives no box — inside a subtree that is not displayed — says
       // nothing about where the frame round it goes.
       const b = card && card.getBoundingClientRect()
       if (!b || (!b.width && !b.height)) continue
-      const group = node.dataset.group || ""
-      const module = node.dataset.module || ""
-      const key = `${group}|${module}`
-      const e = clusters.get(key) || {
-        group,
-        module,
-        left: Infinity,
-        top: Infinity,
-        right: -Infinity,
-        bottom: -Infinity,
-      }
-      e.left = Math.min(e.left, (b.left - s.left) / scale)
-      e.top = Math.min(e.top, (b.top - s.top) / scale)
-      e.right = Math.max(e.right, (b.right - s.left) / scale)
-      e.bottom = Math.max(e.bottom, (b.bottom - s.top) / scale)
-      clusters.set(key, e)
+      cards.push({
+        group: node.dataset.group || "",
+        module: node.dataset.module || "",
+        left: (b.left - s.left) / scale,
+        top: (b.top - s.top) / scale,
+        right: (b.right - s.left) / scale,
+        bottom: (b.bottom - s.top) / scale,
+      })
     }
     // Every label is one line of one counter-scaled rule, so one height answers for the lot.
     const labelHeight = this.modules ? this.moduleLabelHeight(scale) : null
-    const moduleGap = MODULE_TITLE_GAP / scale
-    const extents = new Map()
-    const moduleFrames = []
-    for (const cluster of clusters.values()) {
-      // A card whose id names no module clusters with nothing and closes its section's frame
-      // the way any card does.
-      const framed = this.modules && cluster.module !== ""
-      const box = framed ? frameAround(cluster, labelHeight, moduleGap, MODULE_PAD) : cluster
-      if (framed) moduleFrames.push({...box, group: cluster.group, module: cluster.module})
-      if (!cluster.group) continue
-      const e = extents.get(cluster.group) || {
-        left: Infinity,
-        top: Infinity,
-        right: -Infinity,
-        bottom: -Infinity,
-      }
-      e.left = Math.min(e.left, box.left)
-      e.top = Math.min(e.top, box.top)
-      e.right = Math.max(e.right, box.right)
-      e.bottom = Math.max(e.bottom, box.bottom)
-      extents.set(cluster.group, e)
-    }
+    const {moduleFrames, extents} = clusterFrames(cards, labelHeight, MODULE_TITLE_GAP / scale)
     // Every box is read before the first header is moved. Writing `translate` invalidates the
     // layout, so a loop that measured one section and then moved its header would force a
     // reflow per section on every pointermove of a drag.
@@ -1113,9 +1081,8 @@ const Canvas = {
     // top-left inside the padding, which is where the head the frame leaves above the cards
     // begins, and carries the cluster it names so that a drag on it finds the cards.
     for (const frame of moduleFrames) {
-      const cluster = `${frame.group}|${frame.module}`
       divs.push(
-        `<div class="frame frame--module" data-cluster="${attr(cluster)}" style="left:${frame.left}px;` +
+        `<div class="frame frame--module" style="left:${frame.left}px;` +
           `top:${frame.top}px;width:${frame.right - frame.left}px;height:${frame.bottom - frame.top}px"></div>`,
         `<div class="module__title" data-group="${attr(frame.group)}" data-module="${attr(frame.module)}" ` +
           `style="left:${frame.left + MODULE_PAD}px;top:${frame.top + MODULE_PAD}px">${attr(frame.module)}</div>`,
@@ -1125,29 +1092,40 @@ const Canvas = {
     return true
   },
 
+  // The layer the frames and their labels are written into. It lives in a phx-update="ignore"
+  // subtree and so normally outlives every patch; were one ever to replace it, a cached node
+  // would go on collecting frames nothing renders.
+  framesLayer() {
+    if (!this.frameLayer?.isConnected) this.frameLayer = this.el.querySelector("#frames")
+    return this.frameLayer
+  },
+
   // The height of a module's label in stage units at `scale`. The label is counter-scaled, so
   // it measures one size on screen at every zoom and a different number of stage units at each,
-  // and the answer is kept against the scale it was read at. A draw that finds no label — the
-  // first one, or the first after the clusters were turned back on — measures a hidden one, the
-  // labels the draw is about to write not being in the document yet.
+  // and each answer is kept against the scale it was read at: a draw asks at the scale it draws
+  // at, a placement at 1, where a stage unit is a screen pixel. A read at a scale whose answer
+  // is not kept measures a label, or a hidden one of its own where the layer holds none — the
+  // labels a draw is about to write not being in the document yet.
   moduleLabelHeight(scale) {
-    if (this.labelScale === scale) return this.labelHeight
-    let label = this.frameLayer.querySelector(".module__title")
+    const kept = this.labelHeights.get(scale)
+    if (kept !== undefined) return kept
+    const layer = this.framesLayer()
+    if (!layer) return 0
+    let label = layer.querySelector(".module__title")
     let probe = null
     if (!label) {
       probe = document.createElement("div")
       probe.className = "module__title"
       probe.style.visibility = "hidden"
       probe.textContent = "M"
-      label = this.frameLayer.appendChild(probe)
+      label = layer.appendChild(probe)
     }
     const height = label.getBoundingClientRect().height / scale
     if (probe) probe.remove()
     // A layer the browser gives no box has nothing to say about a label's height, and a zero
     // is not an answer to keep.
-    if (!height) return this.labelHeight
-    this.labelScale = scale
-    this.labelHeight = height
+    if (!height) return 0
+    this.labelHeights.set(scale, height)
     return height
   },
 
@@ -1364,9 +1342,11 @@ const Canvas = {
     }
 
     // The frame round a group is an obstacle to every card outside it, so the sections a pass
-    // lays out come out one below another instead of interleaving. The frames are read from the
-    // boxes rather than from the layer the hook draws into, because a card placed earlier in
-    // this pass has grown its group's frame and is not rendered anywhere yet.
+    // lays out come out one below another instead of interleaving, and the frame round a
+    // cluster is an obstacle to every card of the section that is not of that module, so the
+    // clusters of one section come out a gap apart. The frames are read from the boxes rather
+    // than from the layer the hook draws into, because a card placed earlier in this pass has
+    // grown its group's frame and is not rendered anywhere yet.
     //
     // The allowance is measured at scale 1, in screen pixels, and the gap is taken undivided:
     // a position the pass pushes is stored and read back at every zoom, so it must not depend
@@ -1380,28 +1360,46 @@ const Canvas = {
       if (!headerHeights.has(group)) headerHeights.set(group, this.headerHeightOf(group, 1))
       return headerHeights.get(group)
     }
+    // The head a module frame leaves above its cards, read in the screen pixels the flow heads
+    // are read in. While the clusters are drawn a flow frame closes round its module frames
+    // rather than round its cards, so the pass is kept clear of the rectangles the reader sees;
+    // with the clusters undrawn there are no module frames and a flow frame closes round the
+    // cards themselves.
+    const labelHeight = this.modules ? this.moduleLabelHeight(1) : null
+    const moduleHead =
+      labelHeight === null ? 0 : frameHead(labelHeight, MODULE_TITLE_GAP, MODULE_PAD)
     const framesOf = (placed) => {
-      const extents = new Map()
-      for (const b of placed) {
-        const group = b.node.dataset.group
-        if (!group) continue
-        const e = extents.get(group) || {
-          left: Infinity,
-          top: Infinity,
-          right: -Infinity,
-          bottom: -Infinity,
-        }
-        e.left = Math.min(e.left, b.left)
-        e.top = Math.min(e.top, b.top)
-        e.right = Math.max(e.right, b.right)
-        e.bottom = Math.max(e.bottom, b.bottom)
-        extents.set(group, e)
-      }
-      return [...extents].map(([group, e]) => ({
+      const {moduleFrames, extents} = clusterFrames(
+        placed.map((b) => ({
+          group: b.node.dataset.group || "",
+          module: b.node.dataset.module || "",
+          left: b.left,
+          top: b.top,
+          right: b.right,
+          bottom: b.bottom,
+        })),
+        labelHeight,
+        MODULE_TITLE_GAP,
+      )
+      const frames = [...extents].map(([group, e]) => ({
         group,
         frame: true,
+        kind: "flow",
         ...frameAround(e, headerHeightFor(group), FRAME_TITLE_GAP, FRAME_PAD),
       }))
+      for (const f of moduleFrames) {
+        frames.push({
+          group: f.group,
+          cluster: `${f.group}|${f.module}`,
+          frame: true,
+          kind: "module",
+          left: f.left,
+          top: f.top,
+          right: f.right,
+          bottom: f.bottom,
+        })
+      }
+      return frames
     }
     let frameBoxes = framesOf(occupied)
 
@@ -1439,15 +1437,39 @@ const Canvas = {
       // frame carries with it and which the first card of a section starts under. A card in no
       // group carries no frame and so no allowance.
       const head = group ? frameHead(headerHeightFor(group), FRAME_TITLE_GAP, FRAME_PAD) : 0
-      // The frames a card of this section is placed clear of. Its own is not among them: a card
-      // belongs inside the frame that grows round its section.
-      const foreign = frameBoxes.filter((f) => f.group !== group)
+      // The cluster the card joins — the module it names inside the section it names — and the
+      // frame round that cluster where the section already holds a card of it. A node that
+      // names no module, and every card while the clusters are undrawn, joins no cluster.
+      const cluster =
+        labelHeight !== null && node.dataset.module
+          ? `${group || ""}|${node.dataset.module}`
+          : null
+      const home = cluster === null ? null : frameBoxes.find((f) => f.cluster === cluster)
+      // The frames a card of this section is placed clear of: the sections that are not its
+      // own, and inside its own section the clusters that are not its own. Its own section's
+      // frame and its own cluster's are not among them — a card belongs inside both, and each
+      // grows round it where it lands.
+      const foreign = frameBoxes.filter((f) =>
+        f.kind === "module"
+          ? f.group === (group || "") && f.cluster !== cluster
+          : f.group !== group,
+      )
       // The room the card leaves an obstacle: the placement gap against another card, and
-      // against another section's frame that gap plus the padding the card's own frame takes
+      // against a frame that gap plus the padding the card's own frame of that kind takes
       // beyond it, so the frame the card grows ends GAP_Y clear of its neighbour rather than
-      // touching it. A card in no group grows no frame and so takes no padding with it.
+      // touching it. A card in no group grows no section frame and so takes no padding with it;
+      // a module frame takes the same padding on every card, its section included.
       const pad = group ? FRAME_PAD : 0
-      const clearance = (other) => (other.frame ? pad + GAP_Y : GAP_Y)
+      const clearance = (other) => {
+        if (!other.frame) return GAP_Y
+        return other.kind === "module" ? MODULE_PAD + GAP_Y : pad + GAP_Y
+      }
+      // The allowance a drop past a frame carries: the head of the card's own frame of that
+      // kind, since that is the frame that has to clear the one the card dropped past.
+      const headPast = (other) => {
+        if (!other.frame) return 0
+        return other.kind === "module" ? moduleHead : head
+      }
       let x, y
       if (opener) {
         // The callee stands off the opener's right edge, level with the call that opened it:
@@ -1543,6 +1565,15 @@ const Canvas = {
       //
       // A group that has been closed in on both sides — the row below it and the room beside it
       // both taken — grows round its neighbour when a card of it lands past that neighbour.
+      //
+      // A callee or caller whose module already stands in the section is swept from four spots
+      // against that cluster's frame instead of from the ideal box — to its right, below it,
+      // above it and to its left — because the cards of one module read as one block and a card
+      // of that module belongs in the block rather than beside the call. The ideal spot still
+      // decides among the four: it is the only thing that says where the call the card was
+      // opened from stands, so of the four ways round the cluster the card takes the one that
+      // leaves it nearest its call. A card whose module has nothing down yet is placed by the
+      // ordinary rule, and so is a root either way.
       const obstacles = occupied.concat(foreign)
       const sweep = (start, direction) => {
         const swept = {...start}
@@ -1551,7 +1582,7 @@ const Canvas = {
           for (const other of obstacles) {
             if (!overlaps(swept, other, clearance(other))) continue
             if (direction === "down") {
-              swept.top = other.bottom + GAP_Y + (other.frame ? head : 0)
+              swept.top = other.bottom + GAP_Y + headPast(other)
               swept.bottom = swept.top + m.height
             } else {
               swept.bottom = other.top - clearance(other)
@@ -1565,7 +1596,40 @@ const Canvas = {
       }
       const ideal = {left: x, top: y, right: x + m.width, bottom: y + m.height, node}
       let box
-      if (opener) {
+      if (home && (opener || calls)) {
+        // Beside the cluster the card keeps the line of its call, clamped into the frame's own
+        // band so that it stands against the cluster rather than off one of its corners; below
+        // and above it takes the frame's left edge inside the padding, and carries the head its
+        // own module frame leaves going down and that frame's padding going up, which is what
+        // a sweep past any frame carries in either direction.
+        const band = Math.max(home.top, Math.min(ideal.top, home.bottom - m.height))
+        const spots = []
+        for (const at of [
+          {x: home.right + GAP_X, y: band},
+          {x: home.left + MODULE_PAD, y: home.bottom + GAP_Y + moduleHead},
+          {x: home.left + MODULE_PAD, y: home.top - GAP_Y - m.height - MODULE_PAD},
+          {x: home.left - GAP_X - m.width, y: band},
+        ]) {
+          const from = {
+            left: at.x,
+            top: at.y,
+            right: at.x + m.width,
+            bottom: at.y + m.height,
+            node,
+          }
+          spots.push([from, "down"], [from, "up"])
+        }
+        let nearest = Infinity
+        for (const [from, direction] of spots) {
+          const settled = sweep(from, direction)
+          const away = Math.hypot(settled.left - ideal.left, settled.top - ideal.top)
+          if (away < nearest) {
+            nearest = away
+            box = settled
+          }
+          if (nearest === 0) break
+        }
+      } else if (opener) {
         const over = m.width + GAP_X
         const next = {...ideal, left: ideal.left + over, right: ideal.right + over}
         let nearest = Infinity
@@ -1857,6 +1921,58 @@ function frameAround(extent, headerHeight, titleGap, pad) {
     right: extent.right + pad,
     bottom: extent.bottom + pad,
   }
+}
+
+// The clusters a set of cards falls into — one per module named inside one group — as the frame
+// round each and the extent each group's frame is to close round. With a `labelHeight` the
+// clusters are drawn, so a group's extent is the union of its module frames and a flow frame
+// closes round its modules; without one there are no module frames and the extent is the union
+// of the cards themselves. `labelHeight` and `moduleGap` are the head a module frame leaves
+// above its cards, in whatever units the cards are given in — stage units for a draw, screen
+// pixels for a placement.
+//
+// Drawing the frames and placing a card share this so that the rectangle a placement keeps
+// clear of is the rectangle the reader sees.
+function clusterFrames(cards, labelHeight, moduleGap) {
+  const clusters = new Map()
+  for (const {group, module, left, top, right, bottom} of cards) {
+    const key = `${group}|${module}`
+    const e = clusters.get(key) || {
+      group,
+      module,
+      left: Infinity,
+      top: Infinity,
+      right: -Infinity,
+      bottom: -Infinity,
+    }
+    e.left = Math.min(e.left, left)
+    e.top = Math.min(e.top, top)
+    e.right = Math.max(e.right, right)
+    e.bottom = Math.max(e.bottom, bottom)
+    clusters.set(key, e)
+  }
+  const moduleFrames = []
+  const extents = new Map()
+  for (const cluster of clusters.values()) {
+    // The empty module is what a node rendered without the attribute falls back to; it clusters
+    // with nothing and closes its section's frame the way any card does.
+    const framed = labelHeight !== null && cluster.module !== ""
+    const box = framed ? frameAround(cluster, labelHeight, moduleGap, MODULE_PAD) : cluster
+    if (framed) moduleFrames.push({...box, group: cluster.group, module: cluster.module})
+    if (!cluster.group) continue
+    const e = extents.get(cluster.group) || {
+      left: Infinity,
+      top: Infinity,
+      right: -Infinity,
+      bottom: -Infinity,
+    }
+    e.left = Math.min(e.left, box.left)
+    e.top = Math.min(e.top, box.top)
+    e.right = Math.max(e.right, box.right)
+    e.bottom = Math.max(e.bottom, box.bottom)
+    extents.set(cluster.group, e)
+  }
+  return {moduleFrames, extents}
 }
 
 // A node's group as a number to sort by, in the order the sections are rendered in: the cards

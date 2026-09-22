@@ -466,6 +466,10 @@ defmodule GraspWeb.ReviewLiveTest do
     |> render_click()
 
     assert has_element?(view, "#card-2.stub", "Enum.map/2")
+    # The header splits the module off so that the frame round the cluster can carry it and the
+    # card show `fun/arity` alone.
+    assert has_element?(view, "#card-2.stub .card__module", "Enum.")
+    assert has_element?(view, "#card-2.stub .card__fn", "map/2")
     assert has_element?(view, "#card-2.stub a[href='https://hexdocs.pm/elixir/Enum.html#map/2']")
   end
 
