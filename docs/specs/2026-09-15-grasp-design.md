@@ -489,32 +489,40 @@ there. A card arrives with no position; the LiveView renders it hidden and the c
 which alone knows the rendered sizes, places it on the next patch and pushes `place_cards`
 with the result, which the session stores (`Forest.place/2`, filling only positions still
 empty, so a stale placement never undoes a drag). Placement is beside the opener, and an
-opener counts only within the card's own group: a callee goes to the right of the placed
-card of its own group whose call site opened it (`GAP_X` 48 px), level with that call site;
-a caller opened to the left goes left of its target, top-aligned; a card reached only from
-another group is a root of its own group instead, since standing it beside that opener would
-put it inside a frame it does not belong to. A root with peers of its section already placed
-opens a row under the lowest of them, at the section's left edge — or, where that row would
-reach into another section's frame, stands beside them, off their right edge and level with
-their top, which is room the section can take without growing down into its neighbour. The
-first card of a section starts below everything on the stage, cards and frames alike, at the
-stage's left edge, so a section is a band of its own rather than a column beside the
-sections already down; the cards in no group are laid out last, after every frame.
+opener counts only within the card's own group: a callee is aimed to the right of the
+placed card of its own group whose call site opened it (`GAP_X` 48 px), level with that
+call site, and settles in the clear spot nearest there (below); a caller opened to the left
+goes left of its target, top-aligned; a card reached only from another group is a root of
+its own group instead, since standing it beside that opener would put it inside a frame it
+does not belong to. A root with peers of its section already placed opens a row under the
+lowest of them, at the section's left edge — or, where that row would reach into another
+section's frame, stands beside them, off their right edge and level with their top, which
+is room the section can take without growing down into its neighbour. The first card of a
+section starts below everything on the stage, cards and frames alike, at the stage's left
+edge, so a section is a band of its own rather than a column beside the sections already
+down; the cards in no group are laid out last, after every frame.
 
-A card is kept clear of every other section's frame, the header above it included, so frames
-laid out this way stack downwards one gap apart and never overlap. A candidate that would
-overlap a placed card is nudged down past it (`GAP_Y` 16 px), and below whatever that move
-ran it into next; against a foreign frame the clearance is that gap plus the padding the
-card's own frame takes beyond it (`FRAME_PAD` 28 px), and the drop past such a frame carries
-the card's own header allowance, so the frame that grows round the card ends a gap clear of
-the one it dropped past rather than cutting into it. Cards placed in one pass respect one
-another, and each placement is made against the frames as they stand rather than as the pass
-found them. A card in no group grows no frame, and so takes neither allowance nor padding
-with it. The allowance is measured at 100%, so a position the pass pushes never depends on
-how far out the reader was standing when the card arrived; the drawn header is
-counter-scaled, so far out it stands taller than the allowance the placement left. A section
-hemmed in on both sides — the row below it and the room beside it both taken — grows round
-its neighbour when a card of it lands past that neighbour.
+A card is kept clear of every other section's frame, the header above it included, so
+frames laid out this way stack downwards one gap apart and never overlap. A candidate that
+would overlap a placed card is swept clear of it (`GAP_Y` 16 px), and clear of whatever
+that move ran it into next; against a foreign frame the clearance is that gap plus the
+padding the card's own frame takes beyond it (`FRAME_PAD` 28 px), and a downward move past
+such a frame carries the card's own header allowance, so the frame that grows round the
+card ends a gap clear of the one it passed rather than cutting into it — upwards that
+allowance is not needed, since what the card's own frame extends below it is the padding
+the clearance already holds. A root and a caller sweep downwards only, sections being
+stacked that way on purpose. A callee is swept four ways from its ideal box — down and up
+in that column, and down and up in the column one card width and `GAP_X` to the right — and
+takes the candidate whose top-left comes to rest nearest the ideal top-left, ties going to
+the ideal column and to downwards, so a callee lands in the clear spot nearest its call
+rather than at the foot of a busy column. Cards placed in one pass respect one another, and
+each placement is made against the frames as they stand rather than as the pass found them.
+A card in no group grows no frame, and so takes neither allowance nor padding with it. The
+allowance is measured at 100%, so a position the pass pushes never depends on how far out
+the reader was standing when the card arrived; the drawn header is counter-scaled, so far
+out it stands taller than the allowance the placement left. A section hemmed in on both
+sides — the row below it and the room beside it both taken — grows round its neighbour when
+a card of it lands past that neighbour.
 
 The pass orders unplaced cards by their section and, inside one, by their depth in the call
 graph — the column algorithm below survives as that ordering and as the keyboard's notion of

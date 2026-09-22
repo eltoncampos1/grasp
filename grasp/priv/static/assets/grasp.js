@@ -1067,16 +1067,47 @@
           }
         }
         const obstacles = occupied.concat(foreign);
-        let box = { left: x, top: y, right: x + m.width, bottom: y + m.height, node };
-        for (let sweep = 0; sweep <= obstacles.length; sweep++) {
-          let moved = false;
-          for (const other of obstacles) {
-            if (!overlaps(box, other, clearance(other))) continue;
-            box.top = other.bottom + GAP_Y + (other.frame ? head : 0);
-            box.bottom = box.top + m.height;
-            moved = true;
+        const sweep = (start, direction) => {
+          const swept = { ...start };
+          for (let pass = 0; pass <= obstacles.length; pass++) {
+            let moved = false;
+            for (const other of obstacles) {
+              if (!overlaps(swept, other, clearance(other))) continue;
+              if (direction === "down") {
+                swept.top = other.bottom + GAP_Y + (other.frame ? head : 0);
+                swept.bottom = swept.top + m.height;
+              } else {
+                swept.bottom = other.top - clearance(other);
+                swept.top = swept.bottom - m.height;
+              }
+              moved = true;
+            }
+            if (!moved) break;
           }
-          if (!moved) break;
+          return swept;
+        };
+        const ideal = { left: x, top: y, right: x + m.width, bottom: y + m.height, node };
+        let box;
+        if (opener) {
+          const over = m.width + GAP_X;
+          const next = { ...ideal, left: ideal.left + over, right: ideal.right + over };
+          let nearest = Infinity;
+          for (const [from, direction] of [
+            [ideal, "down"],
+            [ideal, "up"],
+            [next, "down"],
+            [next, "up"]
+          ]) {
+            const settled = sweep(from, direction);
+            const away = Math.hypot(settled.left - ideal.left, settled.top - ideal.top);
+            if (away < nearest) {
+              nearest = away;
+              box = settled;
+            }
+            if (nearest === 0) break;
+          }
+        } else {
+          box = sweep(ideal, "down");
         }
         const px = Math.round(box.left);
         const py = Math.round(box.top);

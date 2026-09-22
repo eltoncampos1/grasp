@@ -1328,33 +1328,77 @@ const Canvas = {
       }
 
       // Nothing is ever laid on top of anything: a card that would land on an occupied box, or
-      // inside the frame of a section that is not its own, drops below it, and below whatever
-      // that move ran it into next. A drop past another section's frame carries the card's own
-      // header allowance, so the frame that grows round the card clears the one it dropped
-      // past by GAP_Y rather than cutting into it — the allowance is at least the padding that
-      // frame takes, so the drop lands the card outside the clearance it is tested against. A
-      // drop past a card is the card's own gap. The two agree where a card of another section
-      // is the obstacle, since that card's frame holds it and is an obstacle as well, and the
-      // sweep that follows the drop past the card finds the frame it is still inside.
+      // inside the frame of a section that is not its own, moves clear of it, and clear of
+      // whatever that move ran it into next. A move downwards past another section's frame
+      // carries the card's own header allowance, so the frame that grows round the card clears
+      // the one it passed by GAP_Y rather than cutting into it — the allowance is at least the
+      // padding that frame takes, so the move lands the card outside the clearance it is tested
+      // against. Upwards no allowance is needed: what the card's own frame extends below it is
+      // FRAME_PAD, which is what `clearance` already yields for a frame obstacle, so a bottom
+      // set at `other.top - clearance(other)` leaves the two frames GAP_Y apart. A move past a
+      // card is the card's own gap either way. Card and frame agree where a card of another
+      // section is the obstacle, since that card's frame holds it and is an obstacle as well,
+      // and the sweep that follows the move past the card finds the frame it is still inside.
       //
-      // Each drop is strictly downwards, so one sweep per obstacle is enough to run out of
-      // them. Downwards is also the only direction a drop needs: the stage is unbounded that
-      // way and the sections are stacked that way, so a card that leaves a frame downwards is
-      // clear of it for good, where a sideways move would only carry it towards the next one.
+      // Each move within a sweep is strictly in the sweep's direction — downwards the top only
+      // grows, upwards the bottom only shrinks — so a sweep runs out of obstacles within one
+      // iteration per obstacle, the bound holding for either direction by the same argument
+      // mirrored.
+      //
+      // A callee is swept four ways from the ideal box beside its opener: down and up in the
+      // ideal column, and down and up in the column one card width and GAP_X to the right. The
+      // candidate whose top-left comes to rest nearest the ideal top-left wins, ties going to
+      // the ideal column and to downwards, and a candidate that never moved is at distance zero
+      // and takes it outright. Upwards is open to a callee because the stage is unbounded both
+      // ways and the edge the hook draws reads the same arriving at a port from above as from
+      // below, so the nearest clear spot is the one that keeps the callee beside its call. A
+      // root and a caller sweep downwards only: sections are stacked downwards on purpose, and a
+      // card that leaves a frame downwards is clear of it for good.
       //
       // A group that has been closed in on both sides — the row below it and the room beside it
       // both taken — grows round its neighbour when a card of it lands past that neighbour.
       const obstacles = occupied.concat(foreign)
-      let box = {left: x, top: y, right: x + m.width, bottom: y + m.height, node}
-      for (let sweep = 0; sweep <= obstacles.length; sweep++) {
-        let moved = false
-        for (const other of obstacles) {
-          if (!overlaps(box, other, clearance(other))) continue
-          box.top = other.bottom + GAP_Y + (other.frame ? head : 0)
-          box.bottom = box.top + m.height
-          moved = true
+      const sweep = (start, direction) => {
+        const swept = {...start}
+        for (let pass = 0; pass <= obstacles.length; pass++) {
+          let moved = false
+          for (const other of obstacles) {
+            if (!overlaps(swept, other, clearance(other))) continue
+            if (direction === "down") {
+              swept.top = other.bottom + GAP_Y + (other.frame ? head : 0)
+              swept.bottom = swept.top + m.height
+            } else {
+              swept.bottom = other.top - clearance(other)
+              swept.top = swept.bottom - m.height
+            }
+            moved = true
+          }
+          if (!moved) break
         }
-        if (!moved) break
+        return swept
+      }
+      const ideal = {left: x, top: y, right: x + m.width, bottom: y + m.height, node}
+      let box
+      if (opener) {
+        const over = m.width + GAP_X
+        const next = {...ideal, left: ideal.left + over, right: ideal.right + over}
+        let nearest = Infinity
+        for (const [from, direction] of [
+          [ideal, "down"],
+          [ideal, "up"],
+          [next, "down"],
+          [next, "up"],
+        ]) {
+          const settled = sweep(from, direction)
+          const away = Math.hypot(settled.left - ideal.left, settled.top - ideal.top)
+          if (away < nearest) {
+            nearest = away
+            box = settled
+          }
+          if (nearest === 0) break
+        }
+      } else {
+        box = sweep(ideal, "down")
       }
 
       // The server reads integers and drops a placement it cannot; the box recorded is the one

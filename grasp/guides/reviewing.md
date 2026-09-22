@@ -6,8 +6,8 @@ and the sessions that keep it all where you put it.
 ## The canvas is a whiteboard
 
 Cards stay where you put them. A new card opens beside the card it was opened from, in the
-first clear space there, and nothing already on the canvas moves to make room for it.
-`reset layout` in the toolbar lays everything out again.
+clear space nearest the call that opened it, and nothing already on the canvas moves to make
+room for it. `reset layout` in the toolbar lays everything out again.
 
 - Drag a card by its header to move it, or hold Ctrl and drag from anywhere on it. Ctrl and
   press over a card is the drag gesture, so the context menu is suppressed there; a plain
