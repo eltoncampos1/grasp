@@ -576,13 +576,16 @@ defmodule Grasp.Session.Forest do
   The listed cards keep their positions relative to one another, whatever groups they are
   spread across; groups themselves are untouched, so a shift decides no membership. Deltas
   rather than a position each, since they start from positions of their own. A card with no
-  position keeps none, and an id the forest does not hold is skipped.
+  position keeps none, and an id the forest does not hold is skipped. An id listed twice
+  names one card and moves it once, so a caller need not hand in a set.
   """
   @spec shift_cards(t(), [id()], {integer(), integer()}) :: t()
   def shift_cards(%__MODULE__{} = forest, card_ids, {dx, dy})
       when is_list(card_ids) and is_integer(dx) and is_integer(dy) do
     cards =
-      Enum.reduce(card_ids, forest.cards, fn id, cards ->
+      card_ids
+      |> Enum.uniq()
+      |> Enum.reduce(forest.cards, fn id, cards ->
         case Map.get(cards, id) do
           %{position: {x, y}} = card -> Map.put(cards, id, %{card | position: {x + dx, y + dy}})
           _unplaced_or_unknown -> cards

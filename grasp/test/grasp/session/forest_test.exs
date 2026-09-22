@@ -346,7 +346,7 @@ defmodule Grasp.Session.ForestTest do
       |> Forest.move(a, {0, 0})
       |> Forest.move(b, {5, 5})
 
-    shifted = Forest.shift_cards(forest, [a, b, c, c + 999], {40, -10})
+    shifted = Forest.shift_cards(forest, [a, a, b, c, c + 999], {40, -10})
 
     assert Forest.card(shifted, a).position == {40, -10}
     assert Forest.card(shifted, b).position == {45, -5}

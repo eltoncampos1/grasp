@@ -519,17 +519,21 @@
     // Every card connected to the pressed one travels by the same displacement, so a flow keeps
     // its shape while it moves away from the rest. The component is read once, at press time:
     // the cards of a flow do not change while it is being dragged, and rereading it on every
-    // move would walk the canvas's call sites hundreds of times over a gesture.
+    // move would walk the canvas's call sites hundreds of times over a gesture. A press that
+    // gathers nothing is no gesture at all — a card with no position cannot be shifted, so
+    // pressing one begins no drag rather than a dead one the release would report.
     beginGraphDrag(e, card) {
       const node = card.closest(".node");
       if (!node) return;
+      const nodes = this.connectedNodes(node);
+      if (!nodes.length) return;
       e.preventDefault();
       document.body.classList.add("grasp-dragging");
       this.drag = {
         kind: "graph",
         ctrl: false,
         pointerId: e.pointerId,
-        nodes: this.connectedNodes(node),
+        nodes,
         startX: e.clientX,
         startY: e.clientY,
         moved: false
