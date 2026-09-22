@@ -141,6 +141,7 @@
       this.drawnScale = this.view.scale;
       this.styledScale = this.view.scale;
       this.remeasure = false;
+      this.remeasureFrame = null;
       this.style = document.getElementById("grasp-canvas-style") || document.head.appendChild(
         Object.assign(document.createElement("style"), { id: "grasp-canvas-style" })
       );
@@ -236,6 +237,7 @@
       document.body.classList.remove("grasp-signatures");
       this.resizeObserver.disconnect();
       this.cardObserver.disconnect();
+      if (this.remeasureFrame !== null) cancelAnimationFrame(this.remeasureFrame);
       this.style.remove();
     },
     // The translate is rounded to whole screen pixels: a fractional composited offset resamples
@@ -253,9 +255,25 @@
     writeStyle() {
       const { x, y, scale } = this.view;
       const { width, height } = this.extent;
-      if (this.signatures && this.styledScale !== scale) this.remeasure = true;
+      if (this.signatures && this.styledScale !== scale) this.markRemeasure();
       this.styledScale = scale;
       this.style.textContent = `#stage{transform:translate(${Math.round(x)}px,${Math.round(y)}px) scale(${scale});--zoom:${scale};min-width:${width}px;min-height:${height}px}`;
+    },
+    // A view or mode change is a re-measure for the frame it lands in: every height reported
+    // through that frame is the same cards measured again rather than a card that grew. The
+    // observer delivers after the frame's animation-frame callbacks, and one change reaches it
+    // in as many deliveries as the card depths it touches, so the flag is dropped from the frame
+    // after the one that raised it — past every delivery of the change, and ahead of the first
+    // height a growth of the reader's own could report.
+    markRemeasure() {
+      this.remeasure = true;
+      if (this.remeasureFrame !== null) cancelAnimationFrame(this.remeasureFrame);
+      this.remeasureFrame = requestAnimationFrame(() => {
+        this.remeasureFrame = requestAnimationFrame(() => {
+          this.remeasureFrame = null;
+          this.remeasure = false;
+        });
+      });
     },
     // Back to 1:1 about the centre of the canvas, so whatever you were looking at stays put.
     resetZoom() {
@@ -324,7 +342,7 @@
     // edge now ends somewhere else, which only a redraw can say.
     toggleSignatures() {
       this.signatures = !this.signatures;
-      this.remeasure = true;
+      this.markRemeasure();
       document.body.classList.toggle("grasp-signatures", this.signatures);
       const button = document.getElementById("toggle-signatures");
       if (button) button.setAttribute("aria-pressed", String(this.signatures));
@@ -1149,7 +1167,8 @@
         if (!live.has(id)) this.pushes.delete(id);
       }
     },
-    // The heights the observer reports, and a push for each card that grew.
+    // The heights the observer reports, a push for each card that grew and a retraction for each
+    // card that shrank back.
     //
     // A card's height is its own layout box, which the stage's transform leaves alone, so a
     // growth is already in stage units and is not divided by the zoom — unlike a box read off
@@ -1157,28 +1176,31 @@
     // sizes a card from --zoom, so its stage-unit height changes with the zoom and with the mode
     // itself. Those reports are the same cards measured again, and a re-measure moves nothing.
     //
-    // The first report for a card is the height it arrived at, not a growth, so it pushes
-    // nothing. Every report is recorded whatever else it leads to, so the next one is measured
-    // against the height the reader is looking at.
+    // The first report for a card is the height it arrived at, neither a growth nor a shrink, so
+    // it moves nothing. Every report is recorded whatever else it leads to, so the next one is
+    // measured against the height the reader is looking at.
     cardResized(entries) {
       const grown = [];
+      const shrunk = [];
       for (const entry of entries) {
         const card = entry.target;
         const id = cardId(card);
         const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
         const previous = this.cardHeights.get(id);
         this.cardHeights.set(id, height);
-        if (previous === void 0 || height <= previous + 0.5) continue;
+        if (previous === void 0) continue;
         const node = card.closest(".node");
         if (!node || node.hasAttribute("data-unplaced")) continue;
-        grown.push({ node, dy: height - previous, top: this.positionOf(node).y });
+        if (height > previous + 0.5) {
+          grown.push({ node, dy: height - previous, top: this.positionOf(node).y });
+        } else if (height < previous - 0.5 && this.pushes.get(id)?.length) {
+          shrunk.push({ node, shrink: previous - height });
+        }
       }
-      if (this.remeasure) {
-        this.remeasure = false;
-        return;
-      }
+      if (this.remeasure) return;
       if (this.signatures) return;
       if (this.drag) return;
+      for (const { node, shrink } of shrunk) this.retract(node, shrink);
       grown.sort((a, b) => a.top - b.top);
       for (const { node, dy } of grown) this.pushBelow(node, dy);
     },
@@ -1233,6 +1255,50 @@
       const stack = this.pushes.get(grown.id) || [];
       stack.push({ dy: shift, cards: tops });
       this.pushes.set(grown.id, stack);
+    },
+    // A push undone: a card that shrinks back lets the cards it pushed return, newest push
+    // first, and only while those cards are where the push left them.
+    //
+    // A push is given back whole or not at all — its cards travelled together and the room it
+    // took is one card's worth of growth — so a shrink smaller than the push on top of the stack
+    // returns nothing, and what is left of the shrink pays for the push under it.
+    //
+    // Whether a push is retracted is read from the cards alone: a card the reader has dragged
+    // since, one another move is in flight for, one that is gone or one still waiting for a
+    // position is not a card standing where the push left it, and that push and every push under
+    // it stay. The arrangement from there down is the reader's.
+    retract(node, shrink) {
+      const id = Number(node.dataset.card);
+      const stack = this.pushes.get(id);
+      if (!stack) return;
+      let remaining = shrink;
+      const returned = /* @__PURE__ */ new Map();
+      while (stack.length > 0) {
+        const push = stack[stack.length - 1];
+        if (push.dy > remaining + 0.5) break;
+        const nodes = /* @__PURE__ */ new Map();
+        const standing = [...push.cards].every(([card, top]) => {
+          const pushed = this.el.querySelector(`.node[data-card="${card}"]:not([data-unplaced])`);
+          if (!pushed) return false;
+          const given = returned.get(card) || 0;
+          const carried = this.translateOf(pushed);
+          if (carried.x !== 0 || carried.y !== given) return false;
+          if (this.positionOf(pushed).y + given !== top) return false;
+          nodes.set(card, pushed);
+          return true;
+        });
+        if (!standing) break;
+        stack.pop();
+        remaining -= push.dy;
+        for (const [card, pushed] of nodes) {
+          const given = (returned.get(card) || 0) - push.dy;
+          returned.set(card, given);
+          pushed.style.translate = `0px ${given}px`;
+        }
+        this.pushEvent("move_cards", { cards: [...nodes.keys()], dx: 0, dy: -push.dy });
+      }
+      if (stack.length === 0) this.pushes.delete(id);
+      if (returned.size > 0) this.draw();
     },
     // Where every placed card stands, in stage pixels, as a placement pass reads it: the
     // position the server rendered for left and top, and the measured rectangle for width and

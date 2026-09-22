@@ -485,21 +485,22 @@ a tab showing it is sent to the default session.
 A two-dimensional canvas that pans and zooms, and a whiteboard: every card has an absolute
 position on the stage, in stage pixels, and nothing moves a placed card but the reader (a
 drag, a group drag), a reset, or a card above it growing: a card that grows pushes the cards
-it would overlap down by the amount it grew, and the cards those would run into after them.
-Opening a card therefore never shifts the cards already there. A card arrives with no
-position; the LiveView renders it hidden and the canvas hook, which alone knows the rendered
-sizes, places it on the next patch and pushes `place_cards` with the result, which the
-session stores (`Forest.place/2`, filling only positions still empty, so a stale placement
-never undoes a drag). Placement is beside the opener, and an opener counts only within the
-card's own group: a callee is aimed to the right of the placed card of its own group whose
-call site opened it (`GAP_X` 48 px), level with that call site, and settles in the clear
-spot nearest there, above or below it; a caller opened to the left goes left of its target,
-top-aligned; a card reached only from another group is a root of its own group instead,
-since standing it beside that opener would put it inside a frame it does not belong to. A
-root with peers of its section already placed opens a row under the lowest of them, at the
-section's left edge — or, where that row would reach into another section's frame, stands
-beside them, off their right edge and level with their top, which is room the section can
-take without growing down into its neighbour. The first card of a section starts below
+it would overlap down by the amount it grew, and the cards those would run into after them,
+and when it shrinks back, the cards it pushed return, as long as they are still where the
+push left them. Opening a card therefore never shifts the cards already there. A card
+arrives with no position; the LiveView renders it hidden and the canvas hook, which alone
+knows the rendered sizes, places it on the next patch and pushes `place_cards` with the
+result, which the session stores (`Forest.place/2`, filling only positions still empty, so a
+stale placement never undoes a drag). Placement is beside the opener, and an opener counts
+only within the card's own group: a callee is aimed to the right of the placed card of its
+own group whose call site opened it (`GAP_X` 48 px), level with that call site, and settles
+in the clear spot nearest there, above or below it; a caller opened to the left goes left of
+its target, top-aligned; a card reached only from another group is a root of its own group
+instead, since standing it beside that opener would put it inside a frame it does not belong
+to. A root with peers of its section already placed opens a row under the lowest of them, at
+the section's left edge — or, where that row would reach into another section's frame,
+stands beside them, off their right edge and level with their top, which is room the section
+can take without growing down into its neighbour. The first card of a section starts below
 everything on the stage, cards and frames alike, at the stage's left edge, so a section is a
 band of its own rather than a column beside the sections already down; the cards in no group
 are laid out last, after every frame.
@@ -1608,6 +1609,10 @@ request switches the working tree" is closed.
      opens the palette; a callee lands in the clear spot nearest its call site; edges are
      drawn over the cards rather than under them; `@decorate` joins the attributes a
      definition's span starts from.
+   - Milestone 7.8: a card that grows pushes the cards it would cover down by the amount it
+     grew, and the cards those run into after them, in one `move_cards`; a card that shrinks
+     back gives that room again, newest push first, and only while the cards it pushed are
+     still where the push left them.
 7. In-app Grasp: one dev dependency mounted in the host's endpoint, the tracer riding the
    host's code reloader for incremental indexing, pull requests reviewed from worktrees
    (see [Part 4](#part-4--in-app-grasp)).

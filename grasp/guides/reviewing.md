@@ -24,13 +24,14 @@ room for it. `reset layout` in the toolbar lays everything out again.
   backdrop or its close button puts it away.
 
 Placement is a heuristic: it avoids overlap at the moment a card is placed. A card that
-later grows — a diff opened, a thread written — pushes the cards under it down by as much as
-it grew, and the cards those run into after them; a card dragged onto another stays where it
-is, and a push moves cards rather than frames, so a grown card can reach into another group's
-frame. `reset layout` untangles them. Each group is laid out below the groups already down
-and clear of their frames, so a canvas laid out in one go reads as a stack of frames a gap
-apart; dragging a card or a frame across another is free to overlap them, and `reset layout`
-puts them back in their bands.
+later grows — a diff opened, a thread written — pushes the cards under it down by as much
+as it grew, and the cards those run into after them, and when it shrinks back, the cards
+it pushed return, as long as they are still where the push left them; a card dragged onto
+another stays where it is, and a push moves cards rather than frames, so a grown card can
+reach into another group's frame. `reset layout` untangles them. Each group is laid out
+below the groups already down and clear of their frames, so a canvas laid out in one go
+reads as a stack of frames a gap apart; dragging a card or a frame across another is free
+to overlap them, and `reset layout` puts them back in their bands.
 
 ### Groups and frames
 
