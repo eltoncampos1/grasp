@@ -31,10 +31,14 @@ type AgentConfig struct {
 type Server struct {
 	IndexPath string
 	Port      int
-	Editor    string // vscode | cursor | zed | idea | ""
-	Author    string // comment author, from git config user.name
-	Comments  *comments.Store
-	Agent     AgentConfig
+	// AutoPort walks up from Port when it is taken — several grasps, one per
+	// repo, coexist without anyone picking numbers. An explicit --port keeps
+	// it off and fails loudly instead.
+	AutoPort bool
+	Editor   string // vscode | cursor | zed | idea | ""
+	Author   string // comment author, from git config user.name
+	Comments *comments.Store
+	Agent    AgentConfig
 
 	chat *chatRunner
 }
@@ -57,13 +61,24 @@ func (s *Server) Run(onReady func(url string)) error {
 	mux.HandleFunc("/api/chat/reset", s.handleChatReset)
 	mux.HandleFunc("/events", s.events)
 
-	addr := fmt.Sprintf("127.0.0.1:%d", s.Port)
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("cannot listen on %s: %w", addr, err)
+	var listener net.Listener
+	var err error
+	port := s.Port
+	for {
+		listener, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			break
+		}
+		if !s.AutoPort || port >= s.Port+30 {
+			return fmt.Errorf("cannot listen on 127.0.0.1:%d: %w", port, err)
+		}
+		port++
+	}
+	if port != s.Port {
+		fmt.Printf("port %d is taken (another grasp?) — serving on %d\n", s.Port, port)
 	}
 	if onReady != nil {
-		onReady("http://" + addr)
+		onReady(fmt.Sprintf("http://127.0.0.1:%d", port))
 	}
 	return http.Serve(listener, loopbackOnly(mux))
 }

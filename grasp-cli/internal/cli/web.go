@@ -83,6 +83,7 @@ a worktree's --close; grasp publish sends them to the pull request.`,
 		server := &webserver.Server{
 			IndexPath: indexPath,
 			Port:      port,
+			AutoPort:  !cmd.Flags().Changed("port"),
 			Editor:    cfg.Web.Editor,
 			Author:    author,
 			Comments:  comments.NewStore(root),
