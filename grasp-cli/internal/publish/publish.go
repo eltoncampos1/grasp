@@ -124,18 +124,31 @@ func postThread(root string, number int, headSha string, t *comments.Thread) (st
 	body := threadBody(t)
 
 	if t.Side == "new" {
-		url, err := postComment(root, number, map[string]string{
+		fields := map[string]string{
 			"body":      body,
 			"commit_id": headSha,
 			"path":      t.File,
 			"side":      "RIGHT",
-		}, t.Line)
+		}
+		// A range thread maps to GitHub's native multi-line review comment:
+		// start_line opens the range, line is its last line.
+		ints := map[string]int{"line": t.Line}
+		if t.EndLine > t.Line {
+			fields["start_side"] = "RIGHT"
+			ints["start_line"] = t.Line
+			ints["line"] = t.EndLine
+		}
+		url, err := postComment(root, number, fields, ints)
 		if err == nil {
 			return url, nil
 		}
 		body = fmt.Sprintf("`%s:%d` (outside the diff):\n\n%s", t.File, t.Line, body)
 	} else {
-		body = fmt.Sprintf("On the base side of `%s`, line %d of `%s`:\n\n%s", t.File, t.Line, t.Function, body)
+		anchor := fmt.Sprintf("line %d", t.Line)
+		if t.EndLine > t.Line {
+			anchor = fmt.Sprintf("lines %d–%d", t.Line, t.EndLine)
+		}
+		body = fmt.Sprintf("On the base side of `%s`, %s of `%s`:\n\n%s", t.File, anchor, t.Function, body)
 	}
 
 	return postComment(root, number, map[string]string{
@@ -143,16 +156,16 @@ func postThread(root string, number int, headSha string, t *comments.Thread) (st
 		"commit_id":    headSha,
 		"path":         t.File,
 		"subject_type": "file",
-	}, 0)
+	}, nil)
 }
 
-func postComment(root string, number int, fields map[string]string, line int) (string, error) {
+func postComment(root string, number int, fields map[string]string, ints map[string]int) (string, error) {
 	args := []string{"api", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments", number)}
 	for k, v := range fields {
 		args = append(args, "-f", k+"="+v)
 	}
-	if line > 0 {
-		args = append(args, "-F", "line="+strconv.Itoa(line))
+	for k, v := range ints {
+		args = append(args, "-F", k+"="+strconv.Itoa(v))
 	}
 	out, err := gh(root, args...)
 	if err != nil {

@@ -758,9 +758,8 @@ function sourceTable(fn) {
     const abs = start + i;
     const tr = document.createElement('tr');
     if (inThreadRange(fn, abs, side)) tr.classList.add('inrange');
-    tr.innerHTML = '<td class="ln" title="comment · shift+click extends a range">' + abs + '</td><td class="codecell">' +
+    tr.innerHTML = '<td class="ln" data-line="' + abs + '" data-side="' + side + '" title="comment · drag or shift+click for a range">' + abs + '</td><td class="codecell">' +
       lineHTML(text, callsByLine.get(abs) || [], lang) + '</td>';
-    tr.querySelector('.ln').addEventListener('click', e => lineClick(e, fn, abs, side));
     tbody.appendChild(tr);
     appendThreadRows(tbody, fn, abs, side, 2);
   });
@@ -864,12 +863,9 @@ function diffTable(fn, st) {
     const code = absNew != null
       ? lineHTML(r.text, callsByLine.get(absNew) || [], lang)
       : highlightRange(r.text, 0, r.text.length, tokenize(r.text, lang));
-    tr.innerHTML = '<td class="ln old" title="comment on the base side">' + (r.o != null ? r.o : '') + '</td>' +
-      '<td class="ln" title="comment">' + (absNew != null ? absNew : '') + '</td>' +
+    tr.innerHTML = '<td class="ln old"' + (r.o != null ? ' data-line="' + r.o + '" data-side="base"' : '') + ' title="comment on the base side · drag for a range">' + (r.o != null ? r.o : '') + '</td>' +
+      '<td class="ln"' + (absNew != null ? ' data-line="' + absNew + '" data-side="new"' : '') + ' title="comment · drag for a range">' + (absNew != null ? absNew : '') + '</td>' +
       '<td class="sign">' + sign + '</td><td class="codecell">' + code + '</td>';
-    const [oldLn, newLn] = tr.querySelectorAll('.ln');
-    if (r.o != null) oldLn.addEventListener('click', e => lineClick(e, fn, r.o, 'base'));
-    if (absNew != null) newLn.addEventListener('click', e => lineClick(e, fn, absNew, 'new'));
     tbody.appendChild(tr);
     if (r.o != null) appendThreadRows(tbody, fn, r.o, 'base', 4);
     if (absNew != null) appendThreadRows(tbody, fn, absNew, 'new', 4);
@@ -888,16 +884,57 @@ function mkCodeTable() {
 }
 
 // ---------- comments ----------
-function lineClick(e, fn, line, side) {
-  // Shift+click while composing stretches the range to this line.
+// Drag down or up the line numbers to comment on a range, GitHub-style: the
+// selection tints as you drag and the composer opens on release, covering
+// line..end_line. A drag stays on the side it started (new or base); a plain
+// click is a one-line thread; Shift+click stretches an open composer.
+let lineSel = null; // {fnId, file, side, anchor, cur}
+
+document.addEventListener('mousedown', e => {
+  const td = e.target.closest('td.ln');
+  if (!td || !td.dataset.line) return;
+  const card = td.closest('.card');
+  if (!card) return;
+  const fn = byId.get(card.dataset.id);
+  if (!fn) return;
+  const line = +td.dataset.line, side = td.dataset.side;
+  e.preventDefault();
+  e.stopPropagation();
   if (e.shiftKey && composing && composing.fnId === fn.id && composing.side === side) {
     if (line >= composing.line) composing.endLine = line;
     else { composing.endLine = composing.endLine || composing.line; composing.line = line; }
     renderCanvas();
     return;
   }
-  composing = { fnId: fn.id, file: fn.file, line, endLine: null, side };
+  lineSel = { fnId: fn.id, file: fn.file, side, anchor: line, cur: line };
+  paintLineSelection(card);
+}, true);
+
+document.addEventListener('mouseover', e => {
+  if (!lineSel) return;
+  const td = e.target.closest('td.ln');
+  if (!td || !td.dataset.line || td.dataset.side !== lineSel.side) return;
+  const card = td.closest('.card');
+  if (!card || card.dataset.id !== lineSel.fnId) return;
+  lineSel.cur = +td.dataset.line;
+  paintLineSelection(card);
+});
+
+document.addEventListener('mouseup', () => {
+  if (!lineSel) return;
+  const { fnId, file, side, anchor, cur } = lineSel;
+  lineSel = null;
+  const lo = Math.min(anchor, cur), hi = Math.max(anchor, cur);
+  composing = { fnId, file, line: lo, endLine: hi > lo ? hi : null, side };
   renderCanvas();
+});
+
+function paintLineSelection(card) {
+  const lo = Math.min(lineSel.anchor, lineSel.cur), hi = Math.max(lineSel.anchor, lineSel.cur);
+  card.querySelectorAll('td.ln[data-side="' + lineSel.side + '"]').forEach(td => {
+    const n = +td.dataset.line;
+    td.parentElement.classList.toggle('inrange', n >= lo && n <= hi);
+  });
 }
 
 function threadsAt(fn, line, side) {
