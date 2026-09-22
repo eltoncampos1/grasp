@@ -631,10 +631,11 @@ toggle and the module-clusters toggle (both below), "reset layout", the chat tog
 help button (`?`); the chat panel docks above it. That button and the `?` key open the
 keys-and-gestures list (`GraspWeb.Help`), a modal `<dialog>` of every gesture and chord the
 toolbar has no room to show. Nothing in it is session state, so it is rendered once, marked
-`phx-update="ignore"`, and opened, closed and toggled by the `Help` hook alone: `showModal()` brings Escape, the
-focus trap and the backdrop from the platform, and no patch can close it behind the reader's
-back. `?` is a character, so a reader typing in a field keeps it, a chord carrying it
-belongs to whoever claims the chord, and the key is left alone while the palette is open.
+`phx-update="ignore"`, and opened, closed and toggled by the `Help` hook alone: `showModal()`
+brings Escape, the focus trap and the backdrop from the platform, and no patch can close it
+behind the reader's back. `?` is a character, so a reader typing in a field keeps it, a
+chord carrying it belongs to whoever claims the chord, and the key is left alone while the
+palette is open.
 The view — `{x, y, scale}` — lives only in the canvas hook and is written to a stylesheet
 rule for the stage rather than to an inline style, so a LiveView patch cannot wipe it
 mid-gesture. A wheel over something that can scroll itself — a code body scrolled sideways,
@@ -1120,12 +1121,13 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 - **A cluster is per flow.** Membership is the card's module inside the card's section, so a
   module open in two flows is two clusters, each framed, dragged and placed against on its own,
   and there is no gesture that gathers the cards of one module across flows.
-- **A groupless card can stand inside a flow frame's padding.** The cards in no flow have no
-  frame of their own for a placement to clear, so where the binding obstacle is a grouped card
-  itself the two end one `GAP_Y` apart and the flow frame closing round that card reaches over
-  the groupless one by the rest of its padding. While the clusters are drawn the groupless
-  card's own module frame is the obstacle instead, and what a flow frame closes over is at most
-  the `MODULE_PAD` between that frame's edge and the card inside it.
+- **With the clusters undrawn, a groupless card can stand inside a flow frame's padding.**
+  The cards in no flow have no frame of their own for a placement to clear, so with nothing
+  drawn round them the only obstacle a grouped card has there is the groupless card itself,
+  one `GAP_Y` away, and the flow frame closing `FRAME_PAD` round the grouped card reaches the
+  remaining 12px over the groupless one. While the clusters are drawn the groupless card's
+  own module frame is an obstacle wherever it stands, cleared with the grouped card's flow
+  padding as well (`MODULE_PAD + FRAME_PAD + GAP_Y`), so the two frames end a gap apart.
 
 ### Known gaps (milestone 7.5)
 
