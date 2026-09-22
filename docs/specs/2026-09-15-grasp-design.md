@@ -700,9 +700,12 @@ the same colour at the callee, so a card with several callers says which of its 
 from where. An edge leaves towards the callee and arrives on the side it comes from, so a
 caller opened to the right of the card it calls is joined round the outside rather than
 through it; a call site scrolled out of the card's clipped body has its start clamped to
-the card's border. The overlay sits inside a `phx-update="ignore"` element — the server
-renders only the arrowhead markers, which a path cannot carry inline — and its strokes are
-non-scaling, so they stay visible at the smallest zoom.
+the card's border. The overlay is stacked over the cards and under the frame headers, so an
+edge crossing a card is never hidden behind it while a group's title stays readable, and its
+strokes are drawn a little transparent so the code they cross reads through them. The overlay
+sits inside a `phx-update="ignore"` element — the server renders only the arrowhead markers,
+which a path cannot carry inline — and its strokes are non-scaling, so they stay visible at
+the smallest zoom.
 
 ### Page
 

@@ -1333,9 +1333,10 @@ const Canvas = {
       // carries the card's own header allowance, so the frame that grows round the card clears
       // the one it passed by GAP_Y rather than cutting into it — the allowance is at least the
       // padding that frame takes, so the move lands the card outside the clearance it is tested
-      // against. Upwards no allowance is needed: what the card's own frame extends below it is
-      // FRAME_PAD, which is what `clearance` already yields for a frame obstacle, so a bottom
-      // set at `other.top - clearance(other)` leaves the two frames GAP_Y apart. A move past a
+      // against. Upwards no allowance is needed: the card's own frame extends FRAME_PAD below
+      // it, which is the padding `clearance` already carries for a frame obstacle on top of
+      // GAP_Y, so a bottom set at `other.top - clearance(other)` leaves the two frames GAP_Y
+      // apart. A move past a
       // card is the card's own gap either way. Card and frame agree where a card of another
       // section is the obstacle, since that card's frame holds it and is an obstacle as well,
       // and the sweep that follows the move past the card finds the frame it is still inside.
