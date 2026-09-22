@@ -174,6 +174,10 @@
       document.addEventListener("visibilitychange", this.onSpaceRelease);
       this.resizeObserver = new ResizeObserver(() => this.draw());
       this.resizeObserver.observe(this.stage);
+      this.cardHeights = /* @__PURE__ */ new Map();
+      this.pushes = /* @__PURE__ */ new Map();
+      this.cardObserver = new ResizeObserver((entries) => this.cardResized(entries));
+      this.observeCards();
       this.handleEvent("focus", ({ id }) => {
         const key = document.getElementById(`card-${id}`)?.dataset.highlightKey || "";
         if (`${id}:${key}` === this.lastReveal) return;
@@ -190,6 +194,7 @@
     },
     updated() {
       this.el.querySelectorAll(".node[style*='translate']").forEach((node) => node.style.translate = "");
+      this.observeCards();
       this.placeCards();
       this.draw();
       this.revealPending();
@@ -228,6 +233,7 @@
       document.body.classList.remove("grasp-dragging");
       document.body.classList.remove("grasp-signatures");
       this.resizeObserver.disconnect();
+      this.cardObserver.disconnect();
       this.style.remove();
     },
     // The translate is rounded to whole screen pixels: a fractional composited offset resamples
@@ -1123,6 +1129,119 @@
         });
       }
       this.pushEvent("place_cards", { cards: placements });
+    },
+    // Every card on the canvas is watched for its height, because a card that grows would
+    // otherwise come down over whatever stands under it. Observing an element already observed
+    // is a no-op, so the cards a patch brought are covered by running this on every patch.
+    observeCards() {
+      const cards = [...this.el.querySelectorAll(".card")];
+      for (const card of cards) this.cardObserver.observe(card);
+      const live = new Set(cards.map((card) => cardId(card)));
+      for (const id of this.cardHeights.keys()) {
+        if (!live.has(id)) this.cardHeights.delete(id);
+      }
+    },
+    // The heights the observer reports, and a push for each card that grew.
+    //
+    // A card's height is its own layout box, which the stage's transform leaves alone, so a
+    // growth is already in stage units and is not divided by the zoom — unlike a box read off
+    // the screen, which is.
+    //
+    // The first report for a card is the height it arrived at, not a growth, so it pushes
+    // nothing. Every report is recorded whatever else it leads to, so the next one is measured
+    // against the height the reader is looking at.
+    cardResized(entries) {
+      const grown = [];
+      for (const entry of entries) {
+        const card = entry.target;
+        const id = cardId(card);
+        const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+        const previous = this.cardHeights.get(id);
+        this.cardHeights.set(id, height);
+        if (previous === void 0 || height <= previous + 0.5) continue;
+        const node = card.closest(".node");
+        if (!node || node.hasAttribute("data-unplaced")) continue;
+        grown.push({ node, dy: height - previous, top: this.positionOf(node).y });
+      }
+      if (this.drag) return;
+      grown.sort((a, b) => a.top - b.top);
+      for (const { node, dy } of grown) this.pushBelow(node, dy);
+    },
+    // The cards a grown card would cover, moved down by exactly what it grew.
+    //
+    // A uniform `dy` is what restores the canvas rather than tidying it: every card under the
+    // grown one was clear of it by at least GAP_Y before it grew, so moving each down by the
+    // growth gives back exactly that clearance, and the cards those run into travel the same
+    // distance for the same reason. Two cards the reader had overlapping stay overlapping by the
+    // amount the reader left between them — a push restores an arrangement, it does not correct
+    // one.
+    //
+    // Only cards from the grown card's top down move: a card the reader dragged over it from
+    // above is where the reader put it. Cards of other groups are pushed like any other card and
+    // their frames follow them, so no frame is an obstacle to a push.
+    pushBelow(node, dy) {
+      const boxes = this.placedBoxes();
+      const grown = boxes.find((b) => b.node === node);
+      if (!grown) return;
+      const others = boxes.filter((b) => b !== grown);
+      const pushed = [];
+      const moving = /* @__PURE__ */ new Set();
+      for (const b of others) {
+        if (b.top >= grown.top && overlaps(grown, b, GAP_Y)) {
+          pushed.push(b);
+          moving.add(b);
+        }
+      }
+      for (let i = 0; i < pushed.length; i++) {
+        const b = pushed[i];
+        const shifted = { ...b, top: b.top + dy, bottom: b.bottom + dy };
+        for (const c of others) {
+          if (moving.has(c)) continue;
+          if (c.top >= b.top && overlaps(shifted, c, GAP_Y)) {
+            pushed.push(c);
+            moving.add(c);
+          }
+        }
+      }
+      if (pushed.length === 0) return;
+      const shift = Math.round(dy);
+      const cards = [];
+      const tops = /* @__PURE__ */ new Map();
+      for (const b of pushed) {
+        b.node.style.translate = `0px ${shift}px`;
+        cards.push(b.id);
+        tops.set(b.id, b.top + shift);
+      }
+      this.pushEvent("move_cards", { cards, dx: 0, dy: shift });
+      this.draw();
+      const stack = this.pushes.get(grown.id) || [];
+      stack.push({ dy: shift, cards: tops });
+      this.pushes.set(grown.id, stack);
+    },
+    // Where every placed card stands, in stage pixels, as a placement pass reads it: the
+    // position the server rendered for left and top, and the measured rectangle for width and
+    // height, which is a screen measurement and so divided by the scale.
+    //
+    // A node carrying an inline translate is a card whose move the server has not answered for
+    // yet, and its position and its rectangle disagree by that much; it is left out rather than
+    // read at either of the two places it is in.
+    placedBoxes() {
+      const { scale } = this.view;
+      const boxes = [];
+      for (const node of this.el.querySelectorAll(".node:not([data-unplaced])")) {
+        if (node.style.translate) continue;
+        const b = node.getBoundingClientRect();
+        const { x, y } = this.positionOf(node);
+        boxes.push({
+          id: Number(node.dataset.card),
+          node,
+          left: x,
+          top: y,
+          right: x + b.width / scale,
+          bottom: y + b.height / scale
+        });
+      }
+      return boxes;
     }
   };
   function frameHead(headerHeight, titleGap) {
@@ -1138,6 +1257,9 @@
   }
   function sortGroup(node) {
     return node.dataset.group === "" ? Number.MAX_SAFE_INTEGER : Number(node.dataset.group);
+  }
+  function cardId(card) {
+    return Number(card.id.replace("card-", ""));
   }
   function overlaps(a, b, margin) {
     return a.left < b.right + margin && a.right > b.left - margin && a.top < b.bottom + margin && a.bottom > b.top - margin;

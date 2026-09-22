@@ -484,7 +484,8 @@ a tab showing it is sent to the default session.
 
 A two-dimensional canvas that pans and zooms, and a whiteboard: every card has an absolute
 position on the stage, in stage pixels, and nothing moves a placed card but the reader (a
-drag, a group drag) or a reset. Opening a card therefore never shifts the cards already
+drag, a group drag), a reset, or a card above it growing: a card that grows pushes the cards
+it would overlap down by the amount it grew, and the cards those would run into after them. Opening a card therefore never shifts the cards already
 there. A card arrives with no position; the LiveView renders it hidden and the canvas hook,
 which alone knows the rendered sizes, places it on the next patch and pushes `place_cards`
 with the result, which the session stores (`Forest.place/2`, filling only positions still
@@ -1007,8 +1008,10 @@ test-only one: it parses Lumis' HTML on every highlight the cache misses.
 ### Known gaps (milestone 6.2)
 
 - **Cards can come to overlap.** Placement avoids overlap only at the moment a card is
-  placed; a card that later grows (diff view, all lines, a thread) or a card dragged onto
-  another stays where it is. Reset layout untangles them.
+  placed. A card that later grows (diff view, all lines, a thread) pushes the cards under it
+  down by what it grew; a card dragged onto another stays where it is. A push moves cards and
+  not frames, so a grown card can reach into another group's frame. Reset layout untangles
+  them.
 - **A session saved before positions loads laid out afresh.** A version 1 file carries
   offsets from an automatic layout that no longer exists; it loads with every position
   empty and is placed again.

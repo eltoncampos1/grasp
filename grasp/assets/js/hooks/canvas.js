@@ -8,12 +8,13 @@
 // soon as the server has rendered the position it was pushed.
 //
 // The canvas is a whiteboard: every card sits at a position of its own, in stage pixels from
-// the stage's corner, and nothing moves unless a hand moves it. A card the server has no
-// position for is rendered at the origin and held back from sight until this hook has measured
-// it and said where it goes — the browser is the only thing that knows how large a card came
-// out, so placement is the hook's alone. A pass places every such card beside the card it was
-// opened from and pushes the lot in one `place_cards`; the server fills a position only where
-// there is none, so a card already placed is never moved by a pass.
+// the stage's corner, and a card is moved by a hand or by a card above it growing into it: a
+// card that grows pushes what it would cover down by the amount it grew. A card the server
+// has no position for is rendered at the origin and held back from sight until this hook has
+// measured it and said where it goes — the browser is the only thing that knows how large a
+// card came out, so placement is the hook's alone. A pass places every such card beside the
+// card it was opened from and pushes the lot in one `place_cards`; the server fills a position
+// only where there is none, so a card already placed is never moved by a pass.
 //
 // Positions may be negative: a caller opened to the left of a card at the stage's corner lands
 // left of it. Nothing shifts to make room — the stage is not clipped and the pan reaches
@@ -144,6 +145,13 @@ const Canvas = {
 
     this.resizeObserver = new ResizeObserver(() => this.draw())
     this.resizeObserver.observe(this.stage)
+    // A card grows where it stands — a thread opened or written, a diff turned on, a collapse
+    // undone — and what it grows over is pushed down by the growth. The heights are what the
+    // next report is measured against; the pushes are kept per grown card, newest last.
+    this.cardHeights = new Map()
+    this.pushes = new Map()
+    this.cardObserver = new ResizeObserver((entries) => this.cardResized(entries))
+    this.observeCards()
     // Every session mutation pushes the focus, a move_card included, so revealing on each
     // one would pan away from the card just dropped; only a change of focus is a reveal.
     // A highlight arrives on the card that already has focus, so the card's highlight key
@@ -173,6 +181,7 @@ const Canvas = {
     this.el
       .querySelectorAll(".node[style*='translate']")
       .forEach((node) => (node.style.translate = ""))
+    this.observeCards()
     this.placeCards()
     this.draw()
     this.revealPending()
@@ -213,6 +222,7 @@ const Canvas = {
     document.body.classList.remove("grasp-dragging")
     document.body.classList.remove("grasp-signatures")
     this.resizeObserver.disconnect()
+    this.cardObserver.disconnect()
     this.style.remove()
   },
 
@@ -1424,6 +1434,146 @@ const Canvas = {
 
     this.pushEvent("place_cards", {cards: placements})
   },
+
+  // Every card on the canvas is watched for its height, because a card that grows would
+  // otherwise come down over whatever stands under it. Observing an element already observed
+  // is a no-op, so the cards a patch brought are covered by running this on every patch.
+  observeCards() {
+    const cards = [...this.el.querySelectorAll(".card")]
+    for (const card of cards) this.cardObserver.observe(card)
+    // A card the reader closed takes its height with it: the card that opens in its place is
+    // measured from scratch rather than against the height of the card that stood there.
+    const live = new Set(cards.map((card) => cardId(card)))
+    for (const id of this.cardHeights.keys()) {
+      if (!live.has(id)) this.cardHeights.delete(id)
+    }
+  },
+
+  // The heights the observer reports, and a push for each card that grew.
+  //
+  // A card's height is its own layout box, which the stage's transform leaves alone, so a
+  // growth is already in stage units and is not divided by the zoom — unlike a box read off
+  // the screen, which is.
+  //
+  // The first report for a card is the height it arrived at, not a growth, so it pushes
+  // nothing. Every report is recorded whatever else it leads to, so the next one is measured
+  // against the height the reader is looking at.
+  cardResized(entries) {
+    const grown = []
+    for (const entry of entries) {
+      const card = entry.target
+      const id = cardId(card)
+      const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height
+      const previous = this.cardHeights.get(id)
+      this.cardHeights.set(id, height)
+      // Half a pixel is the layout rounding rather than a card growing. A card that shrank
+      // pushes nothing and leaves the cards under it where they are.
+      if (previous === undefined || height <= previous + 0.5) continue
+      const node = card.closest(".node")
+      // A card still waiting for a position is drawn at the stage's corner and out of sight,
+      // and the placement pass is what keeps it clear of the rest.
+      if (!node || node.hasAttribute("data-unplaced")) continue
+      grown.push({node, dy: height - previous, top: this.positionOf(node).y})
+    }
+    // A card that grows mid-drag is measured all the same, but the boxes a push would read are
+    // the ones the drag is in the middle of moving.
+    if (this.drag) return
+    // Topmost first: a card lower down is pushed by the card above it before it pushes on its
+    // own account, so two growths in one report add up instead of the lower card being read
+    // from a box the upper one is about to move.
+    grown.sort((a, b) => a.top - b.top)
+    for (const {node, dy} of grown) this.pushBelow(node, dy)
+  },
+
+  // The cards a grown card would cover, moved down by exactly what it grew.
+  //
+  // A uniform `dy` is what restores the canvas rather than tidying it: every card under the
+  // grown one was clear of it by at least GAP_Y before it grew, so moving each down by the
+  // growth gives back exactly that clearance, and the cards those run into travel the same
+  // distance for the same reason. Two cards the reader had overlapping stay overlapping by the
+  // amount the reader left between them — a push restores an arrangement, it does not correct
+  // one.
+  //
+  // Only cards from the grown card's top down move: a card the reader dragged over it from
+  // above is where the reader put it. Cards of other groups are pushed like any other card and
+  // their frames follow them, so no frame is an obstacle to a push.
+  pushBelow(node, dy) {
+    const boxes = this.placedBoxes()
+    // The observer runs after the layout that grew the card, so the box read here is the
+    // grown one. A card whose own move the server has yet to answer for carries a translate
+    // and is left out of the boxes, itself included: it pushes once the render has landed.
+    const grown = boxes.find((b) => b.node === node)
+    if (!grown) return
+    const others = boxes.filter((b) => b !== grown)
+    const pushed = []
+    const moving = new Set()
+    for (const b of others) {
+      if (b.top >= grown.top && overlaps(grown, b, GAP_Y)) {
+        pushed.push(b)
+        moving.add(b)
+      }
+    }
+    // A card moved takes room of its own where it lands, so whatever it runs into travels with
+    // it. A card joins the push once and only from the top of the card that pushed it down, so
+    // the cascade runs out within one round per box.
+    for (let i = 0; i < pushed.length; i++) {
+      const b = pushed[i]
+      const shifted = {...b, top: b.top + dy, bottom: b.bottom + dy}
+      for (const c of others) {
+        if (moving.has(c)) continue
+        if (c.top >= b.top && overlaps(shifted, c, GAP_Y)) {
+          pushed.push(c)
+          moving.add(c)
+        }
+      }
+    }
+    if (pushed.length === 0) return
+    // The session owns the positions: the translate is the move seen at once and updated()
+    // drops it as soon as the render carrying the new positions arrives. Whole stage pixels,
+    // because the server reads integer coordinates and drops a move whose coordinates it
+    // cannot.
+    const shift = Math.round(dy)
+    const cards = []
+    const tops = new Map()
+    for (const b of pushed) {
+      b.node.style.translate = `0px ${shift}px`
+      cards.push(b.id)
+      tops.set(b.id, b.top + shift)
+    }
+    this.pushEvent("move_cards", {cards, dx: 0, dy: shift})
+    // The frames and the edges are drawn from the boxes as they stand, so they follow the move
+    // rather than waiting for the render.
+    this.draw()
+    const stack = this.pushes.get(grown.id) || []
+    stack.push({dy: shift, cards: tops})
+    this.pushes.set(grown.id, stack)
+  },
+
+  // Where every placed card stands, in stage pixels, as a placement pass reads it: the
+  // position the server rendered for left and top, and the measured rectangle for width and
+  // height, which is a screen measurement and so divided by the scale.
+  //
+  // A node carrying an inline translate is a card whose move the server has not answered for
+  // yet, and its position and its rectangle disagree by that much; it is left out rather than
+  // read at either of the two places it is in.
+  placedBoxes() {
+    const {scale} = this.view
+    const boxes = []
+    for (const node of this.el.querySelectorAll(".node:not([data-unplaced])")) {
+      if (node.style.translate) continue
+      const b = node.getBoundingClientRect()
+      const {x, y} = this.positionOf(node)
+      boxes.push({
+        id: Number(node.dataset.card),
+        node,
+        left: x,
+        top: y,
+        right: x + b.width / scale,
+        bottom: y + b.height / scale,
+      })
+    }
+    return boxes
+  },
 }
 
 // The room a frame leaves above the cards it holds: FRAME_PAD alone for a group whose section
@@ -1454,6 +1604,11 @@ function frameAround(extent, headerHeight, titleGap) {
 // in no group are the last section, after every group.
 function sortGroup(node) {
   return node.dataset.group === "" ? Number.MAX_SAFE_INTEGER : Number(node.dataset.group)
+}
+
+// The card an element belongs to, as the number the server and `data-card` both carry.
+function cardId(card) {
+  return Number(card.id.replace("card-", ""))
 }
 
 // Two boxes are clear of one another only with `margin` between them on every side, so a card
