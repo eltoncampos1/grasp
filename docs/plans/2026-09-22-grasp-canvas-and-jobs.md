@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Three fixes to what the reader sees on the canvas. (1) The canvas zooms out to 5%, so a whole review fits on one screen. (2) Groups an agent lays out through `set_cards` land in stacked frames that never overlap: a card is placed only beside an opener in its own group, and the placement pass keeps a group's cards clear of every other group's frame, header included. (3) Enqueueing an Oban job is an edge: a call to `Worker.new/1` or `Worker.new/2` on a module whose `perform/1` is an `oban_worker` entry point becomes a clickable call of kind `enqueue` on that `perform/1`, drawn dashed like a route, with the worker and its queue as the span's title, so the worker's callers menu lists every function that enqueues it.
+**Goal:** Five changes to what the reader sees on the canvas. (1) The canvas zooms out to 5%, so a whole review fits on one screen. (2) Groups an agent lays out through `set_cards` land in stacked frames that never overlap: a card is placed only beside an opener in its own group, and the placement pass keeps a group's cards clear of every other group's frame, header included. (3) Enqueueing an Oban job is an edge: a call to `Worker.new/1` or `Worker.new/2` on a module whose `perform/1` is an `oban_worker` entry point becomes a clickable call of kind `enqueue` on that `perform/1`, drawn dashed like a route, with the worker and its queue as the span's title, so the worker's callers menu lists every function that enqueues it. (4) Alt+drag on a card moves the whole connected graph the card belongs to. (5) A help dialog, opened with `?` or from the toolbar, lists every mouse gesture and key the toolbar does not show.
 
-**Architecture:** Fixes 1 and 2 live entirely in the canvas hook (`grasp/assets/js/hooks/canvas.js`): a constant, and the placement pass gaining a notion of frame boxes — the rectangle `drawFrames()` would draw round a group's cards — as obstacles for cards of other groups. Fix 3 is a resolution step modelled on `Grasp.Index.Routes`: a new `Grasp.Index.Jobs.resolve/2` runs after entry-point detection in both `Builder` and `Incremental`, retargets the matching calls and adds a `job` map; `Builder.call_json/1` writes it as `"job"`; `Grasp.Highlight` reads it into `data-kind="enqueue"` and a `title`; the stylesheet draws `enqueue` like `route`.
+**Architecture:** Changes 1, 2 and the hook half of 4 live in the canvas hook (`grasp/assets/js/hooks/canvas.js`): a constant, and the placement pass gaining a notion of frame boxes — the rectangle `drawFrames()` would draw round a group's cards — as obstacles for cards of other groups. Fix 3 is a resolution step modelled on `Grasp.Index.Routes`: a new `Grasp.Index.Jobs.resolve/2` runs after entry-point detection in both `Builder` and `Incremental`, retargets the matching calls and adds a `job` map; `Builder.call_json/1` writes it as `"job"`; `Grasp.Highlight` reads it into `data-kind="enqueue"` and a `title`; the stylesheet draws `enqueue` like `route`. Change 4 adds `Forest.shift_cards/3` and a `move_cards` LiveView event beside `shift_group`/`move_group`. Change 5 is a static HEEx `<dialog>` with a small client-only hook; no server state.
 
 **Tech Stack:** Elixir, Phoenix LiveView (viewer), esbuild (`mix assets.build`), the Oban worker entry points already detected by `Grasp.Index.EntryPoints`.
 
@@ -342,12 +342,115 @@ function frameAround(extent, headerHeight) {
 
 ---
 
-### Task 4: Documentation
+### Task 4: Alt+drag moves the connected graph
+
+**Files:** modify `grasp/assets/js/hooks/canvas.js` (`pointerDown`, a `beginGraphDrag`, `dragNodes`, `pointerUp`, one helper), `grasp/lib/grasp/session/forest.ex`, `grasp/lib/grasp/session.ex`, `grasp/lib/grasp_web/live/review_live.ex`; tests `grasp/test/grasp/session/forest_test.exs`, `grasp/test/grasp_web/live/review_live_test.exs`; rebuild `grasp/priv/static/assets/grasp.js`.
+
+**Interfaces (produced):**
+
+```elixir
+# Grasp.Session.Forest
+@spec shift_cards(t(), [card_id()], {integer(), integer()}) :: t()
+# Adds {dx, dy} to the position of every listed card that has one; ids the forest does not
+# hold and cards with no position are skipped. Groups are untouched. Same shape as shift_group/3.
+
+# Grasp.Session
+@spec shift_cards(name(), [Forest.card_id()], {integer(), integer()}) :: Forest.t()
+
+# GraspWeb.ReviewLive event
+# "move_cards" %{"cards" => [integer | string], "dx" => integer, "dy" => integer}
+# Non-integer dx/dy or a non-list cards => {:noreply, socket} unchanged (mirror "move_group").
+# Ids that do not parse as integers are dropped from the list.
+```
+
+**Gesture (the spec):** Alt (Option on macOS) held while pressing on a card — anywhere on it except its links (`a`), whose Alt+click is the browser's download gesture — starts a **graph drag**: every card connected to the pressed one travels by the same displacement. Connected means reachable, in either direction, over the edges the canvas draws: the `[data-edge-to]` sites inside each card name the target card ids, so build the undirected adjacency from every site on the canvas once at press time and take the component of the pressed card (`.node[data-unplaced]` nodes excluded — a card with no position yet cannot be shifted). Alt has precedence over Ctrl and over the header rule; Space still pans; Shift+press stays the selection click. Membership is never changed by a graph drag (no `group` in the pushed event), as with a group drag. The pressed card's group frames follow their cards as always.
+
+- [ ] **Step 1: Forest test** in `forest_test.exs`, beside the `shift_group/3` test (read it and mirror its setup):
+
+```elixir
+  test "shift_cards/3 adds to every listed placed card and leaves the rest alone" do
+    # arrange three cards, place two of them, as the shift_group test does
+    ...
+    shifted = Forest.shift_cards(forest, [a, b, c, c + 999], {40, -10})
+    assert Forest.card(shifted, a).position == {ax + 40, ay - 10}
+    assert Forest.card(shifted, b).position == {bx + 40, by - 10}
+    assert Forest.card(shifted, c).position == nil          # c was never placed
+    assert Forest.shift_cards(forest, [], {1, 1}) == forest
+  end
+```
+(Use the accessor the file already uses to read a card; if it reads `forest.cards[id]`, do the same.) Run; expect `UndefinedFunctionError`.
+
+- [ ] **Step 2: Implement `Forest.shift_cards/3`** directly under `shift_group/3`, with `@doc`/`@spec` in the same voice; `Session.shift_cards/3` under `Session.shift_group/3` calling `mutate/2`. Run the test; expect pass.
+
+- [ ] **Step 3: LiveView test** in `review_live_test.exs` beside the `move_group` tests (line ~790; mirror how they open cards and read positions): `render_hook(view, "move_cards", %{"cards" => [1, 2], "dx" => 40, "dy" => -10})` moves both, leaves a third card alone, and keeps every card's group; `%{"cards" => "nope", ...}` and `%{"cards" => [1], "dx" => "x", "dy" => 1}` change nothing. Run; expect failures on the unknown event.
+
+- [ ] **Step 4: Handler** in `review_live.ex` under `"move_group"`:
+
+```elixir
+  def handle_event("move_cards", %{"cards" => cards, "dx" => dx, "dy" => dy}, socket)
+      when is_list(cards) do
+    case {int(dx), int(dy)} do
+      {dx, dy} when is_integer(dx) and is_integer(dy) ->
+        ids = cards |> Enum.map(&int/1) |> Enum.filter(&is_integer/1)
+        mutate(socket, &Session.shift_cards(&1, ids, {dx, dy}))
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("move_cards", _params, socket), do: {:noreply, socket}
+```
+Run the tests; expect pass.
+
+- [ ] **Step 5: Hook.** In `pointerDown`, after the Space check and the Shift check and before the frame-title rule, add: `const altCard = e.altKey && e.target.closest(".card"); if (altCard && !e.target.closest("a")) return this.beginGraphDrag(e, altCard)`. `beginGraphDrag(e, card)` mirrors `beginGroupDrag` with `kind: "graph"`, `nodes: this.connectedNodes(card.closest(".node"))`, `ctrl: false`. `connectedNodes(node)`: build `Map<id, Set<id>>` from every `[data-edge-to]` site under `this.el` (from = the enclosing `.node`'s `dataset.card`, to = `site.dataset.edgeTo`, both directions), BFS from the node's id, return the `.node` elements found that are not `[data-unplaced]`, the pressed node first. `dragNodes`: `if (drag.kind === "graph") return drag.nodes`. `pointerUp`: a `graph` branch identical to the `group` one but pushing `move_cards` with `{cards: drag.nodes.map(n => Number(n.dataset.card)), dx, dy}`. Comments state the gesture as a durable fact (Alt is the whole-graph handle; connection is over the drawn edges).
+
+- [ ] **Step 6: Gates and commit.** `mix assets.build`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix test`; commit `canvas.js`, `forest.ex`, `session.ex`, `review_live.ex`, the two tests and `grasp/priv/static/assets/grasp.js`. Message: `Alt and drag carries the whole connected graph` plus trailer.
+
+---
+
+### Task 5: The help dialog
+
+**Files:** create `grasp/lib/grasp_web/components/help.ex` (function component `help_dialog/1`), `grasp/assets/js/hooks/help.js`; modify `grasp/assets/js/app.js` (register the hook), `grasp/assets/js/hooks/keys.js`, `grasp/lib/grasp_web/live/review_live.ex` (render the dialog; a toolbar button), `grasp/assets/css/app.css`; test `grasp/test/grasp_web/live/review_live_test.exs`; rebuild both bundles.
+
+**Behaviour (the spec):** A `<dialog id="help" phx-hook="Help" phx-update="ignore">` lists every gesture and key the toolbar does not show. It is client-only: no server state, no event. It opens with the `?` key (Shift+/ on most layouts — match `e.key === "?"`), and from a toolbar button `<button type="button" id="help-toggle" data-tip="Keys and gestures" data-key="?">?</button>` placed last in the toolbar (after the chat toggle). The dialog uses `showModal()`; Escape closes it natively; a click on the backdrop (target === dialog) closes it; `?` while open closes it. `keys.js` returns early while `document.getElementById("help")?.open` is true, the way it does for the palette, so `x` or `c` typed at the help cannot close a card. Rendering is static HEEx: `<dl>` rows of `<dt><kbd>…</kbd></dt><dd>…</dd>` under `<h3>` headings, in this order and with this content (edit wording for brevity, not for meaning):
+
+**Mouse**
+- Drag a card's header — move the card. Ctrl+drag anywhere on a card does the same.
+- Alt+drag on a card — move every card connected to it.
+- Drag a frame's title — move the whole group. Click it to rename.
+- Drop a card inside another frame — move it to that group.
+- Shift+click a card — select it; Shift+click again deselects.
+- Drag the background, or Space+drag anywhere — pan. Wheel pans; ⌘+wheel zooms about the cursor.
+- Double-click an edge — jump to the card at its far end.
+- Click a line number — comment on that line; drag along the numbers, or Shift+click, for a range.
+
+**Keys**
+- ← → ↑ ↓ — move focus to caller, callee, previous, next.
+- `x` / `Shift+x` — close the focused card / close it with everything only it reached.
+- `c` collapse · `d` source or diff · `h` fold unchanged lines.
+- `s` signatures · `f` fit · ⌘0 reset zoom.
+- ⌘K palette · ⌘G group the selection · ⇧⌘G ungroup · Esc clear the selection.
+- ⌘M or ⌘\ sidebar · ⌘I chat · `?` this list.
+
+**Chat**
+- Enter sends · Shift+Enter breaks a line · ↑ in an empty box recalls the last prompt.
+
+Footer line: "⌘ is Ctrl outside macOS." Style: same surface tokens as the palette dialog (`#palette` rules in `app.css`), two-column `dl` (`grid-template-columns: max-content 1fr`), `kbd` in the monospace stack with a subtle border; max-width ~36rem; `::backdrop` like the palette's.
+
+- [ ] **Step 1: LiveView test** in `review_live_test.exs`: the page renders `dialog#help[phx-hook="Help"]` containing the text `Alt+drag` and `?` in a `kbd`, and the toolbar renders `button#help-toggle`. Run; expect failure.
+- [ ] **Step 2: Component + render + toolbar button.** `GraspWeb.Components.Help.help_dialog/1` with `@moduledoc`, `attr` for nothing (no attrs) — a plain component; render it next to `<.palette …>` in `review_live.ex`; add the toolbar button. Test passes.
+- [ ] **Step 3: Hook.** `help.js`: on mount, `window` keydown listener for `?` (ignoring `INPUT`/`TEXTAREA` targets and an open palette) that toggles `this.el.open ? this.el.close() : this.el.showModal()`; `click` on `this.el` closes when `e.target === this.el`; delegated click on `#help-toggle` (listen on `document`, or dispatch a `grasp:help-toggle` window event from the canvas hook's toolbar handler if the toolbar click is already intercepted there — read `canvas.js` `toolbarClick` around line 303 and pick the one that works, noting that `#toggle-signatures` is handled there). `destroyed()` removes listeners. Register in `app.js`. In `keys.js`, add the `help` open check beside the palette check.
+- [ ] **Step 4: Gates and commit.** `mix assets.build`, `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix test`; commit the component, hooks, `app.js`, `keys.js`, `review_live.ex`, `app.css`, the test and both bundles. Message: `A help dialog lists the keys and gestures` plus trailer.
+
+---
+
+### Task 6: Documentation
 
 **Files:** modify `docs/specs/2026-09-15-grasp-design.md`, `grasp/guides/reviewing.md`, `grasp/guides/indexing.md`, `README.md` and `grasp/README.md` where they list what the index follows.
 
 - [ ] **Step 1: Spec.** (a) After the "Routes are edges" bullet in Part 1 §Templates add a bullet **"Jobs are edges."** stating: a call to `Worker.new/1` or `new/2` on a module whose `perform/1` is an `oban_worker` entry point is a call of kind `enqueue` on that `perform/1`, resolved by `Grasp.Index.Jobs.resolve/2` after entry-point detection in both the builder and the incremental path; it carries `job: %{worker, queue}` (queue from the worker's `__opts__/0`, `"default"` when absent); the span renders `data-kind="enqueue"` with title `Oban job · Worker · queue`, the edge dashed; the enqueueing function is a caller of the worker. (b) In §Index JSON, beside the `route` call field, document `"job": {"worker", "queue"}` on `enqueue` calls. (c) In Part 2 §Layout, replace the sentence "a card with no placed neighbour is a root and goes under the lowest placed card of its group, at its group's left edge, so groups stack downwards" with the rules from Task 3: openers count only within a card's own group; a group's cards are kept clear of every other group's frame, header included, so frames stack downwards with one gap between them and never overlap when laid out; a new group starts below everything on the canvas; the groupless section is placed last, under every frame. (d) In the zoom paragraph, state the range: the scale runs from 5% to 250%. (e) Add `### Known gaps (milestone 7.5)`: enqueues through `Oban.Job.new/2` with `worker:`, `Oban.insert_all/2` over prebuilt changesets, and a worker module held in a variable are not followed; a frame a reader has dragged can still overlap another (placement, not dragging, is what stays clear); the incremental path resolves enqueues only on rebuilt records, like routes. (f) In §Milestones, add 7.5 in the style of 7.2–7.4: canvas frames laid out clear of one another, 5% zoom floor, enqueue edges.
 
-- [ ] **Step 2: Guides and READMEs.** In `grasp/guides/indexing.md`, where route edges are explained, add a short paragraph on job edges. In `grasp/guides/reviewing.md`, where the route's dotted underline is described (grep `dotted` or `route`), say the same underline and dashed edge mark a job being queued, with the worker and queue in the tooltip. In `README.md` and `grasp/README.md`, wherever the feature list names route arrows, add job edges in the same breath. No history words.
+- [ ] **Step 2: Guides and READMEs.** In `grasp/guides/reviewing.md` §"The canvas is a whiteboard", add a bullet for Alt+drag (every card connected to the pressed one travels together) and a closing bullet that `?` opens the list of keys and gestures; in `grasp/guides/getting-started.md` §"The toolbar" add the help button (`?`). In the spec §Layout drag paragraph add the graph drag and, in the toolbar sentence, the help button and `?` key; in the Known gaps add: a graph drag follows the drawn edges only, so a hidden call joins nothing. In `grasp/guides/indexing.md`, where route edges are explained, add a short paragraph on job edges. In `grasp/guides/reviewing.md`, where the route's dotted underline is described (grep `dotted` or `route`), say the same underline and dashed edge mark a job being queued, with the worker and queue in the tooltip. In `README.md` and `grasp/README.md`, wherever the feature list names route arrows, add job edges in the same breath. No history words.
 
 - [ ] **Step 3: Gates and commit.** `mix format --check-formatted` (from `grasp/`; docs are not formatted but the gate is the rule), then commit the docs: `Docs: jobs are edges, frames stack clear, zoom to 5%` plus trailer.
