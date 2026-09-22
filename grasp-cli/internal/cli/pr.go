@@ -70,7 +70,7 @@ removal is forced, so anything uncommitted in it goes too.`,
 		}
 		logln("\npull request %d is ready: %s (%s against %s) — %s",
 			opened.PR.Number, opened.PR.Title, opened.PR.HeadRefName, opened.PR.BaseRefName, opened.PR.URL)
-		logln("open the viewer with `grasp web --no-index` (the index already points at the worktree)")
+		logln("open the viewer with `grasp web` (it keeps this pull request's index)")
 		return nil
 	},
 }

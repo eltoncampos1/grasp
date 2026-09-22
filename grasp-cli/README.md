@@ -37,7 +37,7 @@ git pull && make build   # the installed grasp is the new build, nothing to re-i
 cd any-repo
 grasp init            # detect languages, base branch; pick a Claude profile; write .grasp/
 grasp pr              # fuzzy-pick an open PR → worktree + index against its base
-grasp web --no-index  # serve the canvas on the index the PR wrote, open the browser
+grasp web             # serve the canvas — it keeps the PR's index and opens the browser
 ```
 
 Reviewing your own branch:
