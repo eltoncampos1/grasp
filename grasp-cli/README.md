@@ -105,10 +105,11 @@ Reading tools answer from the index: `list_changes` (the first call of a PR revi
 `list_entry_points`, `reload_index`, `list_sessions`, `get_session`.
 
 Arranging tools drive the browser tab reading the session, which applies and autosaves:
-`set_cards` (replace the canvas with a whole graph in one call, laid out by the flow engine),
-`open_card`, `close_card`, `focus_card`, `set_view`, `highlight_card` (pans to a line and tints
-it). Comments: `list_comments`, `add_comment` (line or range, either side), `reply_comment`,
-`resolve_comment`, `publish_comments`.
+`set_cards` (replace the canvas with a whole graph in one call, laid out by the flow engine,
+with per-card `group` titles framing flows apart), `open_card`, `close_card`, `focus_card`,
+`set_view`, `highlight_card` (pans to a line and tints it), `group_cards`/`ungroup_cards`/
+`rename_group`. Comments: `list_comments`, `add_comment` (line or range, either side),
+`reply_comment`, `resolve_comment`, `publish_comments`.
 
 Ask the chat "show me the flow from X into Y" and watch the chain assemble on the canvas.
 
@@ -132,9 +133,14 @@ spawn sets that env explicitly, and `grasp doctor` prints the full resolution.
 - Ambiguous or external calls are dropped rather than guessed.
 - Entry points (routes, workers) are not detected yet.
 
+Groups read two flows apart on one canvas: select cards (`⌘`+click, or `Shift`+drag a box) and
+`⌘G` frames them — the frame follows its cards wherever they go, its title (click to rename,
+drag to move the whole group) stays readable at any zoom, a card opened from a member joins the
+group, and dropping a card inside another frame moves it there. `⇧⌘G` or the frame's `ungroup`
+takes the frame away, leaving the cards.
+
 ## Roadmap (SPEC.md has the detail)
 
-MCP server so the agent can drive the canvas itself (open/arrange cards, answer threads) ·
-groups/frames on the canvas · comment re-anchoring when lines move · drag-to-select comment
-ranges · auto-review on open fed by `.grasp/review.md` (`--no-review` to skip) · pluggable
-agent backends (Kimi, custom) · entry-point detectors · `web --watch`.
+Comment re-anchoring when lines move · auto-review on open fed by `.grasp/review.md`
+(`--no-review` to skip) · pluggable agent backends (Kimi, custom) · entry-point detectors ·
+`web --watch`.

@@ -1621,6 +1621,35 @@ function applyCanvasCommand(cmd) {
     case 'highlight_card':
       applyHighlight(cmd);
       break;
+    case 'group_cards': {
+      const ids = (cmd.function_ids || []).filter(id => S.cards.has(id));
+      if (!ids.length) break;
+      pushHistory();
+      for (const g of S.groups) g.cards = g.cards.filter(c => !ids.includes(c));
+      let g = cmd.title ? S.groups.find(x => x.title === cmd.title) : null;
+      if (!g) {
+        g = { id: 'g_' + Math.random().toString(36).slice(2, 8), title: cmd.title || '', cards: [] };
+        S.groups.push(g);
+      }
+      for (const id of ids) if (!g.cards.includes(id)) g.cards.push(id);
+      pruneGroups(); renderCanvas(); scheduleSave();
+      break;
+    }
+    case 'ungroup_cards': {
+      const ids = cmd.function_ids || [];
+      pushHistory();
+      for (const g of S.groups) g.cards = g.cards.filter(c => !ids.includes(c));
+      pruneGroups(); renderCanvas(); scheduleSave();
+      break;
+    }
+    case 'rename_group': {
+      const g = S.groups.find(x => x.title === cmd.group || x.id === cmd.group);
+      if (!g) break;
+      pushHistory();
+      g.title = cmd.title || '';
+      renderCanvas(); scheduleSave();
+      break;
+    }
   }
 }
 
@@ -1636,7 +1665,10 @@ function applySetCards(cmd) {
   pushHistory();
   S.cards = new Map();
   S.edges = [];
+  S.groups = [];
   const byKey = new Map();
+  const titleByKey = new Map(); // a card with no group takes its parent's
+  const groupCards = new Map(); // title -> ids
   for (const c of cmd.cards || []) {
     const id = c.function_id;
     if (!byId.has(id)) continue;
@@ -1645,12 +1677,20 @@ function applySetCards(cmd) {
       S.cards.set(id, { x: 0, y: 0, view: fn.base_source != null ? 'diff' : 'source', fold: false, collapsed: false, root: !c.parent_key, expanded: new Set() });
     }
     byKey.set(c.key, id);
+    const title = c.group || (c.parent_key ? titleByKey.get(c.parent_key) : undefined);
+    titleByKey.set(c.key, title);
+    if (title) {
+      if (!groupCards.has(title)) groupCards.set(title, []);
+      if (!groupCards.get(title).includes(id)) groupCards.get(title).push(id);
+    }
     if (c.parent_key && byKey.has(c.parent_key)) {
       const from = byKey.get(c.parent_key);
       if (from !== id && !S.edges.some(e => e.from === from && e.to === id))
         S.edges.push({ from, to: id, key: callKey(from, id) });
     }
   }
+  for (const [title, ids] of groupCards)
+    S.groups.push({ id: 'g_' + Math.random().toString(36).slice(2, 8), title, cards: ids });
   S.focus = byKey.size ? byKey.values().next().value : null;
   renderCanvas();
   requestAnimationFrame(() => requestAnimationFrame(() => {

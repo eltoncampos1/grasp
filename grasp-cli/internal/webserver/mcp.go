@@ -104,7 +104,11 @@ func schema(props map[string]any, required ...string) map[string]any {
 	return map[string]any{"type": "object", "properties": props, "required": required}
 }
 
-func str(desc string) map[string]any   { return map[string]any{"type": "string", "description": desc} }
+func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+
+func strArr(desc string) map[string]any {
+	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
+}
 func num(desc string) map[string]any   { return map[string]any{"type": "integer", "description": desc} }
 func boolp(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
 
@@ -120,12 +124,21 @@ var mcpTools = []map[string]any{
 	{"name": "reload_index", "description": "Re-read the index file and report what it holds now: functions, changes, git refs.", "inputSchema": schema(map[string]any{})},
 	{"name": "list_sessions", "description": "The saved review sessions.", "inputSchema": schema(map[string]any{})},
 	{"name": "get_session", "description": "A session's open cards, views and edges. Cards autosave moments after the canvas changes, so this reads the state as of about a second ago.", "inputSchema": schema(map[string]any{"session": str("session name; omit for the review's default")})},
-	{"name": "set_cards", "description": "Replace the whole canvas with a graph described in one call and lay it out. Each card is {key, function_id, parent_key?}; a card hangs under an earlier one by naming its key; two entries naming the same function are one card with an edge from each parent.", "inputSchema": schema(map[string]any{
+	{"name": "set_cards", "description": "Replace the whole canvas with a graph described in one call and lay it out. Each card is {key, function_id, parent_key?, group?}; a card hangs under an earlier one by naming its key; two entries naming the same function are one card with an edge from each parent. group is a title: cards sharing one are framed together; a card that names no group takes its parent's.", "inputSchema": schema(map[string]any{
 		"cards": map[string]any{"type": "array", "description": "cards in placement order", "items": schema(map[string]any{
-			"key": str("your handle for this card"), "function_id": str("indexed function id"), "parent_key": str("optional key of the calling card"),
+			"key": str("your handle for this card"), "function_id": str("indexed function id"), "parent_key": str("optional key of the calling card"), "group": str("optional frame title"),
 		}, "key", "function_id")},
 		"session": str("session name; omit for the review's default"),
 	}, "cards")},
+	{"name": "group_cards", "description": "Frame cards already open under a title, joining the group already carrying it. A card belongs to one group, so naming it here takes it out of the one it was in.", "inputSchema": schema(map[string]any{
+		"function_ids": strArr("open cards to frame"), "title": str("frame title; empty for an untitled frame"), "session": str("optional session"),
+	}, "function_ids")},
+	{"name": "ungroup_cards", "description": "Take cards out of their groups, back to the unframed canvas.", "inputSchema": schema(map[string]any{
+		"function_ids": strArr("cards to unframe"), "session": str("optional session"),
+	}, "function_ids")},
+	{"name": "rename_group", "description": "Give a group another title (or none), keeping its cards.", "inputSchema": schema(map[string]any{
+		"group": str("the group's current title"), "title": str("the new title; empty clears it"), "session": str("optional session"),
+	}, "group")},
 	{"name": "open_card", "description": "Add one card to the canvas, beside its caller when called_by names one.", "inputSchema": schema(map[string]any{"function_id": str("function to open"), "called_by": str("optional function id already on canvas"), "session": str("optional session")}, "function_id")},
 	{"name": "close_card", "description": "Close one card and the edges touching it.", "inputSchema": schema(map[string]any{"function_id": str("function to close"), "session": str("optional session")}, "function_id")},
 	{"name": "focus_card", "description": "Scroll a card into view, to say \"look here\".", "inputSchema": schema(map[string]any{"function_id": str("function to focus"), "session": str("optional session")}, "function_id")},
@@ -399,7 +412,8 @@ func (s *Server) callTool(name string, args map[string]any) (any, error) {
 		_ = json.Unmarshal(data, &doc)
 		return map[string]any{"session": session, "state": doc}, nil
 
-	case "set_cards", "open_card", "close_card", "focus_card", "set_view", "highlight_card":
+	case "set_cards", "open_card", "close_card", "focus_card", "set_view", "highlight_card",
+		"group_cards", "ungroup_cards", "rename_group":
 		return s.canvasCommand(name, args, session)
 
 	case "list_comments":
@@ -525,6 +539,16 @@ func (s *Server) canvasCommand(op string, args map[string]any, session string) (
 		if e := argInt(args, "end_line"); e > 0 {
 			cmd["end_line"] = e
 		}
+	case "group_cards", "ungroup_cards":
+		ids, _ := args["function_ids"].([]any)
+		if len(ids) == 0 {
+			return nil, fmt.Errorf("function_ids is required and must be non-empty")
+		}
+		cmd["function_ids"] = ids
+		cmd["title"] = argStr(args, "title")
+	case "rename_group":
+		cmd["group"] = argStr(args, "group")
+		cmd["title"] = argStr(args, "title")
 	}
 	data, _ := json.Marshal(cmd)
 	n := s.bus.publish(string(data))
