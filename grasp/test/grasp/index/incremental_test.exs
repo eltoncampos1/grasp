@@ -332,11 +332,14 @@ defmodule Grasp.Index.IncrementalTest do
 
       {:ok, updated} = update(routeless, root, [@greeter], [])
 
+      show = fetch(updated, "SampleAppWeb.GreetHTML.show/1")
+
       assert %{"kind" => "route", "route" => %{"verb" => "GET", "path" => "/hello"}} =
-               updated
-               |> fetch("SampleAppWeb.GreetHTML.show/1")
-               |> Map.fetch!("calls")
-               |> Enum.find(&(&1["target"] == @mount))
+               Enum.find(show["calls"], &(&1["target"] == @mount))
+
+      kept = fetch(document, "SampleAppWeb.GreetHTML.show/1")
+      assert show["source"] == kept["source"]
+      assert show["span"] == kept["span"]
     end
 
     test "reverts an enqueue edge on a record it did not rebuild when the worker is gone",

@@ -59,7 +59,7 @@ defmodule Grasp.Index.Jobs do
   defp resolve_record(%{calls: calls} = record, workers) do
     case Enum.map(calls, &call(&1, workers)) do
       ^calls -> record
-      resolved -> %{record | calls: Enum.uniq(resolved)}
+      resolved -> %{record | calls: Enum.uniq_by(resolved, &{&1.target, &1.kind, &1.range})}
     end
   end
 

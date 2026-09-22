@@ -27,9 +27,11 @@ defmodule Grasp.Index.Resolve do
   Resolves route sites and enqueueing calls on `records` against `entries`.
 
   `entries` are entry points in the JSON shape the document holds them in, as
-  `Grasp.Index.Builder.entry_point_json/1` writes them.
+  `Grasp.Index.Builder.entry_point_json/1` writes them. Only `:calls` and `:route_sites`
+  are read, so a record carrying those two is enough — which is what `refresh/2` hands
+  over; every other key a record has is passed through.
   """
-  @spec resolve([Join.function_record()], [map()]) :: [Join.function_record()]
+  @spec resolve([map()], [map()]) :: [map()]
   def resolve(records, entries), do: records |> Routes.resolve(entries) |> Jobs.resolve(entries)
 
   @doc """
@@ -39,13 +41,13 @@ defmodule Grasp.Index.Resolve do
   derived edge is undone first — a call of kind `"route"` is dropped, an enqueue call
   becomes the call its `"via"` names — so what comes back is decided by `entries` alone
   and resolving twice against the same entry points says the same thing. A record written
-  without its `"route_sites"` is returned unchanged.
+  without its `"route_sites"`, or without its `"calls"`, is returned unchanged.
   """
   @spec refresh(map(), [map()]) :: map()
-  def refresh(%{"route_sites" => sites} = record, entries) when is_list(sites) do
+  def refresh(%{"route_sites" => sites, "calls" => record_calls} = record, entries)
+      when is_list(sites) and is_list(record_calls) do
     calls =
-      record["calls"]
-      |> List.wrap()
+      record_calls
       |> Enum.reject(&(&1["kind"] == "route"))
       |> Enum.map(&unresolved/1)
       |> Enum.map(&call_record/1)
