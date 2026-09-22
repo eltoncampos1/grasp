@@ -146,6 +146,6 @@ takes the frame away, leaving the cards.
 
 ## Roadmap (SPEC.md has the detail)
 
-Comment re-anchoring when lines move · auto-review on open fed by `.grasp/review.md`
-(`--no-review` to skip) · pluggable agent backends (Kimi, custom) · entry-point detectors ·
-`web --watch`.
+Auto-review on open fed by `.grasp/review.md` (`--no-review` to skip) · pluggable agent
+backends (Kimi, custom) · GitHub comment import ("sync from GitHub") · per-commit views ·
+entry-point detectors.
