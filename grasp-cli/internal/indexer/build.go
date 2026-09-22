@@ -59,12 +59,12 @@ func Build(opts Options) (*Index, error) {
 	log(fmt.Sprintf("parsing %d files", len(indexable)))
 
 	files := parseAll(root, indexable)
-	resolveAll(files)
+	resolveAll(files, resolveContext{goModule: readGoModule(root)})
 
 	idx := &Index{
 		Version:     1,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Project:     projectInfo(root),
+		Project:     projectInfo(root, files),
 		Functions:   []*Function{},
 		EntryPoints: []EntryPoint{},
 	}
@@ -185,22 +185,39 @@ func classify(root, baseRef string, files map[string]*fileParse, idx *Index, log
 			if err != nil {
 				continue
 			}
+			baseExact := map[string]*record{}
+			baseLoose := map[string][]*record{}
+			for _, br := range base.records {
+				baseExact[recordKey(br)] = br
+				baseLoose[looseKey(br)] = append(baseLoose[looseKey(br)], br)
+			}
+			matched := map[*record]bool{}
 			for _, r := range f.records {
-				baseRec := base.byName[r.localName]
+				br := baseExact[recordKey(r)]
+				if br == nil {
+					// The arity changed but the name is unambiguous: still the
+					// same function, modified rather than removed + added.
+					if lst := baseLoose[looseKey(r)]; len(lst) == 1 {
+						br = lst[0]
+					}
+				}
+				if br != nil {
+					matched[br] = true
+				}
 				switch {
-				case baseRec == nil:
+				case br == nil:
 					r.fn.Change = "added"
 					changed++
-				case overlaps(lines, r.fn.Span):
+				case overlaps(lines, r.fn.Span) || br.fn.Source != r.fn.Source:
 					r.fn.Change = "modified"
-					src := baseRec.fn.Source
+					src := br.fn.Source
 					r.fn.BaseSource = &src
 					changed++
 				}
 			}
 			var removed []*record
 			for _, br := range base.records {
-				if f.byName[br.localName] == nil {
+				if !matched[br] {
 					removed = append(removed, br)
 				}
 			}
@@ -219,6 +236,14 @@ func appendRemoved(idx *Index, base *fileParse, records []*record) {
 		r.fn.Calls = []Call{}
 		idx.Functions = append(idx.Functions, r.fn)
 	}
+}
+
+func recordKey(r *record) string {
+	return r.fn.Module + "|" + r.localName + "/" + itoa(r.fn.Arity)
+}
+
+func looseKey(r *record) string {
+	return r.fn.Module + "|" + r.localName
 }
 
 func overlaps(lines map[int]bool, span Span) bool {
@@ -243,9 +268,11 @@ func assemble(files map[string]*fileParse, idx *Index) {
 		if len(f.records) == 0 {
 			continue
 		}
-		if !seen[f.module] {
-			seen[f.module] = true
-			idx.Modules = append(idx.Modules, Module{Name: f.module, File: rel, Line: 1, Behaviours: []string{}})
+		for _, m := range f.modules {
+			if !seen[m.name] {
+				seen[m.name] = true
+				idx.Modules = append(idx.Modules, Module{Name: m.name, File: rel, Line: m.line, Behaviours: []string{}})
+			}
 		}
 		for _, r := range f.records {
 			idx.Functions = append(idx.Functions, r.fn)
@@ -269,7 +296,7 @@ func assemble(files map[string]*fileParse, idx *Index) {
 	sort.SliceStable(idx.Modules, func(i, j int) bool { return idx.Modules[i].Name < idx.Modules[j].Name })
 }
 
-func projectInfo(root string) Project {
+func projectInfo(root string, files map[string]*fileParse) Project {
 	app := filepath.Base(root)
 	if data, err := os.ReadFile(filepath.Join(root, "package.json")); err == nil {
 		var pkg struct {
@@ -279,7 +306,33 @@ func projectInfo(root string) Project {
 			app = pkg.Name
 		}
 	}
-	return Project{App: app, Root: root, Languages: []string{"javascript", "typescript"}}
+	langSet := map[string]bool{}
+	for _, f := range files {
+		langSet[f.lang] = true
+	}
+	var langs []string
+	for _, l := range []string{"elixir", "go", "js"} {
+		if langSet[l] {
+			langs = append(langs, l)
+		}
+	}
+	return Project{App: app, Root: root, Languages: langs}
+}
+
+// readGoModule reads the module path from go.mod, the anchor for resolving
+// this project's internal Go imports.
+func readGoModule(root string) string {
+	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "module "); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
 }
 
 // writeJSON writes atomically (temp file + rename) so a viewer watching the

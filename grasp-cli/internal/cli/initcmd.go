@@ -202,10 +202,6 @@ languages = [%s]
 port = 4040
 open = true
 # editor = "vscode"    # vscode | cursor | zed | idea — file:line deep links
-
-[viewer]
-# v0 borrows the upstream Elixir viewer until grasp-cli embeds its own:
-# grasp_checkout = "~/dev/grasp/grasp"   # a checkout of gfrancischelli/grasp
 `, profileLine, base, strings.Join(langs, ", "))
 }
 

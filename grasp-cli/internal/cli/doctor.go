@@ -68,20 +68,8 @@ prove auth works (spends one small request).`,
 			logln("· %-14s %s", "profile", "claude default (no CLAUDE_CONFIG_DIR pinned)")
 		}
 
-		indexDetailStr, fresh := indexDetail(root)
-		if fresh {
-			logln("· %-14s %s", "index", indexDetailStr)
-		} else {
-			logln("· %-14s %s", "index", indexDetailStr)
-		}
-
-		if cfg.Viewer.GraspCheckout != "" {
-			dir := agent.ExpandPath(cfg.Viewer.GraspCheckout)
-			_, statErr := os.Stat(filepath.Join(dir, "mix.exs"))
-			check(statErr == nil, "viewer", dir)
-		} else {
-			logln("· %-14s %s", "viewer", "not configured (set viewer.grasp_checkout to use the upstream viewer)")
-		}
+		indexDetailStr, _ := indexDetail(root)
+		logln("· %-14s %s", "index", indexDetailStr)
 
 		if doctorPing && lookErr == nil {
 			logln("pinging the agent (this spends one small request)…")

@@ -17,7 +17,6 @@ type Config struct {
 	Review Review `toml:"review"`
 	Index  Index  `toml:"index"`
 	Web    Web    `toml:"web"`
-	Viewer Viewer `toml:"viewer"`
 }
 
 type Agent struct {
@@ -40,12 +39,6 @@ type Web struct {
 	Port   int    `toml:"port"`
 	Editor string `toml:"editor"`
 	Open   bool   `toml:"open"`
-}
-
-// Viewer points at a checkout of upstream grasp, whose `mix grasp.viewer`
-// serves the canvas in v0 until grasp-cli embeds a viewer of its own.
-type Viewer struct {
-	GraspCheckout string `toml:"grasp_checkout"`
 }
 
 func Defaults() Config {

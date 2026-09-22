@@ -1,8 +1,13 @@
 # grasp CLI — Spec
 
 > Working name. Colide com o upstream [gfrancischelli/grasp](https://github.com/gfrancischelli/grasp)
-> (Apache-2.0), do qual este projeto deriva o conceito e o contrato de dados. Renomear antes de
+> (Apache-2.0), do qual este projeto deriva o conceito e o formato do índice. Renomear antes de
 > publicar (candidatos: `graspx`, `gcr`, `canvas-review`).
+>
+> **Decisão (2026-09-22): independência total do upstream.** Tudo que era Elixir foi
+> reimplementado em Go — indexador (tree-sitter), viewer (embutido no binário via `embed.FS`),
+> comments e publish. Nada do fluxo depende de Elixir instalado. Foco inicial de linguagens:
+> **Elixir, JS/TS e Go**.
 
 ## Visão
 
@@ -200,9 +205,10 @@ O viewer e as tools MCP são agnósticos ao backend; só o adapter muda.
 
 | Versão | Entrega |
 |---|---|
-| **v0** ✅ | `init`, `pr` (picker + worktree), `index` tree-sitter TS/JS, `doctor`, `web` (wrapper do viewer upstream). Entregue em 2026-09-22: indexa o builder-ui (1.7k arquivos, 3.4k funções) em ~0,5s; classificação validada contra PRs reais; índice aceito e renderizado pelo `mix grasp.viewer` upstream |
-| **v1** | Viewer próprio embutido (sidebar de changes, cards source/diff, comments, palette), `web --watch`, `publish`, MCP server, chat panel, mais linguagens (Elixir, Python, Go) |
-| **v2** | Auto-review na abertura (`review.auto` + `.grasp/review.md`), agentes plugáveis (Kimi, custom), issues como contexto MCP, canvas de call-chain com paridade ao upstream, backends de precisão (SCIP/LSP) |
+| **v0** ✅ | `init`, `pr` (picker + worktree), `index` tree-sitter TS/JS, `doctor`. Validado contra PRs reais do builder-ui e contra o viewer upstream (2026-09-22) |
+| **v1** ✅ (parcial) | **Entregue 2026-09-22:** indexadores Elixir (aliases, imports only:, clauses merged, captures, pipe-arity) e Go (packages via go.mod, methods por receiver); viewer próprio embutido no binário — canvas com cards e edges SVG, sidebar de changes, palette ⌘K, diff/source (`d`), changes-only fold (`h`), comments com reply/resolve persistidos em `.grasp/comments.json`, live-reload SSE, guard de loopback; `grasp publish` (threads → review comments via gh, fallback file-level). Validado: platform Elixir 7.1k funções/11.5k edges em 0,73s; grasp-cli Go; builder-ui JS |
+| **v1 restante** | MCP server em Go (agente dirige o canvas), chat panel (spawn do agente com perfil pinado), sessões salvas, entry points plugáveis, `web --watch` |
+| **v2** | Auto-review na abertura (`review.auto` + `.grasp/review.md`, `--no-review`), agentes plugáveis (Kimi, custom), issues como contexto MCP, backends de precisão (SCIP/LSP), path aliases JS |
 
 ## Riscos e decisões em aberto
 
