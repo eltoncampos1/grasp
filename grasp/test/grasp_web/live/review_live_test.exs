@@ -809,6 +809,30 @@ defmodule GraspWeb.ReviewLiveTest do
     assert has_element?(view, "#node-2[data-group='1'][data-unplaced]")
   end
 
+  test "a graph drag moves every listed card and keeps each one's group", %{
+    view: view,
+    name: name
+  } do
+    Session.open_root(name, @greet)
+    Session.open_root(name, @perform)
+    Session.open_root(name, @show)
+    Session.new_group(name, "Greeting", [1, 2])
+    render_hook(view, "move_card", %{"card" => 1, "x" => 0, "y" => 0})
+    render_hook(view, "move_card", %{"card" => 2, "x" => 5, "y" => 5})
+    render_hook(view, "move_card", %{"card" => 3, "x" => 90, "y" => 90})
+
+    render_hook(view, "move_cards", %{"cards" => [1, 2], "dx" => 40, "dy" => -10})
+
+    assert has_element?(view, "#node-1[data-group='1'][style*='--x: 40px'][style*='--y: -10px']")
+    assert has_element?(view, "#node-2[data-group='1'][style*='--x: 45px'][style*='--y: -5px']")
+    assert has_element?(view, "#node-3[style*='--x: 90px'][style*='--y: 90px']")
+
+    render_hook(view, "move_cards", %{"cards" => "nope", "dx" => 1, "dy" => 1})
+    render_hook(view, "move_cards", %{"cards" => [1], "dx" => "x", "dy" => 1})
+
+    assert has_element?(view, "#node-1[style*='--x: 40px'][style*='--y: -10px']")
+  end
+
   test "an unhandled direction or an unparsable card id leaves the view alive", %{
     view: view,
     name: name

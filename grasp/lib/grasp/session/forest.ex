@@ -569,6 +569,29 @@ defmodule Grasp.Session.Forest do
     end
   end
 
+  @doc """
+  Adds `{dx, dy}` to the position of every placed card in `card_ids`, moving them as one
+  piece.
+
+  The listed cards keep their positions relative to one another, whatever groups they are
+  spread across; groups themselves are untouched, so a shift decides no membership. Deltas
+  rather than a position each, since they start from positions of their own. A card with no
+  position keeps none, and an id the forest does not hold is skipped.
+  """
+  @spec shift_cards(t(), [id()], {integer(), integer()}) :: t()
+  def shift_cards(%__MODULE__{} = forest, card_ids, {dx, dy})
+      when is_list(card_ids) and is_integer(dx) and is_integer(dy) do
+    cards =
+      Enum.reduce(card_ids, forest.cards, fn id, cards ->
+        case Map.get(cards, id) do
+          %{position: {x, y}} = card -> Map.put(cards, id, %{card | position: {x + dx, y + dy}})
+          _unplaced_or_unknown -> cards
+        end
+      end)
+
+    %{forest | cards: cards}
+  end
+
   @doc "Empties every card's position, so the whole canvas is laid out again."
   @spec reset_layout(t()) :: t()
   def reset_layout(%__MODULE__{} = forest) do

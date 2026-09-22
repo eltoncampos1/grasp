@@ -167,6 +167,15 @@ defmodule Grasp.Session do
   def shift_group(name, group_id, {dx, dy}) when is_integer(dx) and is_integer(dy),
     do: mutate(name, &Forest.shift_group(&1, group_id, {dx, dy}))
 
+  @doc """
+  Adds `{dx, dy}` to the position of every placed card in `card_ids`, moving them as one.
+  Groups are untouched, and an id the session does not hold changes nothing.
+  """
+  @spec shift_cards(name(), [Forest.id()], {integer(), integer()}) :: Forest.t()
+  def shift_cards(name, card_ids, {dx, dy})
+      when is_list(card_ids) and is_integer(dx) and is_integer(dy),
+      do: mutate(name, &Forest.shift_cards(&1, card_ids, {dx, dy}))
+
   @doc "Empties every card's position, so the whole canvas is laid out again."
   @spec reset_layout(name()) :: Forest.t()
   def reset_layout(name), do: mutate(name, &Forest.reset_layout/1)

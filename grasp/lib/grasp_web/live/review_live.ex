@@ -354,6 +354,23 @@ defmodule GraspWeb.ReviewLive do
     end
   end
 
+  # A graph drag carries the cards a reader reached over the drawn edges, which cross groups
+  # freely, so the cards travel by a shared displacement and each stays in the group it is a
+  # member of. Ids the canvas sends that do not read as integers name no card and are dropped.
+  def handle_event("move_cards", %{"cards" => cards, "dx" => dx, "dy" => dy}, socket)
+      when is_list(cards) do
+    case {int(dx), int(dy)} do
+      {dx, dy} when is_integer(dx) and is_integer(dy) ->
+        ids = cards |> Enum.map(&int/1) |> Enum.filter(&is_integer/1)
+        mutate(socket, &Session.shift_cards(&1, ids, {dx, dy}))
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("move_cards", _params, socket), do: {:noreply, socket}
+
   def handle_event("reset_layout", _params, socket),
     do: mutate(socket, &Session.reset_layout/1)
 

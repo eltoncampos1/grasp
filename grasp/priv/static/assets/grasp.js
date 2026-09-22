@@ -446,6 +446,8 @@
       this.suppressClick = false;
       if (this.spaceHeld) return this.beginPan(e);
       if (e.shiftKey && e.target.closest(".card")) return e.preventDefault();
+      const altCard = e.altKey && e.target.closest(".card");
+      if (altCard && !e.target.closest("a")) return this.beginGraphDrag(e, altCard);
       const title = e.target.closest(".flow__title");
       if (title && !e.target.closest("button, a, input")) {
         return this.beginGroupDrag(e, title, e.ctrlKey);
@@ -514,6 +516,59 @@
     nodesOfGroup(group) {
       return [...this.el.querySelectorAll(".node")].filter((node) => node.dataset.group === group);
     },
+    // Every card connected to the pressed one travels by the same displacement, so a flow keeps
+    // its shape while it moves away from the rest. The component is read once, at press time:
+    // the cards of a flow do not change while it is being dragged, and rereading it on every
+    // move would walk the canvas's call sites hundreds of times over a gesture.
+    beginGraphDrag(e, card) {
+      const node = card.closest(".node");
+      if (!node) return;
+      e.preventDefault();
+      document.body.classList.add("grasp-dragging");
+      this.drag = {
+        kind: "graph",
+        ctrl: false,
+        pointerId: e.pointerId,
+        nodes: this.connectedNodes(node),
+        startX: e.clientX,
+        startY: e.clientY,
+        moved: false
+      };
+    },
+    // The nodes reachable from `node` over the edges the canvas draws, the pressed one first.
+    // Connection is undirected — a reader shifting a flow means the calls into it as much as the
+    // calls out of it — and the edges are the call sites themselves, `[data-edge-to]` naming the
+    // card each one points at, so what the gesture carries is what the reader can see joined up.
+    // A card still waiting for a position is dropped: it is drawn at the origin and has no
+    // position for a displacement to be added to.
+    connectedNodes(node) {
+      const nodes = /* @__PURE__ */ new Map();
+      for (const candidate of this.el.querySelectorAll(".node")) {
+        nodes.set(candidate.dataset.card, candidate);
+      }
+      const neighbours = /* @__PURE__ */ new Map();
+      const join = (from, to) => {
+        if (!neighbours.has(from)) neighbours.set(from, /* @__PURE__ */ new Set());
+        neighbours.get(from).add(to);
+      };
+      for (const site of this.el.querySelectorAll("[data-edge-to]")) {
+        const from = site.closest(".node")?.dataset.card;
+        const to = site.dataset.edgeTo;
+        if (!from || !to || !nodes.has(to)) continue;
+        join(from, to);
+        join(to, from);
+      }
+      const found = [node.dataset.card];
+      const seen = new Set(found);
+      for (let i = 0; i < found.length; i++) {
+        for (const next of neighbours.get(found[i]) || []) {
+          if (seen.has(next)) continue;
+          seen.add(next);
+          found.push(next);
+        }
+      }
+      return found.map((id) => nodes.get(id)).filter((el) => el && !el.hasAttribute("data-unplaced"));
+    },
     // Whether a card is still waiting for the position the hook is about to give it.
     unplaced(card) {
       return card.closest(".node")?.hasAttribute("data-unplaced") === true;
@@ -537,12 +592,13 @@
         moved: false
       };
     },
-    // The nodes a drag carries: a card drag its one node, a group drag every node of the group,
-    // and a pan none. The translate a drag writes is the displacement alone — a node's position
-    // is already its left and top — so every node of a gesture carries the same one.
+    // The nodes a drag carries: a card drag its one node, a group drag every node of the group, a
+    // graph drag every node connected to the pressed one, and a pan none. The translate a drag
+    // writes is the displacement alone — a node's position is already its left and top — so
+    // every node of a gesture carries the same one.
     dragNodes(drag) {
       if (drag.kind === "card") return [drag.node];
-      if (drag.kind === "group") return drag.nodes;
+      if (drag.kind === "group" || drag.kind === "graph") return drag.nodes;
       return [];
     },
     // A second pointer — a touch, a pen, the other half of a pinch — reports its own stream of
@@ -612,6 +668,18 @@
           node.style.translate = `${dx}px ${dy}px`;
         }
         this.pushEvent("move_group", { group: drag.group, dx, dy });
+      } else if (drag.kind === "graph") {
+        const { scale } = this.view;
+        const dx = Math.round((e.clientX - drag.startX) / scale);
+        const dy = Math.round((e.clientY - drag.startY) / scale);
+        for (const node of drag.nodes) {
+          node.style.translate = `${dx}px ${dy}px`;
+        }
+        this.pushEvent("move_cards", {
+          cards: drag.nodes.map((node) => Number(node.dataset.card)),
+          dx,
+          dy
+        });
       }
     },
     // The group whose frame a drop landed in, or null when it landed anywhere else — the

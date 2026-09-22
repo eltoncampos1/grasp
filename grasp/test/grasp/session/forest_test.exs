@@ -336,6 +336,25 @@ defmodule Grasp.Session.ForestTest do
     assert Forest.shift_group(forest, group + 999, {1, 1}) == forest
   end
 
+  test "shift_cards/3 adds to every listed placed card and leaves the rest alone" do
+    {forest, a} = Forest.open_root(Forest.new(), "A.f/1")
+    {forest, b} = Forest.open_child(forest, a, "B.g/0")
+    {forest, c} = Forest.open_child(forest, a, "C.h/2")
+
+    forest =
+      forest
+      |> Forest.move(a, {0, 0})
+      |> Forest.move(b, {5, 5})
+
+    shifted = Forest.shift_cards(forest, [a, b, c, c + 999], {40, -10})
+
+    assert Forest.card(shifted, a).position == {40, -10}
+    assert Forest.card(shifted, b).position == {45, -5}
+    assert Forest.card(shifted, c).position == nil
+
+    assert Forest.shift_cards(forest, [], {1, 1}) == forest
+  end
+
   describe "highlights" do
     test "set_highlight stores a call or a line range and ignores unknown ids" do
       {forest, id} = Forest.open_root(Forest.new(), "A.f/1")
