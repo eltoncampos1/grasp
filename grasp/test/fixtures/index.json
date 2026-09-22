@@ -698,6 +698,60 @@
     },
     {
       "arities": [
+        2
+      ],
+      "arity": 2,
+      "base_source": null,
+      "calls": [
+        {
+          "job": {
+            "queue": "mail",
+            "worker": "SampleApp.Workers.Mailer"
+          },
+          "kind": "enqueue",
+          "range": {
+            "end": [
+              19,
+              40
+            ],
+            "start": [
+              19,
+              12
+            ]
+          },
+          "target": "SampleApp.Workers.Mailer.perform/1"
+        },
+        {
+          "kind": "imported",
+          "range": {
+            "end": [
+              20,
+              9
+            ],
+            "start": [
+              20,
+              5
+            ]
+          },
+          "target": "Phoenix.Controller.text/2"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app_web/greet_controller.ex",
+      "hidden_calls": [],
+      "id": "SampleAppWeb.GreetController.mail/2",
+      "kind": "def",
+      "module": "SampleAppWeb.GreetController",
+      "name": "mail",
+      "removed": false,
+      "source": "  @doc \"Queues a greeting to be mailed.\"\n  def mail(conn, %{\"name\" => name}) do\n    _job = SampleApp.Workers.Mailer.new(%{\"name\" => name})\n    text(conn, \"queued\")\n  end",
+      "span": {
+        "end_line": 21,
+        "start_line": 17
+      }
+    },
+    {
+      "arities": [
         1
       ],
       "arity": 1,

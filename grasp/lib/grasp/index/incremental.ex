@@ -51,9 +51,11 @@ defmodule Grasp.Index.Incremental do
   VM that cannot see the application at all keeps what the document already held, so
   reading a document built elsewhere does not empty its sidebar. Either way they are
   known before the rebuilt records are written out, because `Grasp.Index.Routes` resolves
-  a template's links against the routes among them. Only the rebuilt records are resolved
-  that way, so a route added to or removed from the router reaches an untouched template's
-  edges when that template is next saved, or when the index is next built in full.
+  a template's links against the routes among them, and `Grasp.Index.Jobs` resolves an
+  enqueueing call against the workers among them the same way. Only the rebuilt records are
+  resolved that way, so a route added to or removed from the router, or a worker added or
+  dropped, reaches an untouched record's edges when that record's file is next saved, or
+  when the index is next built in full.
 
   ## What it cannot see
 
@@ -81,7 +83,7 @@ defmodule Grasp.Index.Incremental do
 
   require Logger
 
-  alias Grasp.Index.{Builder, Changes, EntryPoints, Join, Routes, Templates}
+  alias Grasp.Index.{Builder, Changes, EntryPoints, Jobs, Join, Routes, Templates}
 
   @type base_context :: %{root: String.t(), base_sha: String.t(), paths: [String.t()]}
 
@@ -137,6 +139,7 @@ defmodule Grasp.Index.Incremental do
     functions =
       records
       |> Routes.resolve(entry_points)
+      |> Jobs.resolve(entry_points)
       |> Enum.map(&Builder.function_json/1)
       |> then(&sort_functions(kept ++ &1))
 

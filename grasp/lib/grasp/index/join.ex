@@ -82,12 +82,15 @@ defmodule Grasp.Index.Join do
 
   @type call :: %{
           required(:target) => String.t(),
-          required(:kind) => Tracer.kind() | :template | :route,
+          required(:kind) => Tracer.kind() | :template | :route | :enqueue,
           required(:range) => Extract.range(),
-          optional(:route) => %{verb: String.t(), path: String.t()}
+          optional(:route) => %{verb: String.t(), path: String.t()},
+          optional(:job) => %{worker: String.t(), queue: String.t()}
         }
   # `:route` is written by `Grasp.Index.Routes` on a call of kind `:route` alone, and holds
   # the router's own verb and path, which is what the reader is told the link reaches.
+  # `:job` is written by `Grasp.Index.Jobs` on a call of kind `:enqueue` alone, and names
+  # the worker and the queue the job runs on.
   @type hidden_call :: %{target: String.t(), kind: Tracer.kind(), line: pos_integer()}
 
   @type function_record :: %{

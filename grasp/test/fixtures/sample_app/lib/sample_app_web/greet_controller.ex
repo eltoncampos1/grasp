@@ -13,4 +13,10 @@ defmodule SampleAppWeb.GreetController do
 
   @doc "Sends the reader back to a greeting."
   def again(conn, _params), do: redirect(conn, to: ~p"/greet/bob")
+
+  @doc "Queues a greeting to be mailed."
+  def mail(conn, %{"name" => name}) do
+    _job = SampleApp.Workers.Mailer.new(%{"name" => name})
+    text(conn, "queued")
+  end
 end

@@ -28,12 +28,22 @@ defmodule Grasp.Index.Builder do
 
   `run/1` is the full build, and every stage it walks — `source_files/2`, `extract/2`,
   `Grasp.Index.Join.join/3`, `entry_points/2`, `classify/3`, `Grasp.Index.Routes.resolve/2`,
-  `document/5` — is a function of its own, because `Grasp.Index.Incremental` runs the same
-  stages over the handful of files a save touched and has to produce records of exactly the
-  same shape.
+  `Grasp.Index.Jobs.resolve/2`, `document/5` — is a function of its own, because
+  `Grasp.Index.Incremental` runs the same stages over the handful of files a save touched
+  and has to produce records of exactly the same shape.
   """
 
-  alias Grasp.Index.{BaseRef, Changes, EntryPoints, Extract, Join, Routes, Templates, Tracer}
+  alias Grasp.Index.{
+    BaseRef,
+    Changes,
+    EntryPoints,
+    Extract,
+    Jobs,
+    Join,
+    Routes,
+    Templates,
+    Tracer
+  }
 
   @type summary :: %{
           path: String.t(),
@@ -91,7 +101,9 @@ defmodule Grasp.Index.Builder do
     detected = entry_points(config[:app], functions)
     report_skipped(detected.skipped)
     entries = Enum.map(detected.entry_points, &entry_point_json/1)
-    records = functions |> classify(base, paths) |> Routes.resolve(entries)
+
+    records =
+      functions |> classify(base, paths) |> Routes.resolve(entries) |> Jobs.resolve(entries)
 
     document =
       document(
@@ -260,7 +272,8 @@ defmodule Grasp.Index.Builder do
   end
 
   # A call of kind `:route` carries the route it reaches, so a reader is told which one of
-  # a controller's actions the link goes to without opening the router.
+  # a controller's actions the link goes to without opening the router. A call of kind
+  # `:enqueue` carries the worker and the queue the job runs on.
   defp call_json(call) do
     json = %{
       "target" => call.target,
@@ -274,6 +287,9 @@ defmodule Grasp.Index.Builder do
     case call do
       %{route: %{verb: verb, path: path}} ->
         Map.put(json, "route", %{"verb" => verb, "path" => path})
+
+      %{job: %{worker: worker, queue: queue}} ->
+        Map.put(json, "job", %{"worker" => worker, "queue" => queue})
 
       _call ->
         json

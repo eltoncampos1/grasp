@@ -12,6 +12,7 @@ defmodule Grasp.Index.IncrementalTest do
   @greeter "lib/sample_app/greeter.ex"
   @html "lib/sample_app_web/greet_html.ex"
   @template "lib/sample_app_web/greet_html/show.html.heex"
+  @controller "lib/sample_app_web/greet_controller.ex"
 
   @changed_greeter ~S'''
   defmodule SampleApp.Greeter do
@@ -311,6 +312,34 @@ defmodule Grasp.Index.IncrementalTest do
                |> fetch("SampleAppWeb.GreetHTML.show/1")
                |> Map.fetch!("calls")
                |> Enum.find(&(&1["kind"] == "route"))
+    end
+  end
+
+  describe "update/5 over a source that enqueues a job" do
+    test "resolves the call against the worker the document knows",
+         %{document: document, root: root} do
+      copy(root, @controller)
+      source = File.read!(Path.join(root, @controller))
+
+      events = [
+        event(
+          {@controller, SampleAppWeb.GreetController, {:mail, 2}, "new(%{",
+           {SampleApp.Workers.Mailer, :new, 1}, :remote},
+          source
+        )
+      ]
+
+      {:ok, updated} = update(document, root, [@controller], events)
+
+      assert %{
+               "target" => "SampleApp.Workers.Mailer.perform/1",
+               "kind" => "enqueue",
+               "job" => %{"worker" => "SampleApp.Workers.Mailer", "queue" => "mail"}
+             } =
+               updated
+               |> fetch("SampleAppWeb.GreetController.mail/2")
+               |> Map.fetch!("calls")
+               |> Enum.find(&(&1["kind"] == "enqueue"))
     end
   end
 

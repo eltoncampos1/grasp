@@ -216,6 +216,23 @@ defmodule Grasp.Index.BuilderTest do
            )
   end
 
+  test "enqueueing a job is a call on the worker that performs it", %{index: index} do
+    {:ok, mail} = Grasp.Index.fetch_function(index, "SampleAppWeb.GreetController.mail/2")
+
+    assert %{
+             "kind" => "enqueue",
+             "range" => %{"start" => [19, 12], "end" => [19, 40]},
+             "job" => %{"worker" => "SampleApp.Workers.Mailer", "queue" => "mail"}
+           } = call(mail, "SampleApp.Workers.Mailer.perform/1")
+
+    assert call(mail, "SampleApp.Workers.Mailer.new/1") == nil
+
+    assert "SampleAppWeb.GreetController.mail/2" in Grasp.Index.callers(
+             index,
+             "SampleApp.Workers.Mailer.perform/1"
+           )
+  end
+
   test "reaches the template a controller renders and the component a template calls",
        %{index: index} do
     {:ok, controller} = Grasp.Index.fetch_function(index, "SampleAppWeb.GreetController.show/2")
