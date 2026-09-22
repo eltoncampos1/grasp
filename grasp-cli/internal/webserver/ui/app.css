@@ -49,6 +49,8 @@ kbd { font-family: var(--mono); font-size: 10px; background: var(--bg); border: 
    height scrolls past a comfortable viewport share */
 .card { position: absolute; width: max-content; min-width: 520px; max-width: 980px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
 .card.focused { border-color: var(--accent); }
+.card.selected { outline: 2px dashed var(--accent); outline-offset: 3px; }
+#selbox { position: absolute; border: 1px dashed var(--accent); background: rgba(88,166,255,.08); z-index: 40; pointer-events: none; }
 .card.removed-card { border-color: rgba(248,81,73,.4); }
 .card.flash { animation: flash .6s; }
 @keyframes flash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 4px 16px rgba(0,0,0,.35); } }

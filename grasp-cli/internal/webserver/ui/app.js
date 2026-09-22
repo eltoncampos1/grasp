@@ -291,6 +291,7 @@ function place(fromId, side) {
 
 function closeCard(id, subtree) {
   pushHistory();
+  selected.delete(id);
   S.cards.delete(id);
   S.edges = S.edges.filter(e => e.from !== id && e.to !== id);
   if (subtree) {
@@ -389,46 +390,129 @@ viewport.addEventListener('wheel', e => {
   scheduleSave();
 }, { passive: false });
 
-let dragging = null; // {kind:'pan'|'card', id?, sx, sy, ox, oy}
+// ---------- selection ----------
+// ⌘/Ctrl+click toggles a card in the selection; Shift+drag on the background
+// draws a box; dragging any selected card moves the whole selection. The
+// selection is this tab's own — it is not saved with the session.
+let selected = new Set();
+
+function paintSelected() {
+  document.querySelectorAll('.card').forEach(el => el.classList.toggle('selected', selected.has(el.dataset.id)));
+}
+
+function clearSelection() {
+  if (selected.size === 0) return;
+  selected.clear();
+  paintSelected();
+}
+
+function toggleSelected(id) {
+  if (selected.has(id)) selected.delete(id); else selected.add(id);
+  paintSelected();
+}
+
+// dragging: {kind:'pan'|'cards'|'box', …}. A ⌘/Ctrl press on a card is
+// ambiguous until the mouse moves: past 4px it drags, released in place it
+// toggles the selection.
+let dragging = null;
 viewport.addEventListener('mousedown', e => {
   const cardHead = e.target.closest('.card-head');
   const card = e.target.closest('.card');
   if (e.target.closest('button, a, select, textarea, input, .callers-menu')) return;
-  if (spaceHeld || (!card && !cardHead)) {
-    dragging = { kind: 'pan', sx: e.clientX, sy: e.clientY, ox: S.pan.x, oy: S.pan.y };
+
+  if (!card && e.shiftKey && !spaceHeld) {
+    const box = document.createElement('div');
+    box.id = 'selbox';
+    viewport.appendChild(box);
+    dragging = { kind: 'box', sx: e.clientX, sy: e.clientY, el: box };
+    e.preventDefault();
+    return;
+  }
+  if (spaceHeld || !card) {
+    dragging = { kind: 'pan', sx: e.clientX, sy: e.clientY, ox: S.pan.x, oy: S.pan.y, clearOnClick: !card && !e.metaKey && !e.ctrlKey };
     viewport.classList.add('panning');
     e.preventDefault();
     return;
   }
-  if (card && (cardHead || e.ctrlKey)) {
-    const id = card.dataset.id, c = S.cards.get(id);
+  const id = card.dataset.id;
+  const modifier = e.metaKey || e.ctrlKey;
+  if (cardHead || modifier) {
     setFocus(id);
-    dragging = { kind: 'card', id, sx: e.clientX, sy: e.clientY, ox: c.x, oy: c.y };
+    const moving = selected.has(id) ? [...selected] : [id];
+    const positions = new Map(moving.filter(m => S.cards.has(m)).map(m => [m, { x: S.cards.get(m).x, y: S.cards.get(m).y }]));
+    dragging = { kind: 'cards', id, positions, sx: e.clientX, sy: e.clientY, moved: false, toggleOnClick: modifier };
     e.preventDefault();
-  } else if (card) {
-    setFocus(id0(card));
+  } else {
+    setFocus(id);
   }
 });
-function id0(card) { return card.dataset.id; }
 
 window.addEventListener('mousemove', e => {
   if (!dragging) return;
-  if (dragging.kind === 'pan') {
-    S.pan.x = dragging.ox + (e.clientX - dragging.sx);
-    S.pan.y = dragging.oy + (e.clientY - dragging.sy);
-    applyTransform();
-  } else {
-    const c = S.cards.get(dragging.id);
-    if (!c) { dragging = null; return; }
-    c.x = dragging.ox + (e.clientX - dragging.sx) / S.zoom;
-    c.y = dragging.oy + (e.clientY - dragging.sy) / S.zoom;
-    const el = cardEl(dragging.id);
-    if (el) { el.style.left = c.x + 'px'; el.style.top = c.y + 'px'; }
-    drawEdges();
+  const dx = e.clientX - dragging.sx, dy = e.clientY - dragging.sy;
+  switch (dragging.kind) {
+    case 'pan':
+      S.pan.x = dragging.ox + dx;
+      S.pan.y = dragging.oy + dy;
+      if (Math.abs(dx) + Math.abs(dy) > 3) dragging.clearOnClick = false;
+      applyTransform();
+      break;
+    case 'cards': {
+      if (!dragging.moved && Math.abs(dx) + Math.abs(dy) <= 4) return;
+      dragging.moved = true;
+      for (const [id, p] of dragging.positions) {
+        const c = S.cards.get(id);
+        if (!c) continue;
+        c.x = p.x + dx / S.zoom;
+        c.y = p.y + dy / S.zoom;
+        const el = cardEl(id);
+        if (el) { el.style.left = c.x + 'px'; el.style.top = c.y + 'px'; }
+      }
+      drawEdges();
+      break;
+    }
+    case 'box': {
+      const vr = viewport.getBoundingClientRect();
+      const x = Math.min(e.clientX, dragging.sx) - vr.left, y = Math.min(e.clientY, dragging.sy) - vr.top;
+      Object.assign(dragging.el.style, {
+        left: x + 'px', top: y + 'px',
+        width: Math.abs(dx) + 'px', height: Math.abs(dy) + 'px',
+      });
+      break;
+    }
   }
 });
-window.addEventListener('mouseup', () => {
-  if (dragging) { viewport.classList.remove('panning'); dragging = null; scheduleSave(); }
+
+window.addEventListener('mouseup', e => {
+  if (!dragging) return;
+  const d = dragging;
+  dragging = null;
+  viewport.classList.remove('panning');
+  switch (d.kind) {
+    case 'pan':
+      if (d.clearOnClick) clearSelection();
+      scheduleSave();
+      break;
+    case 'cards':
+      if (!d.moved && d.toggleOnClick) toggleSelected(d.id);
+      else if (d.moved) scheduleSave();
+      break;
+    case 'box': {
+      d.el.remove();
+      const vr = viewport.getBoundingClientRect();
+      const bx1 = Math.min(e.clientX, d.sx) - vr.left, by1 = Math.min(e.clientY, d.sy) - vr.top;
+      const bx2 = Math.max(e.clientX, d.sx) - vr.left, by2 = Math.max(e.clientY, d.sy) - vr.top;
+      const next = new Set();
+      for (const [id, c] of S.cards) {
+        const sx = c.x * S.zoom + S.pan.x, sy = c.y * S.zoom + S.pan.y;
+        const w = W(id) * S.zoom, h = (heights.get(id) || EST_H) * S.zoom;
+        if (sx < bx2 && sx + w > bx1 && sy < by2 && sy + h > by1) next.add(id);
+      }
+      selected = next;
+      paintSelected();
+      break;
+    }
+  }
 });
 
 $('#resetBtn').addEventListener('click', resetLayout);
@@ -585,7 +669,8 @@ function toggleSig() {
 function buildCard(fn) {
   const st = S.cards.get(fn.id);
   const card = document.createElement('div');
-  card.className = 'card' + (fn.removed ? ' removed-card' : '') + (fn.id === S.focus ? ' focused' : '') + (st.collapsed ? ' collapsed' : '');
+  card.className = 'card' + (fn.removed ? ' removed-card' : '') + (fn.id === S.focus ? ' focused' : '') +
+    (st.collapsed ? ' collapsed' : '') + (selected.has(fn.id) ? ' selected' : '');
   card.dataset.id = fn.id;
   card.style.left = st.x + 'px';
   card.style.top = st.y + 'px';
@@ -1282,9 +1367,17 @@ document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i') { e.preventDefault(); toggleChat(); return; }
   if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
+    e.preventDefault();
+    selected = new Set(S.cards.keys());
+    paintSelected();
+    return;
+  }
   if (e.key === 'Escape') {
     if (!$('#palette').hidden) closePalette();
+    else if (!$('#reviewModal').hidden) $('#reviewModal').hidden = true;
     else if (composing) { composing = null; renderCanvas(); }
+    else clearSelection();
     return;
   }
   const st = S.focus && S.cards.get(S.focus);
