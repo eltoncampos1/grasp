@@ -17,8 +17,16 @@ import (
 	"github.com/eltoncampos1/grasp-cli/internal/comments"
 )
 
-//go:embed ui/index.html
+//go:embed ui
 var ui embed.FS
+
+// AgentConfig names the coding-agent CLI the chat panel runs and the profile
+// it runs under.
+type AgentConfig struct {
+	Command   string
+	ConfigDir string
+	Model     string
+}
 
 type Server struct {
 	IndexPath string
@@ -26,16 +34,27 @@ type Server struct {
 	Editor    string // vscode | cursor | zed | idea | ""
 	Author    string // comment author, from git config user.name
 	Comments  *comments.Store
+	Agent     AgentConfig
+
+	chat *chatRunner
 }
 
 // Run serves on 127.0.0.1 until the process is stopped. onReady is called
 // with the URL once the listener is up — the place to open a browser from.
 func (s *Server) Run(onReady func(url string)) error {
+	s.chat = newChatRunner()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.page)
+	mux.HandleFunc("/assets/", s.asset)
 	mux.HandleFunc("/api/index", s.index)
 	mux.HandleFunc("/api/config", s.config)
 	mux.HandleFunc("/api/comments", s.comments)
+	mux.HandleFunc("/api/sessions", s.sessions)
+	mux.HandleFunc("/api/sessions/", s.sessions)
+	mux.HandleFunc("/api/chat", s.handleChat)
+	mux.HandleFunc("/api/chat/stop", s.handleChatStop)
+	mux.HandleFunc("/api/chat/reset", s.handleChatReset)
 	mux.HandleFunc("/events", s.events)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", s.Port)
@@ -93,8 +112,32 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+func (s *Server) asset(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/assets/")
+	if strings.Contains(name, "..") || strings.Contains(name, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	data, err := ui.ReadFile("ui/" + name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	switch {
+	case strings.HasSuffix(name, ".css"):
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	case strings.HasSuffix(name, ".js"):
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	}
+	_, _ = w.Write(data)
+}
+
 func (s *Server) config(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]string{"editor": s.Editor, "author": s.Author})
+	writeJSON(w, map[string]any{
+		"editor": s.Editor,
+		"author": s.Author,
+		"agent":  map[string]string{"command": s.Agent.Command, "model": s.Agent.Model},
+	})
 }
 
 // comments serves the thread store: GET the whole document, POST one action —
@@ -117,6 +160,7 @@ func (s *Server) comments(w http.ResponseWriter, r *http.Request) {
 			Function string `json:"function"`
 			File     string `json:"file"`
 			Line     int    `json:"line"`
+			EndLine  int    `json:"end_line"`
 			Side     string `json:"side"`
 			Body     string `json:"body"`
 		}
@@ -136,7 +180,7 @@ func (s *Server) comments(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "empty comment", http.StatusBadRequest)
 				return
 			}
-			doc, err = s.Comments.AddThread(req.Function, req.File, req.Line, req.Side, author, req.Body)
+			doc, err = s.Comments.AddThread(req.Function, req.File, req.Line, req.EndLine, req.Side, author, req.Body)
 		case "reply":
 			if strings.TrimSpace(req.Body) == "" {
 				http.Error(w, "empty comment", http.StatusBadRequest)

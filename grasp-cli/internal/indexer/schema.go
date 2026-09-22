@@ -13,9 +13,18 @@ type Index struct {
 	GeneratedAt string       `json:"generated_at"`
 	Project     Project      `json:"project"`
 	Git         GitInfo      `json:"git"`
+	Review      *Review      `json:"review,omitempty"`
 	Modules     []Module     `json:"modules"`
 	Functions   []*Function  `json:"functions"`
 	EntryPoints []EntryPoint `json:"entry_points"`
+}
+
+// Review carries what is being reviewed when the index was built by
+// `grasp pr` — the viewer names the session after it and shows the title.
+type Review struct {
+	PR    int    `json:"pr,omitempty"`
+	Title string `json:"title,omitempty"`
+	URL   string `json:"url,omitempty"`
 }
 
 type Project struct {

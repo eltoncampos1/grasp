@@ -46,20 +46,47 @@ grasp web             # index the working tree against the base branch and serve
 
 ## The canvas
 
-- **Changes lead the sidebar**, grouped by module with added/modified/removed badges; the full
-  module list and a filter sit under them. `⌘K` opens a fuzzy palette over every function.
-- **Click a call inside a card** and the callee opens beside it, joined by an edge — a call
-  chain reads left to right instead of as editor jumps.
-- **`d` toggles a modified card** between source and diff (computed against the base version);
-  **`h` folds unchanged lines** into `⋯ n unchanged lines` expanders.
-- **Click a line number to start a comment thread** — on the new side, or the base side of a
-  diff. Threads persist in `.grasp/comments.json` under the main checkout, so they survive
-  `grasp pr --close`. Reply, resolve, delete inline.
-- **A removed function opens as a card of its own**, tinted, showing the base's source.
+The canvas is a whiteboard: cards stay where you put them, and a review **arrives already laid
+out** — every changed function opens as a card, one column per module, modified cards showing
+their diff, with edges drawn where one changed function calls another.
+
+- **Drag a card by its header** (or Ctrl+drag from anywhere on it); drag the background to pan,
+  hold Space to pan from anywhere; `⌘`+wheel zooms about the cursor, the wheel alone pans.
+  `reset layout` re-stacks everything by call depth. Arrow keys walk the graph from the focused
+  card. `s` turns every card down to its signature for a far-out view.
+- **Click a call inside a card** and the callee opens to its right; the **callers menu** opens a
+  caller to its left — each joined by a colored edge from the exact call site. Double-click an
+  edge to jump to the card at its far end. Syntax highlighting for Elixir, JS/TS and Go.
+- **`d` toggles diff/source** on the focused card; **`h` folds unchanged lines** into
+  `⋯ n unchanged lines` expanders (a >100-line diff arrives folded; comment lines stay drawn);
+  **`c` collapses to the header; `x` closes; `Shift+x` closes the whole subtree** nothing else
+  reaches.
+- **Click a line number to comment**; Shift+click another number stretches the thread over a
+  range (tinted). Works on the base side of a diff too. Threads persist in
+  `.grasp/comments.json` under the main checkout — they survive `grasp pr --close` — and the
+  sidebar's Comments group lists the open ones. Reply, resolve, delete inline.
+- **The sidebar is review-first**: Changes, open Comments, then Related — only the modules one
+  call away from the change. The full module list stays behind a toggle; `⌘K` searches
+  everything.
+- **Sessions** keep the whole arrangement — cards, positions, views, pan and zoom — in
+  `.grasp/sessions/<name>.json`, autosaved a moment after the canvas changes. A PR review names
+  its session `pr-N` automatically; the header menu switches, creates and deletes sessions, and
+  `?s=<name>` addresses one directly.
 - **Live reload**: rewrite the index (`grasp index`, `grasp pr`) and the canvas redraws in about
-  a second, keeping the cards you had open. `file:line` deep-links into vscode/cursor/zed/idea
-  when `web.editor` is set.
-- The server answers loopback requests only (Host-checked, DNS-rebinding safe).
+  a second, keeping your session. The server answers loopback requests only (Host-checked,
+  DNS-rebinding safe).
+
+## The agent (`⌘I`)
+
+The `ask` panel runs the configured agent CLI headless — Claude Code by default, under the
+profile pinned at `grasp init` — with the reviewed tree (the PR's worktree, when reviewing one)
+as its working directory, primed with the review's changed functions and `.grasp/review.md`.
+
+- **read-only mode** gives it `Read`, `Grep`, `Glob` — it reads code and answers, edits nothing.
+- **edit files mode** adds `Edit`, `Write` and a Bash narrowed to `mix`/`go`/`git status`/
+  `git diff`/`git fetch`/`gh pr view` — nothing that changes the checked-out branch.
+- Model select (default/haiku/sonnet/opus/fable), one run at a time, 60-turn cap, Stop kills
+  the run, follow-ups resume the same conversation per session, `new` starts over.
 
 ## Claude profiles
 
@@ -83,6 +110,7 @@ spawn sets that env explicitly, and `grasp doctor` prints the full resolution.
 
 ## Roadmap (SPEC.md has the detail)
 
-MCP server so an agent can drive the canvas · chat panel spawning the configured agent
-(Claude profile-pinned; Kimi/custom backends) · auto-review on open fed by `.grasp/review.md`
-(`--no-review` to skip) · saved sessions · entry-point detectors.
+MCP server so the agent can drive the canvas itself (open/arrange cards, answer threads) ·
+groups/frames on the canvas · comment re-anchoring when lines move · drag-to-select comment
+ranges · auto-review on open fed by `.grasp/review.md` (`--no-review` to skip) · pluggable
+agent backends (Kimi, custom) · entry-point detectors · `web --watch`.

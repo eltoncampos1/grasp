@@ -25,8 +25,9 @@ type Thread struct {
 	ID           string    `json:"id"`
 	Function     string    `json:"function"` // indexed function id
 	File         string    `json:"file"`
-	Line         int       `json:"line"` // new side: absolute; base side: line within base_source
-	Side         string    `json:"side"` // "new" | "base"
+	Line         int       `json:"line"`               // new side: absolute; base side: line within base_source
+	EndLine      int       `json:"end_line,omitempty"` // >0 makes it a range thread over line..end_line
+	Side         string    `json:"side"`               // "new" | "base"
 	Resolved     bool      `json:"resolved"`
 	PublishedURL string    `json:"published_url,omitempty"`
 	Comments     []Comment `json:"comments"`
@@ -103,9 +104,12 @@ func (s *Store) Mutate(fn func(doc *Doc) error) (*Doc, error) {
 	return doc, nil
 }
 
-func (s *Store) AddThread(function, file string, line int, side, author, body string) (*Doc, error) {
+func (s *Store) AddThread(function, file string, line, endLine int, side, author, body string) (*Doc, error) {
 	if side != "base" {
 		side = "new"
+	}
+	if endLine <= line {
+		endLine = 0
 	}
 	return s.Mutate(func(doc *Doc) error {
 		doc.Threads = append(doc.Threads, &Thread{
@@ -113,6 +117,7 @@ func (s *Store) AddThread(function, file string, line int, side, author, body st
 			Function: function,
 			File:     file,
 			Line:     line,
+			EndLine:  endLine,
 			Side:     side,
 			Comments: []Comment{newComment(author, body)},
 		})

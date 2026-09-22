@@ -74,6 +74,11 @@ a worktree's --close; grasp publish sends them to the pull request.`,
 			Editor:    cfg.Web.Editor,
 			Author:    author,
 			Comments:  comments.NewStore(root),
+			Agent: webserver.AgentConfig{
+				Command:   cfg.Agent.Command,
+				ConfigDir: cfg.Agent.ConfigDir,
+				Model:     cfg.Agent.Model,
+			},
 		}
 		return server.Run(func(url string) {
 			logln("grasp: %s  (index: %s)", url, indexPath)

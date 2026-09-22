@@ -86,6 +86,7 @@ func Open(root string, number int, baseOverride string, log func(string)) (*Open
 		Root:    wt,
 		OutPath: filepath.Join(root, ".grasp", "index.json"),
 		BaseRef: "origin/" + base,
+		Review:  &indexer.Review{PR: pr.Number, Title: pr.Title, URL: pr.URL},
 		Log:     log,
 	})
 	if err != nil {

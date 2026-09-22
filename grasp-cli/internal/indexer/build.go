@@ -26,7 +26,9 @@ type Options struct {
 	// BaseRef classifies functions against merge-base(HEAD, BaseRef).
 	// Empty skips classification (everything "unchanged").
 	BaseRef string
-	Log     func(string)
+	// Review, when set, records what PR this index reviews.
+	Review *Review
+	Log    func(string)
 }
 
 const maxFileSize = 512 * 1024
@@ -65,6 +67,7 @@ func Build(opts Options) (*Index, error) {
 		Version:     1,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Project:     projectInfo(root, files),
+		Review:      opts.Review,
 		Functions:   []*Function{},
 		EntryPoints: []EntryPoint{},
 	}
