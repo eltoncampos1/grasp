@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,6 +21,7 @@ var (
 	webPort    int
 	webNoOpen  bool
 	webNoIndex bool
+	webReindex bool
 )
 
 var webCmd = &cobra.Command{
@@ -43,6 +45,18 @@ a worktree's --close; grasp publish sends them to the pull request.`,
 			return err
 		}
 
+		indexPath := filepath.Join(root, ".grasp", "index.json")
+
+		// A plain `grasp web` after `grasp pr` must not reindex the branch
+		// over the pull request's index — keep it while its worktree lives,
+		// unless --reindex says otherwise.
+		if pr, alive := prIndexAlive(indexPath); pr > 0 && alive && !webReindex && !webNoIndex {
+			logln("serving pull request %d's index (its worktree is still open)", pr)
+			logln("  grasp pr %d --close   to finish that review, or", pr)
+			logln("  grasp web --reindex   to review the current branch instead")
+			webNoIndex = true
+		}
+
 		if !webNoIndex {
 			base, err := resolveBase(root, webBase)
 			if err != nil {
@@ -56,8 +70,6 @@ a worktree's --close; grasp publish sends them to the pull request.`,
 				return err
 			}
 		}
-
-		indexPath := filepath.Join(root, ".grasp", "index.json")
 		if _, err := os.Stat(indexPath); err != nil {
 			return fmt.Errorf("no index at %s — run grasp index first", indexPath)
 		}
@@ -93,6 +105,29 @@ func init() {
 	webCmd.Flags().StringVar(&webBase, "base", "", "ref to review against (default: config, then origin/HEAD)")
 	webCmd.Flags().IntVar(&webPort, "port", 0, "viewer port (default: config, then 4040)")
 	webCmd.Flags().BoolVar(&webNoOpen, "no-open", false, "do not open the browser")
-	webCmd.Flags().BoolVar(&webNoIndex, "no-index", false, "serve the index already on disk (e.g. a PR's)")
+	webCmd.Flags().BoolVar(&webNoIndex, "no-index", false, "serve the index already on disk without reindexing")
+	webCmd.Flags().BoolVar(&webReindex, "reindex", false, "reindex the current branch even over a PR's index")
 	rootCmd.AddCommand(webCmd)
+}
+
+// prIndexAlive reports whether the index on disk reviews a pull request whose
+// worktree still exists.
+func prIndexAlive(indexPath string) (int, bool) {
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		return 0, false
+	}
+	var idx struct {
+		Project struct {
+			Root string `json:"root"`
+		} `json:"project"`
+		Review *struct {
+			PR int `json:"pr"`
+		} `json:"review"`
+	}
+	if json.Unmarshal(data, &idx) != nil || idx.Review == nil || idx.Review.PR <= 0 {
+		return 0, false
+	}
+	st, err := os.Stat(idx.Project.Root)
+	return idx.Review.PR, err == nil && st.IsDir()
 }

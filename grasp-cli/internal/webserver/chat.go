@@ -195,44 +195,46 @@ func (s *Server) handleChatStop(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"stopped": true})
 }
 
-// chatSystemPrompt gives the agent the review's frame: where the index is,
-// what changed, and the team's review rules.
+// chatSystemPrompt frames the agent as the gateway behind grasp's chat panel:
+// a plain assistant that does what the message asks and nothing more. The
+// review's context is offered as reference, not as a standing instruction —
+// "testando" deserves a one-line reply, not a code review.
 func (s *Server) chatSystemPrompt() string {
 	var b strings.Builder
-	b.WriteString("You are the review agent inside grasp, a visual code-review tool. ")
-	b.WriteString("Your working directory is the tree under review. ")
-	b.WriteString("The call-graph index the reviewer sees is the JSON file at " + s.IndexPath + " ")
-	b.WriteString("(functions with source, spans, calls and a change classification against the review base). ")
+	b.WriteString("You are the assistant behind the chat panel of grasp, a visual code-review tool. ")
+	b.WriteString("The user is looking at a canvas of function cards; you run headless beside it, ")
+	b.WriteString("with the tree under review as your working directory.\n\n")
+	b.WriteString("Answer exactly what the user's message asks, and nothing more. ")
+	b.WriteString("Do NOT start a review, read files, or run tools unless the message actually calls for it — ")
+	b.WriteString("a greeting or a test message gets a short, direct reply with no tool use. ")
+	b.WriteString("When the user does ask you to review, read .grasp/review.md first for the team's rules.\n\n")
+	b.WriteString("Reference, for when a question needs it:\n")
+	b.WriteString("- The call-graph index the canvas draws is the JSON at " + s.IndexPath +
+		" (functions with source, span, calls, and a change classification against the review base).\n")
 
 	if data, err := os.ReadFile(s.IndexPath); err == nil {
 		var idx struct {
-			Git       struct{ BaseRef, Branch string }
-			Review    *struct{ PR int }
+			Git    struct{ BaseRef, Branch string }
+			Review *struct {
+				PR    int
+				Title string
+			}
 			Functions []struct{ ID, Change string }
 		}
 		if json.Unmarshal(data, &idx) == nil {
-			var changed []string
+			if idx.Review != nil && idx.Review.PR > 0 {
+				fmt.Fprintf(&b, "- The canvas is showing pull request #%d: %s.\n", idx.Review.PR, idx.Review.Title)
+			}
+			changed := 0
 			for _, f := range idx.Functions {
 				if f.Change != "unchanged" && f.Change != "" {
-					changed = append(changed, f.ID+" ("+f.Change+")")
-				}
-				if len(changed) == 60 {
-					changed = append(changed, "…")
-					break
+					changed++
 				}
 			}
-			if idx.Review != nil && idx.Review.PR > 0 {
-				fmt.Fprintf(&b, "This review is pull request #%d. ", idx.Review.PR)
-			}
-			if len(changed) > 0 {
-				b.WriteString("Functions the branch changed against " + idx.Git.BaseRef + ": " + strings.Join(changed, ", ") + ". ")
+			if changed > 0 {
+				fmt.Fprintf(&b, "- %d functions changed against %s; the index's `change` field says which.\n", changed, idx.Git.BaseRef)
 			}
 		}
-	}
-
-	rules := filepath.Join(filepath.Dir(s.Comments.Path), "review.md")
-	if data, err := os.ReadFile(rules); err == nil && len(data) > 0 {
-		b.WriteString("\n\nThe team's review rules (from .grasp/review.md):\n" + string(data))
 	}
 	return b.String()
 }

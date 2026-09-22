@@ -182,21 +182,37 @@ function renderSidebar() {
       }).join('');
 
   // Related: modules the change touches one hop away — callers into and
-  // callees out of the changed functions.
+  // callees out of the changed functions. A widely-used component drags in
+  // dozens of callers, so modules rank by how many edges tie them to the
+  // change and only the strongest few show; the rest sit behind "show more".
   const changedIds = new Set(ch.map(f => f.id));
   const changedMods = new Set(ch.map(f => f.module));
-  const related = new Map();
-  const addRel = f => {
+  const related = new Map(); // module -> {weight, fns: Map(id -> {f, dirs})}
+  const addRel = (f, dir) => {
     if (!f || changedIds.has(f.id) || changedMods.has(f.module)) return;
-    if (!related.has(f.module)) related.set(f.module, new Map());
-    related.get(f.module).set(f.id, f);
+    if (!related.has(f.module)) related.set(f.module, { weight: 0, fns: new Map() });
+    const m = related.get(f.module);
+    m.weight++;
+    if (!m.fns.has(f.id)) m.fns.set(f.id, { f, dirs: new Set() });
+    m.fns.get(f.id).dirs.add(dir);
   };
-  for (const f of ch) for (const c of f.calls) addRel(byId.get(c.target));
-  for (const id of changedIds) for (const caller of (callersOf.get(id) || [])) addRel(byId.get(caller.from));
+  for (const f of ch) for (const c of f.calls) addRel(byId.get(c.target), 'out');
+  for (const id of changedIds) for (const caller of (callersOf.get(id) || [])) addRel(byId.get(caller.from), 'in');
+
+  const relRows = [...related.entries()].sort((a, b) => b[1].weight - a[1].weight);
+  const REL_CAP = 8;
+  const relHTML = list => list.map(([mod, m]) =>
+    '<details class="side-mod"><summary>' + esc(mod) + ' <span style="color:var(--dim)">(' + m.fns.size + ')</span></summary>' +
+    [...m.fns.values()].map(({ f, dirs }) => sideFn(f, dirs.has('in') && dirs.has('out') ? '↔' : dirs.has('in') ? '←' : '→')).join('') +
+    '</details>').join('');
   $('#related').innerHTML = related.size === 0 ? '<div class="side-empty">nothing adjacent</div>'
-    : [...related.entries()].map(([mod, fns]) =>
-        '<details class="side-mod"><summary>' + esc(mod) + ' <span style="color:var(--dim)">(' + fns.size + ')</span></summary>' +
-        [...fns.values()].map(sideFn).join('') + '</details>').join('');
+    : relHTML(relRows.slice(0, REL_CAP)) +
+      (relRows.length > REL_CAP
+        ? '<div id="relMore" hidden>' + relHTML(relRows.slice(REL_CAP)) + '</div>' +
+          '<button id="relMoreBtn" style="margin:4px">show ' + (relRows.length - REL_CAP) + ' more related modules</button>'
+        : '');
+  const relBtn = $('#relMoreBtn');
+  if (relBtn) relBtn.addEventListener('click', () => { $('#relMore').hidden = false; relBtn.remove(); });
 
   const modsEl = $('#modules');
   if (allModulesShown) {
@@ -215,9 +231,11 @@ function renderSidebar() {
   applyFilter();
 }
 
-function sideFn(f) {
+function sideFn(f, dir) {
   return '<div class="side-fn" data-id="' + esc(f.id) + '"><span class="badge ' + f.change + '">' +
-    f.change[0].toUpperCase() + '</span><span>' + esc(f.name) + '<span style="color:var(--dim)">/' + f.arity + '</span></span></div>';
+    f.change[0].toUpperCase() + '</span>' +
+    (dir ? '<span style="color:var(--dim)" title="← calls the change · → called by it">' + dir + '</span>' : '') +
+    '<span>' + esc(f.name) + '<span style="color:var(--dim)">/' + f.arity + '</span></span></div>';
 }
 
 function groupBy(list, key) {
