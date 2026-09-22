@@ -11,9 +11,12 @@ defmodule Grasp.Index.Jobs do
   hop the reader can follow.
 
   Which modules are workers is what the `oban_worker` entry points say: a call to `new/1`
-  or `new/2` on any other module is left as it is. A job enqueued some other way — through
-  `Oban.Job.new/2` with a `worker:` option, or a changeset built somewhere else and passed
-  to `Oban.insert_all/2` — names no worker at the call site and is not followed.
+  or `new/2` on any other module is left as it is. A worker that writes a `new/1` or a
+  `new/2` of its own — Oban makes both overridable — is redirected to `perform/1` all the
+  same, because the entry point rather than the definition is what names a module a worker.
+  A job enqueued some other way — through `Oban.Job.new/2` with a `worker:` option, or a
+  changeset built somewhere else and passed to `Oban.insert_all/2` — names no worker at the
+  call site and is not followed.
   """
 
   alias Grasp.Index.Join
@@ -23,55 +26,55 @@ defmodule Grasp.Index.Jobs do
 
   `entries` are entry points in the JSON shape the document holds them in, as
   `Grasp.Index.Builder.entry_point_json/1` writes them; only the `oban_worker` ones are
-  read. A call keeps its range and its place in the record's calls.
+  read. A call keeps its range and its place in the record's calls, and where the rewrite
+  leaves a record holding two calls of the same target, kind and range, one is kept.
   """
   @spec resolve([Join.function_record()], [map()]) :: [Join.function_record()]
   def resolve(records, entries) do
     workers =
-      for %{"kind" => "oban_worker", "target" => target} = entry <- entries,
-          [worker] <- [worker_of(target)],
-          into: %{} do
-        {worker, %{target: target, queue: queue(entry)}}
-      end
+      entries
+      |> Enum.filter(&(&1["kind"] == "oban_worker"))
+      |> Enum.flat_map(&worker_of/1)
+      |> Map.new()
 
     if workers == %{}, do: records, else: Enum.map(records, &resolve_record(&1, workers))
   end
 
-  # "Mod.perform/1" -> ["Mod"]; anything else -> []
-  defp worker_of(target) do
+  # An entry whose target is `Mod.perform/1` names the worker `Mod`; one targeting any
+  # other function of a worker — `backoff/1`, `timeout/1` — names none.
+  defp worker_of(%{"target" => target} = entry) when is_binary(target) do
     case Regex.run(~r/\A(.+)\.perform\/1\z/, target) do
-      [_all, worker] -> [worker]
+      [_all, worker] -> [{worker, %{target: target, queue: queue(entry)}}]
       nil -> []
     end
   end
+
+  defp worker_of(_entry), do: []
 
   defp queue(%{"meta" => %{"queue" => queue}}) when is_binary(queue), do: queue
   defp queue(_entry), do: "default"
 
   defp resolve_record(%{calls: calls} = record, workers) do
-    %{record | calls: calls |> Enum.map(&call(&1, workers)) |> Enum.uniq()}
+    case Enum.map(calls, &call(&1, workers)) do
+      ^calls -> record
+      resolved -> %{record | calls: Enum.uniq(resolved)}
+    end
   end
 
-  defp resolve_record(record, _workers), do: record
-
+  # The suffix is read before the regex because on any real project all but a handful of
+  # calls fail it, and every call of every record passes through here.
   defp call(%{target: target} = call, workers) do
-    case Regex.run(~r/\A(.+)\.new\/[12]\z/, target) do
-      [_all, worker] ->
-        case Map.fetch(workers, worker) do
-          {:ok, %{target: perform, queue: queue}} ->
-            %{
-              target: perform,
-              kind: :enqueue,
-              range: call.range,
-              job: %{worker: worker, queue: queue}
-            }
-
-          :error ->
-            call
-        end
-
-      nil ->
-        call
+    with true <- String.ends_with?(target, [".new/1", ".new/2"]),
+         [_all, worker] <- Regex.run(~r/\A(.+)\.new\/[12]\z/, target),
+         {:ok, %{target: perform, queue: queue}} <- Map.fetch(workers, worker) do
+      %{
+        target: perform,
+        kind: :enqueue,
+        range: call.range,
+        job: %{worker: worker, queue: queue}
+      }
+    else
+      _not_enqueueing -> call
     end
   end
 end
