@@ -126,7 +126,10 @@ What that path cannot see is what the full build is for:
 
 - a compile that happened before Grasp started;
 - a change to which files are compiled at all;
-- a branch switch, a new `--base`, a dependency.
+- a branch switch, a new `--base`, a dependency;
+- a Grasp upgrade: a record is re-read only when its file recompiles, so an edge a newer
+  Grasp knows how to follow — a route, a queued job — reaches untouched functions only after
+  a full build.
 
 A batch naming more than fifty project files is a rebuild rather than a save: the reindexer
 says so and leaves the index to `mix grasp.index`. Reindexing also pauses, once and with a
