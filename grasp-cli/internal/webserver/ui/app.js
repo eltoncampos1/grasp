@@ -202,7 +202,10 @@ function renderSidebar() {
   $('#commentsList').innerHTML = openThreads.length === 0 ? '<div class="side-empty">none open</div>'
     : openThreads.map(t => {
         const first = (t.comments[0] && t.comments[0].body || '').slice(0, 48);
-        return '<div class="side-cmt" data-fn="' + esc(t.function) + '"><span class="loc">' + esc(t.file.split('/').pop() + ':' + t.line) + '</span> ' + esc(first) + '</div>';
+        const mark = t.status ? ' <span class="chip">' + esc(t.status) + '</span>' : '';
+        const cls = t.status === 'orphan' ? 'side-cmt orphan' : 'side-cmt';
+        return '<div class="' + cls + '" data-fn="' + esc(t.function) + '"' + (t.status === 'orphan' ? '' : ' data-click="1"') + '>' +
+          '<span class="loc">' + esc(t.file.split('/').pop() + ':' + t.line) + '</span> ' + esc(first) + mark + '</div>';
       }).join('');
 
   // Related: modules the change touches one hop away — callers into and
@@ -251,7 +254,7 @@ function renderSidebar() {
   }
 
   document.querySelectorAll('.side-fn').forEach(el => el.addEventListener('click', () => openCard(el.dataset.id, {})));
-  document.querySelectorAll('.side-cmt').forEach(el => el.addEventListener('click', () => openCard(el.dataset.fn, {})));
+  document.querySelectorAll('.side-cmt[data-click]').forEach(el => el.addEventListener('click', () => openCard(el.dataset.fn, {})));
   applyFilter();
 }
 
@@ -778,7 +781,23 @@ function buildCard(fn) {
     '<div class="card-body"></div>';
 
   const body = card.querySelector('.card-body');
-  if (!st.collapsed) body.appendChild(showDiff ? diffTable(fn, st) : sourceTable(fn));
+  if (!st.collapsed) {
+    body.appendChild(showDiff ? diffTable(fn, st) : sourceTable(fn));
+    // Outdated threads — their line was edited away — sit in the footer.
+    const stale = COMMENTS.threads.filter(t => t.function === fn.id && t.status === 'outdated');
+    if (stale.length) {
+      const foot = document.createElement('div');
+      foot.className = 'card-foot';
+      for (const t of stale) {
+        const note = document.createElement('div');
+        note.className = 'stale-note';
+        note.textContent = '⚠ outdated — was ' + t.file + ':' + t.line + (t.side === 'base' ? ' (base)' : '');
+        foot.appendChild(note);
+        foot.appendChild(threadBox(t));
+      }
+      body.appendChild(foot);
+    }
+  }
 
   card.addEventListener('mousedown', () => { if (S.focus !== fn.id) setFocus(fn.id); });
   const tv = card.querySelector('.toggleView');
@@ -1092,9 +1111,10 @@ function paintLineSelection(card) {
 }
 
 function threadsAt(fn, line, side) {
-  return COMMENTS.threads.filter(t => t.file === fn.file && t.side === side &&
-    (t.end_line ? t.end_line === line : t.line === line) &&
-    (t.function === fn.id || byId.get(t.function) == null));
+  // Only anchored threads sit on lines; outdated ones live in the card's
+  // footer, orphans only in the sidebar.
+  return COMMENTS.threads.filter(t => !t.status && t.function === fn.id && t.side === side &&
+    (t.end_line ? t.end_line === line : t.line === line));
 }
 
 function inThreadRange(fn, line, side) {
@@ -1115,6 +1135,12 @@ function threadRow(t, colspan) {
   const tr = document.createElement('tr');
   const td = document.createElement('td');
   td.colSpan = colspan;
+  td.appendChild(threadBox(t));
+  tr.appendChild(td);
+  return tr;
+}
+
+function threadBox(t) {
   const box = document.createElement('div');
   box.className = 'thread' + (t.resolved ? ' resolved' : '');
   const range = t.end_line ? t.line + '–' + t.end_line : '' + t.line;
@@ -1142,8 +1168,7 @@ function threadRow(t, colspan) {
   box.querySelector('.del').addEventListener('click', () => api({ action: 'delete', thread: t.id }));
   const sendgh = box.querySelector('.sendgh');
   if (sendgh) sendgh.addEventListener('click', () => publishThread(t.id, sendgh));
-  td.appendChild(box); tr.appendChild(td);
-  return tr;
+  return box;
 }
 
 async function publishThread(threadID, btn) {

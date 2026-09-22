@@ -32,6 +32,10 @@ kbd { font-family: var(--mono); font-size: 10px; background: var(--bg); border: 
 .side-cmt { display: block; padding: 3px 4px; border-radius: 5px; cursor: pointer; font-size: 11px; color: var(--dim); }
 .side-cmt:hover { background: var(--panel2); color: var(--text); }
 .side-cmt .loc { font-family: var(--mono); color: var(--accent); }
+.side-cmt.orphan { opacity: .45; cursor: default; }
+.side-cmt.orphan:hover { background: none; color: var(--dim); }
+.card-foot { border-top: 1px solid var(--border); padding: 6px 0 4px; }
+.stale-note { color: var(--modified); font-size: 11px; margin: 2px 14px; font-family: var(--mono); }
 .side-empty { color: var(--dim); padding: 4px; font-size: 12px; }
 .badge { flex: none; width: 14px; height: 14px; border-radius: 4px; font-size: 9px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; color: #0d1117; }
 .badge.added { background: var(--added); } .badge.modified { background: var(--modified); }
