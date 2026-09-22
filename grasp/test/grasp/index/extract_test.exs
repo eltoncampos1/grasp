@@ -41,6 +41,30 @@ defmodule Grasp.Index.ExtractTest do
     assert String.ends_with?(count.source, "def count(_), do: 0")
   end
 
+  test "a decorator attribute attaches like a doc or a spec" do
+    source = ~S"""
+    defmodule Acme.Audited do
+      @doc "Greets with a trail."
+      @spec greet(String.t()) :: String.t()
+      @decorate trace()
+      def greet(name), do: name
+
+      @decorate trace()
+      def wave, do: :ok
+    end
+    """
+
+    {:ok, %{definitions: defs}} = Extract.extract(source, "lib/acme/audited.ex")
+
+    greet = find(defs, "Acme.Audited", :greet)
+    assert greet.start_line == 2
+    assert String.starts_with?(greet.source, "  @doc")
+
+    wave = find(defs, "Acme.Audited", :wave)
+    assert wave.start_line == 7
+    assert String.starts_with?(wave.source, "  @decorate")
+  end
+
   test "resolves nested and __MODULE__-prefixed module names" do
     {:ok, %{definitions: defs, modules: modules}} = Extract.extract(@source, "lib/sample.ex")
 

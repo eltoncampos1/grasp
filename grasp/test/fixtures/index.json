@@ -174,6 +174,43 @@
           "kind": "remote",
           "range": {
             "end": [
+              8,
+              47
+            ],
+            "start": [
+              8,
+              24
+            ]
+          },
+          "target": "SampleApp.Greeter.greet/1"
+        }
+      ],
+      "change": "unchanged",
+      "file": "lib/sample_app/audited.ex",
+      "hidden_calls": [],
+      "id": "SampleApp.Audited.greet/1",
+      "kind": "def",
+      "module": "SampleApp.Audited",
+      "name": "greet",
+      "removed": false,
+      "route_sites": [],
+      "source": "  @doc \"Greets and leaves a trail.\"\n  @spec greet(String.t()) :: String.t()\n  @decorate :trace\n  def greet(name), do: SampleApp.Greeter.greet(name)",
+      "span": {
+        "end_line": 8,
+        "start_line": 5
+      }
+    },
+    {
+      "arities": [
+        1
+      ],
+      "arity": 1,
+      "base_source": null,
+      "calls": [
+        {
+          "kind": "remote",
+          "range": {
+            "end": [
               5,
               49
             ],
@@ -1330,6 +1367,12 @@
       "file": "lib/sample_app/application.ex",
       "line": 1,
       "name": "SampleApp.Application"
+    },
+    {
+      "behaviours": [],
+      "file": "lib/sample_app/audited.ex",
+      "line": 1,
+      "name": "SampleApp.Audited"
     },
     {
       "behaviours": [

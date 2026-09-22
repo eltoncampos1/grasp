@@ -83,6 +83,14 @@ defmodule Grasp.Index.BuilderTest do
     assert greet["removed"] == false
   end
 
+  test "a decorated function spans from its doc", %{index: index} do
+    {:ok, greet} = Grasp.Index.fetch_function(index, "SampleApp.Audited.greet/1")
+
+    assert greet["span"] == %{"start_line" => 5, "end_line" => 8}
+    assert String.starts_with?(greet["source"], "  @doc")
+    assert call(greet, "SampleApp.Greeter.greet/1")
+  end
+
   test "resolves aliased, imported, local, captured and nested calls with ranges", %{index: index} do
     {:ok, greet} = Grasp.Index.fetch_function(index, "SampleApp.Greeter.greet/2")
 
@@ -99,6 +107,7 @@ defmodule Grasp.Index.BuilderTest do
              call(greet_all, "SampleApp.Greeter.greet/1")
 
     assert Grasp.Index.callers(index, "SampleApp.Greeter.greet/2") == [
+             "SampleApp.Audited.greet/1",
              "SampleApp.Greeter.Nested.hello/0",
              "SampleApp.Greeter.greet_all/1",
              "SampleApp.Workers.Mailer.perform/1",

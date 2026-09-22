@@ -5,9 +5,9 @@ defmodule Grasp.Index.Extract do
 
   A definition groups every clause of a `{module, name, arity}` — including the extra
   arities a head with default arguments introduces — into one record whose span runs
-  from the first attached attribute (`@doc`, `@spec`, `@impl`, `@deprecated`, `@since`)
-  or leading comment through the last clause's end. Module names come from the
-  `defmodule` nesting, including `__MODULE__.Sub` heads; a `defmodule` whose name is
+  from the first attached attribute (`@doc`, `@spec`, `@impl`, `@deprecated`, `@since`,
+  `@decorate`) or leading comment through the last clause's end. Module names come from
+  the `defmodule` nesting, including `__MODULE__.Sub` heads; a `defmodule` whose name is
   not a literal alias is skipped. Call sites are every call node in a clause, keyed by
   the position the compiler reports for that call — the line and column of the function
   name — so `Grasp.Index.Join` can pair them with tracer events. A site's range covers
@@ -123,7 +123,7 @@ defmodule Grasp.Index.Extract do
         }
 
   @def_kinds [:def, :defp, :defmacro, :defmacrop, :defguard, :defguardp, :defdelegate]
-  @attached_attributes [:doc, :spec, :impl, :deprecated, :since]
+  @attached_attributes [:doc, :spec, :impl, :deprecated, :since, :decorate]
   # Special forms and operators the compiler never reports as calls; leaving them in
   # would produce sites no tracer event can ever land on.
   @not_calls [

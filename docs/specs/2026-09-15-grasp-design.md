@@ -90,10 +90,10 @@ mix grasp.index [--base main] [--out .grasp/index.json]
    `def`, `defp`, `defmacro`, `defmacrop`, `defguard`, `defguardp` and `defdelegate`
    clauses grouped by `{module, name, arity}`. A head with default arguments registers
    every arity it defines, all pointing at the one definition. The span runs from the
-   first attached attribute or leading comment (`@doc`, `@spec`, `@impl`) through the
-   last clause's `end`; the source text is the file slice for that span. Every call node
-   inside the bodies is collected with `Sourceror.get_range/1`, keyed by start
-   line and column.
+   first attached attribute or leading comment (`@doc`, `@spec`, `@impl`, `@deprecated`,
+   `@since`, `@decorate`) through the last clause's `end`; the source text is the file
+   slice for that span. Every call node inside the bodies is collected with
+   `Sourceror.get_range/1`, keyed by start line and column.
 3. **Join.** Each tracer event finds its definition by caller MFA (falling back to file and line
    containment) and its call node by line and column, producing a call with a target id, kind and
    range. An event that has a column but no matching node is macro-generated (`use`-injected
