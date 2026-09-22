@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 
 var (
 	initProfile string
+	initEditor  string
 	initYes     bool
 	initForce   bool
 )
@@ -69,10 +71,20 @@ and the .gitignore entries for everything else under .grasp/.`,
 			logln("agent profile: %s", profile)
 		}
 
+		editor, err := chooseEditor()
+		if err != nil {
+			return err
+		}
+		if editor == "" {
+			logln("editor: none (file:line stays plain text)")
+		} else {
+			logln("editor: %s (file:line deep links)", editor)
+		}
+
 		if err := os.MkdirAll(filepath.Join(root, ".grasp"), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(cfgPath, []byte(configTemplate(base, profile, languages)), 0o644); err != nil {
+		if err := os.WriteFile(cfgPath, []byte(configTemplate(base, profile, editor, languages)), 0o644); err != nil {
 			return err
 		}
 		logln("wrote %s", rel(root, cfgPath))
@@ -101,6 +113,7 @@ and the .gitignore entries for everything else under .grasp/.`,
 
 func init() {
 	initCmd.Flags().StringVar(&initProfile, "profile", "", "agent profile dir (CLAUDE_CONFIG_DIR); \"default\" for the CLI's own")
+	initCmd.Flags().StringVar(&initEditor, "editor", "", "editor for file:line deep links (vscode|cursor|zed|idea|none)")
 	initCmd.Flags().BoolVarP(&initYes, "yes", "y", false, "accept defaults, ask nothing")
 	initCmd.Flags().BoolVar(&initForce, "force", false, "rewrite an existing .grasp/config.toml")
 	rootCmd.AddCommand(initCmd)
@@ -173,7 +186,74 @@ func chooseProfile() (string, error) {
 	return options[i], nil
 }
 
-func configTemplate(base, profile string, languages []string) string {
+// detectEditors lists the deep-linkable editors this machine has, by their
+// CLI on PATH or their app bundle.
+func detectEditors() []string {
+	candidates := []struct {
+		name string
+		cli  string
+		apps []string
+	}{
+		{"vscode", "code", []string{"/Applications/Visual Studio Code.app"}},
+		{"cursor", "cursor", []string{"/Applications/Cursor.app"}},
+		{"zed", "zed", []string{"/Applications/Zed.app"}},
+		{"idea", "idea", []string{"/Applications/IntelliJ IDEA.app", "/Applications/IntelliJ IDEA CE.app"}},
+	}
+	var found []string
+	for _, c := range candidates {
+		if _, err := exec.LookPath(c.cli); err == nil {
+			found = append(found, c.name)
+			continue
+		}
+		for _, app := range c.apps {
+			if st, err := os.Stat(app); err == nil && st.IsDir() {
+				found = append(found, c.name)
+				break
+			}
+		}
+	}
+	return found
+}
+
+// chooseEditor picks the editor file:line links open in: the --editor flag,
+// the single editor detected, or an interactive pick when there are several.
+// Empty means plain text.
+func chooseEditor() (string, error) {
+	valid := map[string]bool{"vscode": true, "cursor": true, "zed": true, "idea": true}
+	if initEditor == "none" {
+		return "", nil
+	}
+	if initEditor != "" {
+		if !valid[initEditor] {
+			return "", fmt.Errorf("--editor must be one of vscode, cursor, zed, idea or none")
+		}
+		return initEditor, nil
+	}
+
+	detected := detectEditors()
+	if len(detected) == 0 {
+		return "", nil
+	}
+	if len(detected) == 1 || initYes || !term.IsTerminal(int(os.Stdin.Fd())) {
+		return detected[0], nil
+	}
+
+	options := append(detected, "none (plain file:line)")
+	i, err := fuzzyfinder.Find(options, func(i int) string { return options[i] },
+		fuzzyfinder.WithHeader("Which editor should file:line links open?"))
+	if err != nil {
+		if err == fuzzyfinder.ErrAbort {
+			return detected[0], nil
+		}
+		return "", err
+	}
+	if i == len(options)-1 {
+		return "", nil
+	}
+	return options[i], nil
+}
+
+func configTemplate(base, profile, editor string, languages []string) string {
 	langs := make([]string, len(languages))
 	for i, l := range languages {
 		langs[i] = fmt.Sprintf("%q", l)
@@ -181,6 +261,10 @@ func configTemplate(base, profile string, languages []string) string {
 	profileLine := "# config_dir = \"~/.claude\"     # pin a CLAUDE_CONFIG_DIR profile"
 	if profile != "" {
 		profileLine = fmt.Sprintf("config_dir = %q", profile)
+	}
+	editorLine := "# editor = \"vscode\"    # vscode | cursor | zed | idea — file:line deep links"
+	if editor != "" {
+		editorLine = fmt.Sprintf("editor = %q          # file:line deep links", editor)
 	}
 	return fmt.Sprintf(`# grasp — personal, per-repo settings (gitignored).
 # Team review rules live in .grasp/review.md instead.
@@ -201,8 +285,8 @@ languages = [%s]
 [web]
 port = 4040
 open = true
-# editor = "vscode"    # vscode | cursor | zed | idea — file:line deep links
-`, profileLine, base, strings.Join(langs, ", "))
+%s
+`, profileLine, base, strings.Join(langs, ", "), editorLine)
 }
 
 const reviewTemplate = `# Review rules for this repo
