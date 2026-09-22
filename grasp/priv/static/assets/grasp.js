@@ -913,6 +913,7 @@
         }
         return [...extents].map(([group, e]) => ({
           group,
+          frame: true,
           ...frameAround(e, headerOf(group), titleGap)
         }));
       };
@@ -933,6 +934,7 @@
           const callee = document.getElementById(`node-${hit.to}`);
           return !!callee && callee.dataset.group === group && boxes.has(callee);
         });
+        const head = group ? frameHead(headerOf(group), titleGap) : 0;
         let x, y;
         if (opener) {
           const box2 = boxes.get(opener.node);
@@ -951,7 +953,6 @@
             x = Math.min(...peers.map((b) => b.left));
             y = Math.max(...peers.map((b) => b.bottom)) + GAP_Y;
           } else {
-            const head = group ? frameHead(headerOf(group), titleGap) : 0;
             const bottoms = occupied.map((b) => b.bottom).concat(frameBoxes.map((f) => f.bottom));
             x = 0;
             y = (bottoms.length === 0 ? 0 : Math.max(...bottoms) + GAP_Y) + head;
@@ -963,7 +964,7 @@
           let moved = false;
           for (const other of obstacles) {
             if (!overlaps(box, other)) continue;
-            box.top = other.bottom + GAP_Y;
+            box.top = other.bottom + GAP_Y + (other.frame ? head : 0);
             box.bottom = box.top + m.height;
             moved = true;
           }

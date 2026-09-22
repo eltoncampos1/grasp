@@ -1120,6 +1120,7 @@ const Canvas = {
       }
       return [...extents].map(([group, e]) => ({
         group,
+        frame: true,
         ...frameAround(e, headerOf(group), titleGap),
       }))
     }
@@ -1155,6 +1156,10 @@ const Canvas = {
           const callee = document.getElementById(`node-${hit.to}`)
           return !!callee && callee.dataset.group === group && boxes.has(callee)
         })
+      // The room the card's own frame takes above it, which every drop past another section's
+      // frame carries with it and which the first card of a section starts under. A card in no
+      // group carries no frame and so no allowance.
+      const head = group ? frameHead(headerOf(group), titleGap) : 0
       let x, y
       if (opener) {
         // The callee stands off the opener's right edge, level with the call that opened it:
@@ -1189,8 +1194,7 @@ const Canvas = {
           // than a column beside the sections already laid out. The header allowance above it
           // is what leaves the frame's own top clear of the frame above by GAP_Y, and, with
           // nothing placed at all, what keeps the first title on the stage instead of above
-          // its corner. A card in no group carries no frame and so no allowance.
-          const head = group ? frameHead(headerOf(group), titleGap) : 0
+          // its corner.
           const bottoms = occupied.map((b) => b.bottom).concat(frameBoxes.map((f) => f.bottom))
           x = 0
           y = (bottoms.length === 0 ? 0 : Math.max(...bottoms) + GAP_Y) + head
@@ -1199,15 +1203,24 @@ const Canvas = {
 
       // Nothing is ever laid on top of anything: a card that would land on an occupied box, or
       // inside the frame of a section that is not its own, drops below it, and below whatever
-      // that move ran it into next. Each drop is strictly downwards, so one sweep per obstacle
-      // is enough to run out of them.
+      // that move ran it into next. A drop past another section's frame carries the card's own
+      // header allowance, so the frame that grows round the card clears the one it dropped
+      // past by GAP_Y rather than cutting into it; a drop past a card is the card's own gap.
+      // The two agree where a card of another section is the obstacle, since that card's frame
+      // holds it and is an obstacle as well, and the sweep that follows the drop past the card
+      // finds the frame it is still inside.
+      //
+      // Each drop is strictly downwards, so one sweep per obstacle is enough to run out of
+      // them. Downwards is also the only direction a drop needs: the stage is unbounded that
+      // way and the sections are stacked that way, so a card that leaves a frame downwards is
+      // clear of it for good, where a sideways move would only carry it towards the next one.
       const obstacles = occupied.concat(frameBoxes.filter((f) => f.group !== group))
       let box = {left: x, top: y, right: x + m.width, bottom: y + m.height, node}
       for (let sweep = 0; sweep <= obstacles.length; sweep++) {
         let moved = false
         for (const other of obstacles) {
           if (!overlaps(box, other)) continue
-          box.top = other.bottom + GAP_Y
+          box.top = other.bottom + GAP_Y + (other.frame ? head : 0)
           box.bottom = box.top + m.height
           moved = true
         }
