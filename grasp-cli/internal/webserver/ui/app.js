@@ -135,23 +135,8 @@ function autoOpenChanges() {
       if (S.cards.has(c.target) && c.target !== f.id && !S.edges.some(e => e.from === f.id && e.to === c.target))
         S.edges.push({ from: f.id, to: c.target, key: c.target + '@' + c.range.start[0] + ':' + c.range.start[1] });
   S.focus = ch[0].id;
-  // restack with real heights once rendered
-  requestAnimationFrame(() => requestAnimationFrame(() => { restackColumns(); scheduleSave(); }));
-}
-
-function restackColumns() {
-  const cols = new Map();
-  for (const [id, c] of S.cards) {
-    const key = Math.round(c.x);
-    if (!cols.has(key)) cols.set(key, []);
-    cols.get(key).push([id, c]);
-  }
-  for (const [, list] of cols) {
-    list.sort((a, b) => a[1].y - b[1].y);
-    let y = 40;
-    for (const [id, c] of list) { c.y = y; y += (heights.get(id) || EST_H) + GAP_Y; }
-  }
-  renderCanvas();
+  // lay out with real heights once rendered
+  requestAnimationFrame(() => requestAnimationFrame(() => { layoutCanvas(); renderCanvas(); scheduleSave(); }));
 }
 
 // ---------- header ----------
@@ -411,32 +396,133 @@ window.addEventListener('mouseup', () => {
 
 $('#resetBtn').addEventListener('click', resetLayout);
 function resetLayout() {
-  // BFS from the roots: column per depth, cards stacked by measured height.
-  const ids = [...S.cards.keys()];
-  const depth = new Map();
-  const roots = ids.filter(i => !S.edges.some(e => e.to === i));
-  const queue = (roots.length ? roots : ids.slice(0, 1)).map(i => [i, 0]);
-  while (queue.length) {
-    const [i, d] = queue.shift();
-    if (depth.has(i) && depth.get(i) <= d) continue;
-    depth.set(i, d);
-    for (const e of S.edges) if (e.from === i) queue.push([e.to, d + 1]);
-  }
-  for (const i of ids) if (!depth.has(i)) depth.set(i, 0);
-  const cols = new Map();
-  for (const i of ids) { const d = depth.get(i); if (!cols.has(d)) cols.set(d, []); cols.get(d).push(i); }
-  for (const [d, list] of [...cols.entries()].sort((a, b) => a[0] - b[0])) {
-    list.sort((a, b) => S.cards.get(a).y - S.cards.get(b).y);
-    let y = 40;
-    for (const i of list) {
-      const c = S.cards.get(i);
-      c.x = 40 + d * (CARD_W + GAP_X);
-      c.y = y;
-      y += (heights.get(i) || EST_H) + GAP_Y;
-    }
-  }
+  layoutCanvas();
   S.pan = { x: 0, y: 0 };
   renderCanvas(); applyTransform(); scheduleSave();
+}
+
+const FLOW_GAP = 110;
+
+// Layered flow layout: callers on the left, callees to the right, one
+// connected component per horizontal band so two flows read apart. Within a
+// column, cards order by the barycenter of their neighbors — the sweep that
+// untangles crossing edges. Cards with no edge at all sit in a grid section
+// of their own under the flows.
+function layoutCanvas() {
+  const ids = [...S.cards.keys()];
+  if (ids.length === 0) return;
+  const H = id => heights.get(id) || EST_H;
+  const out = new Map(ids.map(i => [i, new Set()]));
+  const inn = new Map(ids.map(i => [i, new Set()]));
+  for (const e of S.edges) {
+    if (out.has(e.from) && inn.has(e.to) && e.from !== e.to) { out.get(e.from).add(e.to); inn.get(e.to).add(e.from); }
+  }
+
+  // connected components (undirected)
+  const seen = new Set();
+  const comps = [];
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    const comp = [], stack = [id];
+    while (stack.length) {
+      const n = stack.pop();
+      if (seen.has(n)) continue;
+      seen.add(n); comp.push(n);
+      for (const m of out.get(n)) stack.push(m);
+      for (const m of inn.get(n)) stack.push(m);
+    }
+    comps.push(comp);
+  }
+  const isolated = [];
+  const flows = [];
+  for (const comp of comps) {
+    if (comp.length === 1 && out.get(comp[0]).size === 0 && inn.get(comp[0]).size === 0) isolated.push(comp[0]);
+    else flows.push(comp);
+  }
+  flows.sort((a, b) => b.length - a.length);
+
+  let yBase = 40;
+  for (const flow of flows) yBase = layoutFlow(flow, out, inn, H, yBase) + FLOW_GAP;
+
+  // the unconnected section: a compact grid under the flows
+  if (isolated.length) {
+    isolated.sort((a, b) => (byId.get(a).module + a).localeCompare(byId.get(b).module + b));
+    const perRow = 3;
+    let x = 40, y = yBase, rowH = 0;
+    isolated.forEach((id, i) => {
+      if (i > 0 && i % perRow === 0) { y += rowH + GAP_Y; x = 40; rowH = 0; }
+      const c = S.cards.get(id);
+      c.x = x; c.y = y;
+      x += CARD_W + GAP_X;
+      rowH = Math.max(rowH, H(id));
+    });
+  }
+}
+
+function layoutFlow(nodes, out, inn, H, yStart) {
+  const nodeSet = new Set(nodes);
+  const layer = new Map();
+  // longest path from the flow's entry points, so a card sits to the right
+  // of everything that calls it
+  const visiting = new Set();
+  const depth = n => {
+    if (layer.has(n)) return layer.get(n);
+    if (visiting.has(n)) return 0; // cycle: break it here
+    visiting.add(n);
+    let d = 0;
+    for (const p of inn.get(n)) if (nodeSet.has(p)) d = Math.max(d, depth(p) + 1);
+    visiting.delete(n);
+    layer.set(n, d);
+    return d;
+  };
+  for (const n of nodes) depth(n);
+
+  const cols = [];
+  for (const n of nodes) { const d = layer.get(n) || 0; (cols[d] || (cols[d] = [])).push(n); }
+  for (let d = 0; d < cols.length; d++) if (!cols[d]) cols[d] = [];
+
+  // barycenter sweeps: order each column by the mean position of its
+  // neighbors in the adjacent column, a few passes each way
+  const pos = new Map();
+  cols.forEach(col => col.forEach((n, i) => pos.set(n, i)));
+  const bary = (n, neigh) => {
+    const ns = [...neigh].filter(m => nodeSet.has(m));
+    if (!ns.length) return pos.get(n);
+    return ns.reduce((s, m) => s + pos.get(m), 0) / ns.length;
+  };
+  for (let it = 0; it < 3; it++) {
+    for (let d = 1; d < cols.length; d++) {
+      cols[d].sort((a, b) => bary(a, inn.get(a)) - bary(b, inn.get(b)));
+      cols[d].forEach((n, i) => pos.set(n, i));
+    }
+    for (let d = cols.length - 2; d >= 0; d--) {
+      cols[d].sort((a, b) => bary(a, out.get(a)) - bary(b, out.get(b)));
+      cols[d].forEach((n, i) => pos.set(n, i));
+    }
+  }
+
+  // coordinates: x by layer; y stacked, nudged toward the mean of the
+  // neighbors already placed so edges run near-horizontal
+  const yOf = new Map();
+  let maxBottom = yStart;
+  cols.forEach((col, d) => {
+    let cursor = yStart;
+    for (const n of col) {
+      let want = cursor;
+      const placed = [...inn.get(n)].filter(m => nodeSet.has(m) && yOf.has(m));
+      if (placed.length) {
+        const mean = placed.reduce((s, m) => s + yOf.get(m), 0) / placed.length;
+        want = Math.max(cursor, mean);
+      }
+      yOf.set(n, want);
+      const c = S.cards.get(n);
+      c.x = 40 + d * (CARD_W + GAP_X);
+      c.y = want;
+      cursor = want + H(n) + GAP_Y;
+      maxBottom = Math.max(maxBottom, cursor);
+    }
+  });
+  return maxBottom;
 }
 
 $('#sigBtn').addEventListener('click', toggleSig);
@@ -466,12 +552,15 @@ function buildCard(fn) {
   const nCallers = (callersOf.get(fn.id) || []).length;
   const fileLine = fn.file + ':' + fn.span.start_line;
   const link = editorLink(fn);
+  // no caller anywhere in the index: the flow starts here
+  const entryChip = nCallers === 0 && !fn.removed
+    ? '<span class="chip" style="border-color:var(--accent);color:var(--accent)" title="nothing in the project calls this">entry</span>' : '';
 
   card.innerHTML =
     '<div class="card-head">' +
       '<span class="badge ' + fn.change + '">' + fn.change[0].toUpperCase() + '</span>' +
       '<span class="card-title">' + esc(fn.name) + '<span class="arity">/' + fn.arity + '</span></span>' +
-      '<span class="chip">' + esc(fn.kind) + '</span>' + dstat +
+      '<span class="chip">' + esc(fn.kind) + '</span>' + entryChip + dstat +
       '<span class="card-actions">' +
         (nCallers ? '<span class="callers-wrap"><button class="callersBtn">callers ' + nCallers + '</button></span>' : '') +
         (fn.base_source != null ? '<button class="toggleView">' + (showDiff ? 'source' : 'diff') + '</button>' : '') +
