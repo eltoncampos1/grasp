@@ -436,11 +436,18 @@ viewport.addEventListener('mousedown', e => {
   }
   const id = card.dataset.id;
   const modifier = e.metaKey || e.ctrlKey;
-  if (cardHead || modifier) {
+  const inSelection = selected.has(id);
+  // A selected card drags from anywhere on it — that is what the selection is
+  // for. Otherwise the header (or a modifier press) is the drag handle.
+  if (cardHead || modifier || inSelection) {
     setFocus(id);
-    const moving = selected.has(id) ? [...selected] : [id];
+    const moving = inSelection ? [...selected] : [id];
     const positions = new Map(moving.filter(m => S.cards.has(m)).map(m => [m, { x: S.cards.get(m).x, y: S.cards.get(m).y }]));
-    dragging = { kind: 'cards', id, positions, sx: e.clientX, sy: e.clientY, moved: false, toggleOnClick: modifier };
+    dragging = {
+      kind: 'cards', id, positions, sx: e.clientX, sy: e.clientY, moved: false,
+      toggleOnClick: modifier,
+      releaseOnClick: inSelection && !modifier, // a plain click lets the selection go
+    };
     e.preventDefault();
   } else {
     setFocus(id);
@@ -495,6 +502,7 @@ window.addEventListener('mouseup', e => {
       break;
     case 'cards':
       if (!d.moved && d.toggleOnClick) toggleSelected(d.id);
+      else if (!d.moved && d.releaseOnClick) clearSelection();
       else if (d.moved) scheduleSave();
       break;
     case 'box': {
