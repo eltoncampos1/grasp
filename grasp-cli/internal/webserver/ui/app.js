@@ -463,6 +463,20 @@ viewport.addEventListener('mousedown', e => {
   const card = e.target.closest('.card');
   if (e.target.closest('button, a, select, textarea, input, .callers-menu')) return;
 
+  // Drag a frame's title to move the whole group; a click with no drag
+  // renames it in place.
+  const ftitle = e.target.closest('.frame-title');
+  if (ftitle) {
+    const gid = ftitle.closest('.frame').dataset.gid;
+    const g = S.groups.find(x => x.id === gid);
+    if (g) {
+      const positions = new Map(g.cards.filter(m => S.cards.has(m)).map(m => [m, { x: S.cards.get(m).x, y: S.cards.get(m).y }]));
+      dragging = { kind: 'cards', id: g.cards[0], positions, sx: e.clientX, sy: e.clientY, moved: false, renameGroup: gid };
+      e.preventDefault();
+    }
+    return;
+  }
+
   if (!card && e.shiftKey && !spaceHeld) {
     const box = document.createElement('div');
     box.id = 'selbox';
@@ -544,9 +558,13 @@ window.addEventListener('mouseup', e => {
       scheduleSave();
       break;
     case 'cards':
-      if (!d.moved && d.toggleOnClick) toggleSelected(d.id);
+      if (!d.moved && d.renameGroup) startGroupRename(d.renameGroup);
+      else if (!d.moved && d.toggleOnClick) toggleSelected(d.id);
       else if (!d.moved && d.releaseOnClick) clearSelection();
-      else if (d.moved) scheduleSave();
+      else if (d.moved) {
+        if (!d.renameGroup) maybeDropIntoFrame(d);
+        scheduleSave();
+      }
       break;
     case 'box': {
       d.el.remove();
@@ -1262,6 +1280,61 @@ function drawEdges() {
     const far = dist(e.from) > dist(e.to) ? e.from : e.to;
     setFocus(far); ensureVisible(far);
   }));
+}
+
+// startGroupRename swaps the frame's title for an input in place: Enter (or
+// clicking away) saves, a blank name leaves the frame with none, Escape
+// leaves it as it was.
+function startGroupRename(gid) {
+  const g = S.groups.find(x => x.id === gid);
+  const el = document.querySelector('.frame[data-gid="' + CSS.escape(gid) + '"] .ftext');
+  if (!g || !el) return;
+  const input = document.createElement('input');
+  input.value = g.title;
+  input.placeholder = 'group title';
+  el.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const commit = save => {
+    if (done) return;
+    done = true;
+    if (save && input.value.trim() !== g.title) {
+      pushHistory();
+      g.title = input.value.trim();
+      scheduleSave();
+    }
+    renderCanvas();
+  };
+  input.addEventListener('keydown', ev => {
+    ev.stopPropagation();
+    if (ev.key === 'Enter') commit(true);
+    else if (ev.key === 'Escape') commit(false);
+  });
+  input.addEventListener('blur', () => commit(true));
+  input.addEventListener('mousedown', ev => ev.stopPropagation());
+}
+
+// Dropping a card inside another group's frame moves it (and the selection
+// dragged with it) to that group. Dropped anywhere else, a card keeps the
+// group it had — the frame just stretches to follow it.
+function maybeDropIntoFrame(d) {
+  const primary = S.cards.get(d.id);
+  if (!primary) return;
+  const cx = primary.x + W(d.id) / 2, cy = primary.y + 20;
+  const current = groupOf(d.id);
+  for (const g of S.groups) {
+    if (current && g.id === current.id) continue;
+    const r = frameRect(g);
+    if (!r || cx < r.x || cx > r.x + r.w || cy < r.y || cy > r.y + r.h) continue;
+    pushHistory();
+    const moving = [...d.positions.keys()];
+    for (const og of S.groups) og.cards = og.cards.filter(c => !moving.includes(c));
+    for (const m of moving) if (!g.cards.includes(m) && S.cards.has(m)) g.cards.push(m);
+    pruneGroups();
+    renderCanvas();
+    return;
+  }
 }
 
 // frameRect computes a group's frame in world coordinates: the members'
