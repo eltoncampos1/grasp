@@ -40,7 +40,7 @@ grasp web             # index the working tree against the base branch and serve
 | `grasp init` | One-time repo setup: `.grasp/config.toml` (personal, gitignored), `.grasp/review.md` (committable team rules), `.gitignore` entries |
 | `grasp pr [N]` | Open a PR in `.grasp/worktrees/pr-N` and index it against its base. No `N`: fuzzy picker over `gh pr list`. `--close` removes the worktree |
 | `grasp index [--base REF]` | Write `.grasp/index.json` for the working tree (uncommitted and untracked work included) |
-| `grasp web` | Serve the embedded review canvas on 127.0.0.1 (`--no-index` to serve the index already on disk, `--no-open`, `--port`) |
+| `grasp web` | Serve the embedded review canvas on 127.0.0.1 (`--no-index` serves the index on disk, `--watch` reindexes when HEAD or the working tree changes, `--no-open`, `--port`) |
 | `grasp publish [N]` | Send local comment threads to the PR as review comments via `gh`. Already-published threads are skipped |
 | `grasp doctor [--ping]` | Show how everything resolves: repo, base, gh auth, agent binary + profile, index freshness |
 
@@ -61,10 +61,15 @@ their diff, with edges drawn where one changed function calls another.
   `⋯ n unchanged lines` expanders (a >100-line diff arrives folded; comment lines stay drawn);
   **`c` collapses to the header; `x` closes; `Shift+x` closes the whole subtree** nothing else
   reaches.
-- **Click a line number to comment**; Shift+click another number stretches the thread over a
-  range (tinted). Works on the base side of a diff too. Threads persist in
-  `.grasp/comments.json` under the main checkout — they survive `grasp pr --close` — and the
-  sidebar's Comments group lists the open ones. Reply, resolve, delete inline.
+- **Click a line number to comment**, or drag across the numbers for a range (tinted). Works on
+  the base side of a diff too. Threads persist in `.grasp/comments.json` under the main
+  checkout — they survive `grasp pr --close` — and the sidebar's Comments group lists the open
+  ones. Reply, resolve, delete inline.
+- **Threads follow the code.** Each thread anchors to the text of its line: when the code moves
+  — a new push reviewed, an agent edit, more work on the branch — the thread re-anchors
+  wherever its text went on the next reindex. One that matches nowhere sits in the card's
+  footer marked outdated; one whose function left the index shows muted in the sidebar as an
+  orphan. Publishing an outdated thread falls back to a file-level comment that says so.
 - **The sidebar is review-first**: Changes, open Comments, then Related — only the modules one
   call away from the change. The full module list stays behind a toggle; `⌘K` searches
   everything.

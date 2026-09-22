@@ -196,8 +196,26 @@ streaming (normalize output for the chat panel), and MCP wiring. `claude-code` i
 | **v1.1** ✅ | Elixir and Go indexers; embedded viewer (canvas, edges, palette, diff/fold, comments, SSE live reload, loopback guard); `grasp publish`. Validated: platform Elixir 7.1k functions/11.5k edges in 0.73s |
 | **v1.2** ✅ | MCP server (22+ tools; canvas driven over the events bus); chat panel auto-wired via inline `--mcp-config`; layered flow layout; review-first sidebar; sessions; PR-index preservation; port auto-bump |
 | **v1.3** ✅ | Multi-select, undo, drag-select comment ranges (published as native multi-line comments), explicit GitHub send (composer/thread/"send review"), groups/frames with agent tools, adaptive card width |
-| **v1 remaining** | Comment re-anchoring when lines move, framework entry-point detectors, `web --watch` |
-| **v2** | Auto-review on open (`review.auto` + `.grasp/review.md`, `--no-review`), pluggable agent backends (Kimi, custom), issues as MCP context, precision backends (SCIP/LSP), JS path aliases |
+| **v1.4** ✅ | **Delivered 2026-09-22:** comment re-anchoring (text anchors, outdated/orphan states surfaced in the card footer and sidebar, arity-rename re-matching, file-level publish fallback); `grasp web --watch` (reindex on HEAD/working-tree change) |
+| **v1 remaining** | Framework entry-point detectors |
+| **v2** | Auto-review on open (`review.auto` + `.grasp/review.md`, `--no-review`), pluggable agent backends (Kimi, custom), GitHub comment import (below), per-commit views (below), issues as MCP context, precision backends (SCIP/LSP), JS path aliases |
+
+### Designed, not yet built
+
+**GitHub comment import ("sync from GitHub").** One-way, on-demand: a header button (and an MCP
+tool) fetches the PR's review comments via `gh api pulls/N/comments`, maps `path` + `line`/
+`start_line` onto threads (author = the GitHub login, marked as imported), and merges — a
+comment whose `html_url` matches a local thread's `published_url` is ours coming back and is
+skipped; replies group via `in_reply_to_id`. Imported threads render read-only at first;
+answering them can go through the existing publish path (`in_reply_to`). Never automatic — same
+principle as sending.
+
+**Per-commit views.** The default canvas stays the whole review (merge-base → head). A sidebar
+Commits group lists the PR's commits (`gh pr view --json commits` or `git log base..head`);
+clicking one builds an index of the tree at that commit against its parent (checked out to a
+temporary worktree or read via `git archive`, cached under `.grasp/commits/<sha>.json`) and the
+viewer swaps to it, session-per-commit (`pr-N-<sha7>`). Costs one index build per commit
+(~0.5–1s), built lazily on first click. Worth doing after entry points.
 
 ## Open questions and risks
 
