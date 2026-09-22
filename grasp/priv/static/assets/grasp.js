@@ -938,6 +938,8 @@
         });
         const head = group ? frameHead(headerHeightFor(group), FRAME_TITLE_GAP) : 0;
         const foreign = frameBoxes.filter((f) => f.group !== group);
+        const pad = group ? FRAME_PAD : 0;
+        const clearance = (other) => other.frame ? pad + GAP_Y : GAP_Y;
         let x, y;
         if (opener) {
           const box2 = boxes.get(opener.node);
@@ -962,7 +964,11 @@
               y: Math.min(...peers.map((b) => b.top))
             };
             const clearOfFrames = (at2) => !foreign.some(
-              (f) => overlaps({ left: at2.x, top: at2.y, right: at2.x + m.width, bottom: at2.y + m.height }, f)
+              (f) => overlaps(
+                { left: at2.x, top: at2.y, right: at2.x + m.width, bottom: at2.y + m.height },
+                f,
+                clearance(f)
+              )
             );
             const at = clearOfFrames(below) || !clearOfFrames(beside) ? below : beside;
             x = at.x;
@@ -978,7 +984,7 @@
         for (let sweep = 0; sweep <= obstacles.length; sweep++) {
           let moved = false;
           for (const other of obstacles) {
-            if (!overlaps(box, other)) continue;
+            if (!overlaps(box, other, clearance(other))) continue;
             box.top = other.bottom + GAP_Y + (other.frame ? head : 0);
             box.bottom = box.top + m.height;
             moved = true;
@@ -1015,8 +1021,8 @@
   function sortGroup(node) {
     return node.dataset.group === "" ? Number.MAX_SAFE_INTEGER : Number(node.dataset.group);
   }
-  function overlaps(a, b) {
-    return a.left < b.right + GAP_Y && a.right > b.left - GAP_Y && a.top < b.bottom + GAP_Y && a.bottom > b.top - GAP_Y;
+  function overlaps(a, b, margin) {
+    return a.left < b.right + margin && a.right > b.left - margin && a.top < b.bottom + margin && a.bottom > b.top - margin;
   }
   var canvas_default = Canvas;
 

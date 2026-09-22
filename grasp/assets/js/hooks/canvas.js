@@ -1172,6 +1172,12 @@ const Canvas = {
       // The frames a card of this section is placed clear of. Its own is not among them: a card
       // belongs inside the frame that grows round its section.
       const foreign = frameBoxes.filter((f) => f.group !== group)
+      // The room the card leaves an obstacle: the placement gap against another card, and
+      // against another section's frame that gap plus the padding the card's own frame takes
+      // beyond it, so the frame the card grows ends GAP_Y clear of its neighbour rather than
+      // touching it. A card in no group grows no frame and so takes no padding with it.
+      const pad = group ? FRAME_PAD : 0
+      const clearance = (other) => (other.frame ? pad + GAP_Y : GAP_Y)
       let x, y
       if (opener) {
         // The callee stands off the opener's right edge, level with the call that opened it:
@@ -1214,7 +1220,11 @@ const Canvas = {
           }
           const clearOfFrames = (at) =>
             !foreign.some((f) =>
-              overlaps({left: at.x, top: at.y, right: at.x + m.width, bottom: at.y + m.height}, f),
+              overlaps(
+                {left: at.x, top: at.y, right: at.x + m.width, bottom: at.y + m.height},
+                f,
+                clearance(f),
+              ),
             )
           const at = clearOfFrames(below) || !clearOfFrames(beside) ? below : beside
           x = at.x
@@ -1236,26 +1246,25 @@ const Canvas = {
       // inside the frame of a section that is not its own, drops below it, and below whatever
       // that move ran it into next. A drop past another section's frame carries the card's own
       // header allowance, so the frame that grows round the card clears the one it dropped
-      // past by GAP_Y rather than cutting into it; a drop past a card is the card's own gap.
-      // The two agree where a card of another section is the obstacle, since that card's frame
-      // holds it and is an obstacle as well, and the sweep that follows the drop past the card
-      // finds the frame it is still inside.
+      // past by GAP_Y rather than cutting into it — the allowance is at least the padding that
+      // frame takes, so the drop lands the card outside the clearance it is tested against. A
+      // drop past a card is the card's own gap. The two agree where a card of another section
+      // is the obstacle, since that card's frame holds it and is an obstacle as well, and the
+      // sweep that follows the drop past the card finds the frame it is still inside.
       //
       // Each drop is strictly downwards, so one sweep per obstacle is enough to run out of
       // them. Downwards is also the only direction a drop needs: the stage is unbounded that
       // way and the sections are stacked that way, so a card that leaves a frame downwards is
       // clear of it for good, where a sideways move would only carry it towards the next one.
       //
-      // The sweep keeps the card off every frame, not the section's own frame, which is the
-      // union of its cards: a group that has been closed in on both sides — the row below it
-      // and the room beside it both taken — grows round its neighbour when a card of it lands
-      // past that neighbour.
+      // A group that has been closed in on both sides — the row below it and the room beside it
+      // both taken — grows round its neighbour when a card of it lands past that neighbour.
       const obstacles = occupied.concat(foreign)
       let box = {left: x, top: y, right: x + m.width, bottom: y + m.height, node}
       for (let sweep = 0; sweep <= obstacles.length; sweep++) {
         let moved = false
         for (const other of obstacles) {
-          if (!overlaps(box, other)) continue
+          if (!overlaps(box, other, clearance(other))) continue
           box.top = other.bottom + GAP_Y + (other.frame ? head : 0)
           box.bottom = box.top + m.height
           moved = true
@@ -1289,18 +1298,19 @@ const Canvas = {
 
 // The room a frame leaves above the cards it holds: FRAME_PAD alone for a group whose section
 // carries no header, and otherwise the header, the gap under it and the padding. The lengths
-// are whatever units the caller measured its extent in — the gap is counter-scaled, so a
-// caller working in stage units divides FRAME_TITLE_GAP by the scale and one working in screen
-// pixels passes it as it is.
+// are the caller's own units, the header and the gap included.
 function frameHead(headerHeight, titleGap) {
   return headerHeight === null ? FRAME_PAD : headerHeight + titleGap + FRAME_PAD
 }
 
-// The rectangle round a group's cards: FRAME_PAD on three sides and, above, room for the
-// header the group carries. `extent` is the union of the group's boxes. The frame drawn on the
-// canvas and the frame a placement is decided against share this formula, and the two land on
-// the same rectangle because the extents they union are the same: a `.node` holds one `.card`
-// and neither carries a margin or a border.
+// The rectangle round a group's cards: FRAME_PAD on three sides and, above, room for the header
+// the group carries. `extent` is the union of the group's boxes.
+//
+// Drawing a frame and deciding a placement share the formula and part over the units they feed
+// it. A frame is drawn in stage units at the scale it is drawn at, where the counter-scaled
+// header and gap grow as the reader zooms out; a placement works in screen pixels, which is the
+// frame at 100%. So the two tops agree at 100%, and further out the drawn head is the larger of
+// the two.
 function frameAround(extent, headerHeight, titleGap) {
   return {
     left: extent.left - FRAME_PAD,
@@ -1316,14 +1326,14 @@ function sortGroup(node) {
   return node.dataset.group === "" ? Number.MAX_SAFE_INTEGER : Number(node.dataset.group)
 }
 
-// Two boxes are clear of one another only with the placement gap between them, so a card never
-// comes to rest against another card's edge.
-function overlaps(a, b) {
+// Two boxes are clear of one another only with `margin` between them on every side, so a card
+// never comes to rest against the edge of what it was placed against.
+function overlaps(a, b, margin) {
   return (
-    a.left < b.right + GAP_Y &&
-    a.right > b.left - GAP_Y &&
-    a.top < b.bottom + GAP_Y &&
-    a.bottom > b.top - GAP_Y
+    a.left < b.right + margin &&
+    a.right > b.left - margin &&
+    a.top < b.bottom + margin &&
+    a.bottom > b.top - margin
   )
 }
 
