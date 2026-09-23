@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/eltoncampos1/grasp-cli/internal/comments"
-	"github.com/eltoncampos1/grasp-cli/internal/indexer"
-	"github.com/eltoncampos1/grasp-cli/internal/publish"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/comments"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/indexer"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/publish"
 )
 
 // The MCP endpoint lets a coding agent read the same index the canvas draws

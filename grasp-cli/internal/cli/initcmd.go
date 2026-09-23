@@ -11,10 +11,10 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/eltoncampos1/grasp-cli/internal/agent"
-	"github.com/eltoncampos1/grasp-cli/internal/config"
-	"github.com/eltoncampos1/grasp-cli/internal/ghx"
-	"github.com/eltoncampos1/grasp-cli/internal/gitx"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/agent"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/config"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/ghx"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/gitx"
 )
 
 var (

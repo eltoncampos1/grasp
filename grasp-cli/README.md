@@ -16,8 +16,8 @@ the GitHub CLI (`gh`) signed in for the pull-request features. The chat panel an
 run the [Claude Code](https://claude.com/claude-code) CLI, which is optional for everything else.
 
 ```bash
-git clone https://github.com/eltoncampos1/grasp-cli
-cd grasp-cli
+git clone https://github.com/gfrancischelli/grasp
+cd grasp/grasp-cli
 make install        # builds and symlinks into ~/.local/bin (PREFIX=... to change)
 ```
 

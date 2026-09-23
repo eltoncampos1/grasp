@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/eltoncampos1/grasp-cli/internal/gitx"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/gitx"
 )
 
 // version is stamped by the Makefile via -ldflags at build time.

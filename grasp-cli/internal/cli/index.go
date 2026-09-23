@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/eltoncampos1/grasp-cli/internal/config"
-	"github.com/eltoncampos1/grasp-cli/internal/gitx"
-	"github.com/eltoncampos1/grasp-cli/internal/indexer"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/config"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/gitx"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/indexer"
 )
 
 var indexBase string

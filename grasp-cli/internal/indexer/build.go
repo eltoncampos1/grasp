@@ -13,7 +13,7 @@ import (
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
 
-	"github.com/eltoncampos1/grasp-cli/internal/gitx"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/gitx"
 )
 
 type Options struct {

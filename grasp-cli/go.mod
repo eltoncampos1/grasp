@@ -1,4 +1,4 @@
-module github.com/eltoncampos1/grasp-cli
+module github.com/gfrancischelli/grasp/grasp-cli
 
 go 1.25.4
 

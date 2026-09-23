@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eltoncampos1/grasp-cli/internal/comments"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/comments"
 )
 
 //go:embed ui

@@ -1,6 +1,6 @@
 package main
 
-import "github.com/eltoncampos1/grasp-cli/internal/cli"
+import "github.com/gfrancischelli/grasp/grasp-cli/internal/cli"
 
 func main() {
 	cli.Execute()

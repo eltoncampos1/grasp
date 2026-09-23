@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/eltoncampos1/grasp-cli/internal/publish"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/publish"
 )
 
 var publishCmd = &cobra.Command{

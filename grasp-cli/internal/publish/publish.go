@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eltoncampos1/grasp-cli/internal/comments"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/comments"
 )
 
 type Summary struct {

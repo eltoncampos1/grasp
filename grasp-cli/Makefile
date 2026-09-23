@@ -1,7 +1,7 @@
 BIN     := grasp
 PREFIX  ?= $(HOME)/.local
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -X github.com/eltoncampos1/grasp-cli/internal/cli.version=$(VERSION)
+LDFLAGS := -X github.com/gfrancischelli/grasp/grasp-cli/internal/cli.version=$(VERSION)
 
 build: ## Build the binary (version stamped from git)
 	go build -ldflags '$(LDFLAGS)' -o $(BIN) .

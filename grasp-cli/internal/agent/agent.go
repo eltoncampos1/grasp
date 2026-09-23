@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eltoncampos1/grasp-cli/internal/config"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/config"
 )
 
 // Profiles lists candidate CLAUDE_CONFIG_DIR directories: ~/.claude plus any

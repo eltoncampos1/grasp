@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/eltoncampos1/grasp-cli/internal/publish"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/publish"
 )
 
 // Nothing syncs to GitHub on its own: these endpoints fire only from explicit

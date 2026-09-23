@@ -10,9 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/eltoncampos1/grasp-cli/internal/agent"
-	"github.com/eltoncampos1/grasp-cli/internal/config"
-	"github.com/eltoncampos1/grasp-cli/internal/ghx"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/agent"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/config"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/ghx"
 )
 
 var doctorPing bool

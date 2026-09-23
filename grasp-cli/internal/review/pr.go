@@ -8,9 +8,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/eltoncampos1/grasp-cli/internal/ghx"
-	"github.com/eltoncampos1/grasp-cli/internal/gitx"
-	"github.com/eltoncampos1/grasp-cli/internal/indexer"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/ghx"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/gitx"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/indexer"
 )
 
 type Opened struct {

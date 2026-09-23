@@ -3,8 +3,8 @@ package webserver
 import (
 	"strings"
 
-	"github.com/eltoncampos1/grasp-cli/internal/comments"
-	"github.com/eltoncampos1/grasp-cli/internal/indexer"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/comments"
+	"github.com/gfrancischelli/grasp/grasp-cli/internal/indexer"
 )
 
 // Re-anchoring keeps threads on the code they are about while the code moves
