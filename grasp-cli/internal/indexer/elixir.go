@@ -25,6 +25,16 @@ type exState struct {
 	fp     *fileParse
 	merged map[string]*record // id -> record, merging multi-clause functions
 	stack  []string           // enclosing defmodule names
+	// pendingDecor is the start line of the decoration block sitting above
+	// the next definition — attr/slot/@doc/@spec belong to the function they
+	// document, so its span absorbs them.
+	pendingDecor int
+}
+
+// decorations that attach to the definition below them.
+var exDecorations = map[string]bool{
+	"attr": true, "slot": true,
+	"doc": true, "spec": true, "impl": true, "deprecated": true, "tag": true,
 }
 
 // elixir special forms and directives that parse as local calls but are not
@@ -42,23 +52,77 @@ var exSpecialForms = map[string]bool{
 }
 
 func (ex *exState) statement(n *sitter.Node, src []byte) {
-	if n.Kind() != "call" {
+	switch n.Kind() {
+	case "call":
+		target := n.ChildByFieldName("target")
+		if target == nil || target.Kind() != "identifier" {
+			ex.pendingDecor = 0
+			return
+		}
+		switch name := target.Utf8Text(src); name {
+		case "defmodule":
+			ex.pendingDecor = 0
+			ex.defmodule(n, src)
+		case "def", "defp", "defmacro", "defmacrop":
+			ex.definition(n, name, src)
+		case "alias":
+			ex.pendingDecor = 0
+			ex.alias(n, src)
+		case "import":
+			ex.pendingDecor = 0
+			ex.importDirective(n, src)
+		default:
+			if exDecorations[name] {
+				ex.markDecoration(n)
+			} else {
+				ex.pendingDecor = 0
+			}
+		}
+	case "unary_operator":
+		// `@doc "…"` decorates the def below; `@tiles [...]` is a module
+		// attribute — a record of its own, so a change to it shows.
+		inner := firstNamed(n)
+		if inner == nil || inner.Kind() != "call" {
+			ex.pendingDecor = 0
+			return
+		}
+		t := inner.ChildByFieldName("target")
+		if t == nil || t.Kind() != "identifier" {
+			ex.pendingDecor = 0
+			return
+		}
+		name := t.Utf8Text(src)
+		if exDecorations[name] {
+			ex.markDecoration(n)
+			return
+		}
+		if childOfKind(inner, "arguments") != nil {
+			ex.moduleAttr(n, name)
+		}
+		ex.pendingDecor = 0
+	default:
+		ex.pendingDecor = 0
+	}
+}
+
+func (ex *exState) markDecoration(n *sitter.Node) {
+	if ex.pendingDecor == 0 {
+		ex.pendingDecor = int(n.StartPosition().Row) + 1
+	}
+}
+
+// moduleAttr records a `@name value` module attribute as a tiny record, so
+// the sidebar and the diff cover constants and moduledocs too.
+func (ex *exState) moduleAttr(n *sitter.Node, name string) {
+	module := ex.currentModule()
+	id := module + ".@" + name + "/0"
+	if _, dup := ex.merged[id]; dup {
 		return
 	}
-	target := n.ChildByFieldName("target")
-	if target == nil || target.Kind() != "identifier" {
-		return
-	}
-	switch target.Utf8Text(src) {
-	case "defmodule":
-		ex.defmodule(n, src)
-	case "def", "defp", "defmacro", "defmacrop":
-		ex.definition(n, target.Utf8Text(src), src)
-	case "alias":
-		ex.alias(n, src)
-	case "import":
-		ex.importDirective(n, src)
-	}
+	start := int(n.StartPosition().Row) + 1
+	end := int(n.EndPosition().Row) + 1
+	rec := ex.fp.newRecord(module, "@"+name, "", 0, nil, "attr", start, end)
+	ex.merged[id] = rec
 }
 
 func (ex *exState) currentModule() string {
@@ -87,12 +151,17 @@ func (ex *exState) defmodule(n *sitter.Node, src []byte) {
 			ex.statement(&c, src)
 		}
 	}
+	ex.pendingDecor = 0
 	ex.stack = ex.stack[:len(ex.stack)-1]
 }
 
 // definition handles one def/defp/defmacro clause. Clauses of the same
-// name/arity merge into one record spanning first to last.
+// name/arity merge into one record spanning first to last, and the record
+// absorbs the decoration block above its first clause — the attr/slot/@doc
+// lines belong to the function they document.
 func (ex *exState) definition(n *sitter.Node, kind string, src []byte) {
+	decor := ex.pendingDecor
+	ex.pendingDecor = 0
 	args := childOfKind(n, "arguments")
 	if args == nil {
 		return
@@ -141,6 +210,9 @@ func (ex *exState) definition(n *sitter.Node, kind string, src []byte) {
 
 	rec := ex.merged[id]
 	if rec == nil {
+		if decor > 0 && decor < start {
+			start = decor
+		}
 		var arities []int
 		for a := arity - defaults; a <= arity; a++ {
 			arities = append(arities, a)
