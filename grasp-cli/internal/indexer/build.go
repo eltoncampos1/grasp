@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -149,6 +150,7 @@ func classify(root, baseRef string, files map[string]*fileParse, idx *Index, log
 	parser := sitter.NewParser()
 	defer parser.Close()
 	changed := 0
+	touched := map[string]bool{} // files whose change shows through a record
 
 	for rel, status := range statuses {
 		if LanguageFor(rel) == nil {
@@ -159,6 +161,7 @@ func classify(root, baseRef string, files map[string]*fileParse, idx *Index, log
 			if f, ok := files[rel]; ok {
 				for _, r := range f.records {
 					r.fn.Change = "added"
+					touched[rel] = true
 					changed++
 				}
 			}
@@ -167,8 +170,9 @@ func classify(root, baseRef string, files map[string]*fileParse, idx *Index, log
 			if err != nil {
 				continue
 			}
-			if base := parseFile(parser, rel, blob); base != nil {
+			if base := parseFile(parser, rel, blob); base != nil && len(base.records) > 0 {
 				appendRemoved(idx, base, base.records)
+				touched[rel] = true
 				changed += len(base.records)
 			}
 		case "M":
@@ -210,11 +214,13 @@ func classify(root, baseRef string, files map[string]*fileParse, idx *Index, log
 				switch {
 				case br == nil:
 					r.fn.Change = "added"
+					touched[rel] = true
 					changed++
 				case overlaps(lines, r.fn.Span) || br.fn.Source != r.fn.Source:
 					r.fn.Change = "modified"
 					src := br.fn.Source
 					r.fn.BaseSource = &src
+					touched[rel] = true
 					changed++
 				}
 			}
@@ -224,12 +230,90 @@ func classify(root, baseRef string, files map[string]*fileParse, idx *Index, log
 					removed = append(removed, br)
 				}
 			}
-			appendRemoved(idx, base, removed)
-			changed += len(removed)
+			if len(removed) > 0 {
+				appendRemoved(idx, base, removed)
+				touched[rel] = true
+				changed += len(removed)
+			}
 		}
+	}
+
+	// Whatever the extractors could not see — a template, a stylesheet, a
+	// test DSL, a router — still changed: it opens as a whole-file card, so
+	// the canvas covers every file the branch touched.
+	fileCards := 0
+	for rel, status := range statuses {
+		if touched[rel] {
+			continue
+		}
+		if fn := fileCard(root, mb, rel, status); fn != nil {
+			idx.Functions = append(idx.Functions, fn)
+			fileCards++
+			changed++
+		}
+	}
+	if fileCards > 0 {
+		log(fmt.Sprintf("%d changed files without function records open as whole-file cards", fileCards))
 	}
 	log(fmt.Sprintf("classified against %s (%.8s): %d changed functions", baseRef, mb, changed))
 	return nil
+}
+
+// fileCard builds a synthetic record for a changed file the extractors have
+// no records for. Binary or oversized files stay out.
+func fileCard(root, mb, rel, status string) *Function {
+	var cur, base []byte
+	if status == "A" || status == "M" {
+		data, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil || len(data) > maxFileSize || bytes.IndexByte(data, 0) >= 0 {
+			return nil
+		}
+		cur = data
+	}
+	if status == "M" || status == "D" {
+		data, err := gitx.ShowBlob(root, mb, rel)
+		if err != nil || len(data) > maxFileSize || bytes.IndexByte(data, 0) >= 0 {
+			return nil
+		}
+		base = data
+	}
+
+	change, source := "", ""
+	var baseSource *string
+	removed := false
+	switch status {
+	case "A":
+		change, source = "added", string(cur)
+	case "M":
+		change, source = "modified", string(cur)
+		b := strings.TrimSuffix(string(base), "\n")
+		if b == strings.TrimSuffix(source, "\n") {
+			return nil // mode-only change
+		}
+		baseSource = &b
+	case "D":
+		change, source, removed = "removed", string(base), true
+	default:
+		return nil
+	}
+
+	source = strings.TrimSuffix(source, "\n")
+	name := filepath.Base(rel)
+	return &Function{
+		ID:          moduleNameFor(rel) + "." + name + "/0",
+		Module:      moduleNameFor(rel),
+		Name:        name,
+		Arities:     []int{0},
+		Kind:        "file",
+		File:        rel,
+		Span:        Span{StartLine: 1, EndLine: strings.Count(source, "\n") + 1},
+		Source:      source,
+		BaseSource:  baseSource,
+		Change:      change,
+		Removed:     removed,
+		Calls:       []Call{},
+		HiddenCalls: []Call{},
+	}
 }
 
 func appendRemoved(idx *Index, base *fileParse, records []*record) {
@@ -281,10 +365,10 @@ func assemble(files map[string]*fileParse, idx *Index) {
 			idx.Functions = append(idx.Functions, r.fn)
 		}
 	}
-	// Removed functions were appended before assemble; their modules may not
-	// exist anymore in the parsed set.
+	// Removed functions and whole-file cards were appended before assemble;
+	// their modules may not exist in the parsed set.
 	for _, fn := range idx.Functions {
-		if fn.Removed && !seen[fn.Module] {
+		if !seen[fn.Module] {
 			seen[fn.Module] = true
 			idx.Modules = append(idx.Modules, Module{Name: fn.Module, File: fn.File, Line: 1, Behaviours: []string{}})
 		}

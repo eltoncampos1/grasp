@@ -149,6 +149,9 @@ spawn sets that env explicitly, and `grasp doctor` prints the full resolution.
   - **Go**: package-level calls across a directory's files, `pkg.Fn` through imports inside this
     module (via go.mod). Method calls on variables need type info and are skipped.
 - Ambiguous or external calls are dropped rather than guessed.
+- **Every changed file reaches the canvas.** A changed file the extractors have no function
+  records for — a template, a stylesheet, a test DSL, a router — opens as a whole-file card
+  with its diff, so coverage matches the PR's file list.
 - Entry points (routes, workers) are not detected yet.
 
 Groups read two flows apart on one canvas: select cards (`⌘`+click, or `Shift`+drag a box) and

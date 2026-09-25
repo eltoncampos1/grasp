@@ -762,7 +762,7 @@ function buildCard(fn) {
   const fileLine = fn.file + ':' + fn.span.start_line;
   const link = editorLink(fn);
   // no caller anywhere in the index: the flow starts here
-  const entryChip = nCallers === 0 && !fn.removed
+  const entryChip = nCallers === 0 && !fn.removed && fn.kind !== 'file'
     ? '<span class="chip" style="border-color:var(--accent);color:var(--accent)" title="nothing in the project calls this">entry</span>' : '';
 
   card.innerHTML =
