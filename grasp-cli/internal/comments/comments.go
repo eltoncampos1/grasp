@@ -35,7 +35,11 @@ type Thread struct {
 	// Status is "" while the thread sits on its line, "outdated" when the
 	// line it was written on has been edited away, "orphan" when its function
 	// has left the index.
-	Status       string    `json:"status,omitempty"`
+	Status string `json:"status,omitempty"`
+	// ReviewPR is the pull request under review when the thread was written
+	// (0 for a branch review). Comments stay project-scoped, but the canvas
+	// only draws threads belonging to the review it is showing.
+	ReviewPR     int       `json:"review_pr,omitempty"`
 	Resolved     bool      `json:"resolved"`
 	PublishedURL string    `json:"published_url,omitempty"`
 	Comments     []Comment `json:"comments"`
@@ -112,7 +116,7 @@ func (s *Store) Mutate(fn func(doc *Doc) error) (*Doc, error) {
 	return doc, nil
 }
 
-func (s *Store) AddThread(function, file string, line, endLine int, side, author, body, anchor string) (*Doc, error) {
+func (s *Store) AddThread(function, file string, line, endLine int, side, author, body, anchor string, reviewPR int) (*Doc, error) {
 	if side != "base" {
 		side = "new"
 	}
@@ -128,6 +132,7 @@ func (s *Store) AddThread(function, file string, line, endLine int, side, author
 			EndLine:  endLine,
 			Side:     side,
 			Anchor:   anchor,
+			ReviewPR: reviewPR,
 			Comments: []Comment{newComment(author, body)},
 		})
 		return nil

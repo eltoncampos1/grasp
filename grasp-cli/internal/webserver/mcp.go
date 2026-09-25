@@ -436,7 +436,7 @@ func (s *Server) callTool(name string, args map[string]any) (any, error) {
 		side := argStr(args, "side")
 		anchor := s.anchorFor(argStr(args, "function"), argInt(args, "line"), side)
 		doc, err := s.Comments.AddThread(argStr(args, "function"), argStr(args, "file"),
-			argInt(args, "line"), argInt(args, "end_line"), side, "agent", argStr(args, "body"), anchor)
+			argInt(args, "line"), argInt(args, "end_line"), side, "agent", argStr(args, "body"), anchor, s.currentReviewPR())
 		if err != nil {
 			return nil, err
 		}

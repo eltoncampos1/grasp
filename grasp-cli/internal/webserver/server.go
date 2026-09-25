@@ -244,7 +244,7 @@ func (s *Server) comments(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			anchor := s.anchorFor(req.Function, req.Line, req.Side)
-			doc, err = s.Comments.AddThread(req.Function, req.File, req.Line, req.EndLine, req.Side, author, req.Body, anchor)
+			doc, err = s.Comments.AddThread(req.Function, req.File, req.Line, req.EndLine, req.Side, author, req.Body, anchor, s.currentReviewPR())
 		case "reply":
 			if strings.TrimSpace(req.Body) == "" {
 				http.Error(w, "empty comment", http.StatusBadRequest)

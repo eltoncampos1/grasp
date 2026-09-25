@@ -198,15 +198,19 @@ function renderSidebar() {
     : [...chGroups.entries()].map(([mod, fns]) =>
         '<div class="side-mod"><div class="side-modlabel">' + esc(mod) + '</div>' + fns.map(sideFn).join('') + '</div>').join('');
 
-  const openThreads = COMMENTS.threads.filter(t => !t.resolved);
-  $('#commentsList').innerHTML = openThreads.length === 0 ? '<div class="side-empty">none open</div>'
-    : openThreads.map(t => {
-        const first = (t.comments[0] && t.comments[0].body || '').slice(0, 48);
-        const mark = t.status ? ' <span class="chip">' + esc(t.status) + '</span>' : '';
-        const cls = t.status === 'orphan' ? 'side-cmt orphan' : 'side-cmt';
-        return '<div class="' + cls + '" data-fn="' + esc(t.function) + '"' + (t.status === 'orphan' ? '' : ' data-click="1"') + '>' +
-          '<span class="loc">' + esc(t.file.split('/').pop() + ':' + t.line) + '</span> ' + esc(first) + mark + '</div>';
-      }).join('');
+  const sideCmt = t => {
+    const first = (t.comments[0] && t.comments[0].body || '').slice(0, 48);
+    const mark = t.status ? ' <span class="chip">' + esc(t.status) + '</span>' : '';
+    const cls = t.status === 'orphan' ? 'side-cmt orphan' : 'side-cmt';
+    return '<div class="' + cls + '" data-fn="' + esc(t.function) + '"' + (t.status === 'orphan' ? '' : ' data-click="1"') + '>' +
+      '<span class="loc">' + esc(t.file.split('/').pop() + ':' + t.line) + '</span> ' + esc(first) + mark + '</div>';
+  };
+  const openThreads = COMMENTS.threads.filter(t => !t.resolved && !threadForeign(t));
+  const foreign = COMMENTS.threads.filter(t => !t.resolved && threadForeign(t));
+  $('#commentsList').innerHTML =
+    (openThreads.length === 0 ? '<div class="side-empty">none open</div>' : openThreads.map(sideCmt).join('')) +
+    (foreign.length ? '<details class="side-mod"><summary>other reviews (' + foreign.length + ')</summary>' +
+      foreign.map(t => sideCmt(t).replace('data-click="1"', '') + '').join('') + '</details>' : '');
 
   // Related: modules the change touches one hop away — callers into and
   // callees out of the changed functions. A widely-used component drags in
@@ -784,7 +788,7 @@ function buildCard(fn) {
   if (!st.collapsed) {
     body.appendChild(showDiff ? diffTable(fn, st) : sourceTable(fn));
     // Outdated threads — their line was edited away — sit in the footer.
-    const stale = COMMENTS.threads.filter(t => t.function === fn.id && t.status === 'outdated');
+    const stale = COMMENTS.threads.filter(t => t.function === fn.id && t.status === 'outdated' && !threadForeign(t));
     if (stale.length) {
       const foot = document.createElement('div');
       foot.className = 'card-foot';
@@ -1110,17 +1114,26 @@ function paintLineSelection(card) {
   });
 }
 
+// A thread belongs to the review it was written on: one from another PR's
+// review is foreign here — listed under the sidebar's "other reviews", drawn
+// on no card. Untagged threads (branch reviews, older files) show everywhere.
+function threadForeign(t) {
+  if (!t.review_pr) return false;
+  const cur = IDX.review && IDX.review.pr;
+  return t.review_pr !== cur;
+}
+
 function threadsAt(fn, line, side) {
   // Only anchored threads sit on lines; outdated ones live in the card's
   // footer, orphans only in the sidebar.
-  return COMMENTS.threads.filter(t => !t.status && t.function === fn.id && t.side === side &&
+  return COMMENTS.threads.filter(t => !t.status && !threadForeign(t) && t.function === fn.id && t.side === side &&
     (t.end_line ? t.end_line === line : t.line === line));
 }
 
 function inThreadRange(fn, line, side) {
   if (composing && composing.fnId === fn.id && composing.side === side && composing.endLine &&
       line >= composing.line && line <= composing.endLine) return true;
-  return COMMENTS.threads.some(t => t.file === fn.file && t.side === side && t.end_line &&
+  return COMMENTS.threads.some(t => !threadForeign(t) && t.file === fn.file && t.side === side && t.end_line &&
     line >= t.line && line <= t.end_line);
 }
 

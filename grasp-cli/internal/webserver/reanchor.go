@@ -113,6 +113,16 @@ func threadLines(fn *indexer.Function, side string) ([]string, int, bool) {
 	return strings.Split(fn.Source, "\n"), fn.Span.StartLine, true
 }
 
+// currentReviewPR is the PR the index under review belongs to, 0 for a
+// branch review — stamped on new threads so each canvas draws its own.
+func (s *Server) currentReviewPR() int {
+	idx, _, _, err := s.loadIndex()
+	if err == nil && idx.Review != nil {
+		return idx.Review.PR
+	}
+	return 0
+}
+
 // anchorFor captures the trimmed text of the line a new thread points at.
 func (s *Server) anchorFor(fnID string, line int, side string) string {
 	_, byID, _, err := s.loadIndex()
