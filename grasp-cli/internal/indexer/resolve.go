@@ -169,6 +169,17 @@ func resolveEx(f *fileParse, r *record, c rawCall, exact map[string]*record, byN
 				return t
 			}
 		}
+		// Phoenix convention: `render(conn, :show, …)` in FooController
+		// reaches FooHTML.show/1.
+		if c.hint != "" && strings.HasSuffix(r.fn.Module, "Controller") {
+			html := strings.TrimSuffix(r.fn.Module, "Controller") + "HTML"
+			if t := exact[html+"|"+c.hint+"/1"]; t != nil {
+				return t
+			}
+			if lst := byName[html+"|"+c.hint]; len(lst) == 1 {
+				return lst[0]
+			}
+		}
 		return nil
 	}
 

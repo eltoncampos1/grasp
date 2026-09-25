@@ -50,11 +50,13 @@ func languageID(path string) string {
 
 // rawCall is an unresolved call site. object carries the qualifier when there
 // is one: a JS member object, an Elixir (aliased) module, a Go selector
-// operand. arity is -1 when the call form does not say.
+// operand. arity is -1 when the call form does not say. hint carries extra
+// resolution context — for Phoenix, the view atom of a controller `render`.
 type rawCall struct {
 	object string
 	name   string
 	arity  int
+	hint   string
 	rng    Range
 }
 

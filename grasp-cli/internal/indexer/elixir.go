@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"regexp"
 	"strings"
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
@@ -257,7 +258,21 @@ func exCalls(n *sitter.Node, src []byte, out *[]rawCall) {
 			case "identifier":
 				name := target.Utf8Text(src)
 				if !exSpecialForms[name] {
-					*out = append(*out, rawCall{name: name, arity: exArity(n), rng: rangeOf(target)})
+					c := rawCall{name: name, arity: exArity(n), rng: rangeOf(target)}
+					// `render(conn, :show, …)` in a controller reaches the
+					// HTML module's :show component by Phoenix convention;
+					// carry the view atom so resolution can retarget it.
+					if name == "render" || name == "live_render" {
+						if args := childOfKind(n, "arguments"); args != nil {
+							for _, a := range namedChildren(args) {
+								if a.Kind() == "atom" {
+									c.hint = strings.TrimPrefix(a.Utf8Text(src), ":")
+									break
+								}
+							}
+						}
+					}
+					*out = append(*out, c)
 				}
 			case "dot":
 				left := target.ChildByFieldName("left")
@@ -278,10 +293,50 @@ func exCalls(n *sitter.Node, src []byte, out *[]rawCall) {
 		if c := captureCall(n, src); c != nil {
 			*out = append(*out, *c)
 		}
+	case "sigil":
+		// A component tag inside an ~H body is a call site: `<.stats>` calls
+		// the local component, `<Layouts.header>` a remote one. The sigil is
+		// plain text to the grammar, so tags are found by scanning it.
+		if text := n.Utf8Text(src); strings.HasPrefix(text, "~H") {
+			heexTags(text, n.StartPosition(), out)
+		}
 	}
 	for i := uint(0); i < n.NamedChildCount(); i++ {
 		if c := n.NamedChild(i); c != nil {
 			exCalls(c, src, out)
+		}
+	}
+}
+
+var (
+	heexLocalTag  = regexp.MustCompile(`<\.([a-z_][a-zA-Z0-9_?!]*)`)
+	heexRemoteTag = regexp.MustCompile(`<([A-Z][A-Za-z0-9_.]*)\.([a-z_][a-zA-Z0-9_?!]*)`)
+)
+
+// heexTags scans an ~H sigil's text for component tags, mapping each match
+// back to its absolute line and column. A function component takes assigns,
+// so every tag is a name/1 call.
+func heexTags(text string, start sitter.Point, out *[]rawCall) {
+	for li, line := range strings.Split(text, "\n") {
+		row := int(start.Row) + li + 1
+		colBase := 0
+		if li == 0 {
+			colBase = int(start.Column)
+		}
+		for _, m := range heexLocalTag.FindAllStringSubmatchIndex(line, -1) {
+			*out = append(*out, rawCall{
+				name:  line[m[2]:m[3]],
+				arity: 1,
+				rng:   Range{Start: [2]int{row, colBase + m[0] + 2}, End: [2]int{row, colBase + m[1] + 1}},
+			})
+		}
+		for _, m := range heexRemoteTag.FindAllStringSubmatchIndex(line, -1) {
+			*out = append(*out, rawCall{
+				object: line[m[2]:m[3]],
+				name:   line[m[4]:m[5]],
+				arity:  1,
+				rng:    Range{Start: [2]int{row, colBase + m[0] + 2}, End: [2]int{row, colBase + m[1] + 1}},
+			})
 		}
 	}
 }
